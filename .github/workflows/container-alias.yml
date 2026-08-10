@@ -1,0 +1,77 @@
+name: repair-container-version-aliases
+
+on:
+  # 仅允许仓库维护者手动触发；用于修复已存在镜像的版本别名，不执行任何本地或远端重新构建。
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: "已存在的源镜像标签，例如 0.1.0"
+        required: true
+        type: string
+      release_tag:
+        description: "需要补齐别名的稳定版 Git 标签，格式必须为 vX.Y.Z"
+        required: true
+        type: string
+
+# 默认保持只读；只有别名 Job 获得写入当前仓库容器包所需的最小权限。
+permissions:
+  contents: read
+
+jobs:
+  alias:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 校验并计算版本别名
+        id: version
+        shell: bash
+        env:
+          # 输入会在脚本中再次按 Docker 标签及稳定版语义严格校验，禁止注入任意命令或目标仓库。
+          SOURCE_TAG: ${{ inputs.source_tag }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "::error::source_tag 不是合法的 Docker 标签"
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::release_tag 必须是 vX.Y.Z 格式的稳定版本"
+            exit 1
+          fi
+
+          version="${RELEASE_TAG#v}"
+          major="${version%%.*}"
+          remainder="${version#*.}"
+          minor="${remainder%%.*}"
+          echo "major=$major" >> "$GITHUB_OUTPUT"
+          echo "minor=$minor" >> "$GITHUB_OUTPUT"
+
+      - name: 创建 Buildx 构建器
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 为现有多架构清单创建版本别名
+        shell: bash
+        env:
+          # 镜像仓库固定为本项目，输入只能决定源标签和经过校验的版本号，不能推送到其他目标。
+          IMAGE: ghcr.io/nxiaok/go-panel
+          SOURCE_TAG: ${{ inputs.source_tag }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          MAJOR: ${{ steps.version.outputs.major }}
+          MINOR: ${{ steps.version.outputs.minor }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "$IMAGE:$RELEASE_TAG" \
+            --tag "$IMAGE:v$MAJOR.$MINOR" \
+            --tag "$IMAGE:v$MAJOR" \
+            "$IMAGE:$SOURCE_TAG"
