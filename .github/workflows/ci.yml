@@ -1,0 +1,214 @@
+name: ci-and-release
+
+on:
+  # 所有分支 Push 都执行测试和镜像构建；只有 main 与 v* 标签会推送公开产物。
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*.*.*"
+  pull_request:
+  workflow_dispatch:
+
+# 默认只读；推送镜像和创建 Release 的权限在对应 Job 内最小化开启。
+permissions:
+  contents: read
+
+# 同一分支只保留最新构建，避免快速连续 Push 浪费 Actions 配额；正式标签不互相取消。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vite-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # 与 Dockerfile 保持一致，防止本地和 CI 使用不同 Node 主版本。
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: vite-frontend/package-lock.json
+      - run: npm ci
+      - run: npm run test
+      - run: npm run typecheck
+      - run: npm run lint:ci
+      - run: npm run format:check
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=moderate
+      - name: 上传前端嵌入测试产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: vite-spa-dist
+          path: vite-frontend/dist
+          retention-days: 1
+
+  backend:
+    runs-on: ubuntu-latest
+    needs: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # 该版本同时用于主程序、节点工具和 Docker 构建，升级时必须三处一起修改。
+          go-version: "1.26.5"
+          cache-dependency-path: |
+            go.sum
+            go-gost/go.sum
+            go-gost/x/go.sum
+      - name: 下载前端产物
+        uses: actions/download-artifact@v4
+        with:
+          name: vite-spa-dist
+          path: vite-frontend/dist
+      - name: 同步内嵌前端
+        run: bash ./scripts/sync-web-dist.sh
+      - name: 后端测试、静态检查与节点工具编译
+        run: |
+          set -euo pipefail
+          if ! go test ./... -count=1; then
+            echo "::error::go test 失败，重新输出 service 包详细日志"
+            go test ./internal/service -count=1 -v || true
+            exit 1
+          fi
+          go vet ./...
+          go build ./...
+          go build ./cmd/node-assets/nft_agent
+          go build ./cmd/node-assets/nft_rule_payload
+          go build ./cmd/node-assets/nft_flow_reporter
+      - name: 关键并发路径 Race 检查
+        run: go test -race -count=1 ./internal/ws ./internal/task ./internal/service ./cmd/node-assets/nft_agent ./cmd/node-assets/nft_flow_reporter ./internal/nftgeneration
+      - name: 测试内置 go-gost 模块
+        run: |
+          set -euo pipefail
+          cd go-gost
+          go test ./... -count=1
+          go vet ./...
+          go build ./...
+          cd x
+          # x 是独立模块；必须全量验证，覆盖内置节点的所有协议和传输实现。
+          go test ./... -count=1
+          go vet ./...
+          go build ./...
+      - name: 扫描三个 Go 模块的可达漏洞
+        run: |
+          set -euo pipefail
+          # 固定扫描器版本确保 CI 可复现；升级版本前需先确认新的检测规则不会误报。
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          govulncheck ./...
+          (cd go-gost && govulncheck ./...)
+          (cd go-gost/x && govulncheck ./...)
+
+  image:
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: 计算构建版本元数据
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA:0:7}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME}"
+          elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            version="edge-${short_sha}"
+          else
+            version="build-${short_sha}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - name: 启用跨架构模拟
+        uses: docker/setup-qemu-action@v3
+      - name: 创建 Buildx 构建器
+        uses: docker/setup-buildx-action@v3
+      - name: 登录 GitHub Container Registry
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 生成镜像标签和 OCI 元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/nxiaok/go-panel
+          tags: |
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/nXiaoK/go-panel
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: 构建并按发布通道推送多架构镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          # 普通分支和 PR 也完整构建，但不会获得 packages:write 或污染公开标签。
+          push: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.build.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.build.outputs.build_time }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: image
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: vite-frontend/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache-dependency-path: |
+            go.sum
+            go-gost/go.sum
+            go-gost/x/go.sum
+      - name: 构建 Release 压缩包与校验文件
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix vite-frontend
+          npm run build --prefix vite-frontend
+          bash ./scripts/sync-web-dist.sh
+          bash ./scripts/build-release.sh "${GITHUB_REF_NAME}" "${GITHUB_SHA}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - name: 创建或更新 GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" release/*.tar.gz release/SHA256SUMS --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" release/*.tar.gz release/SHA256SUMS \
+              --verify-tag \
+              --generate-notes \
+              --title "go-panel ${GITHUB_REF_NAME}"
+          fi

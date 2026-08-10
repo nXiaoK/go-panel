@@ -1,0 +1,78 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Local AI / tooling state
+.claude/settings.local.json
+.superpowers/
+docs/superpowers/
+**/superpowers/
+mockups/
+# 旧浏览器诊断脚本会输出会话信息且不属于发行内容，禁止带入公开仓库。
+/diagnose-*.js
+
+# 新公开仓库不发布任何层级的 docs 目录；必要的部署、安全和开发说明统一维护在 README。
+docs/
+
+# Go
+/bin/
+/build/
+/dist/
+/release/
+coverage.out
+*.test
+
+# Binaries
+flux-panel
+flux-panel-*
+go-panel
+go-panel-*
+# 内置 go-gost 的本机编译产物不可提交；发布镜像会按 Linux 目标架构重新构建。
+/go-gost/gost
+
+# Runtime data
+data/
+node-assets/*
+!node-assets/.gitkeep
+!node-assets/README.md
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Frontend dependencies and cache
+vite-frontend/node_modules/
+vite-frontend/dist/
+vite-frontend/.vite/
+vite-frontend/.output/
+vite-frontend/.vinxi/
+vite-frontend/.tanstack/
+vite-frontend/.nitro/
+vite-frontend/.wrangler/
+vite-frontend/.env.local
+vite-frontend/.env.*.local
+vite-frontend/.lovable/
+vite-frontend/bun.lock
+vite-frontend/bunfig.toml
+
+# Frontend build output embedded by Go.
+web/dist/*
+!web/dist/.gitkeep

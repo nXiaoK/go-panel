@@ -1,0 +1,37 @@
+# 版本控制和本机工具状态不进入构建上下文，避免泄露历史或编辑器配置。
+.DS_Store
+.git
+.gitignore
+.dockerignore
+
+# 运行数据和本地编译产物不得封装进镜像；节点程序由镜像构建阶段重新生成。
+data/
+node-assets/
+release/
+*.db
+*.db-shm
+*.db-wal
+go-panel
+go-panel-*
+flux-panel
+flux-panel-*
+
+# 前端依赖、缓存和旧产物由 npm ci/build 在隔离阶段生成。
+web/dist/
+vite-frontend/dist/
+vite-frontend/node_modules/
+vite-frontend/.vite/
+vite-frontend/.output/
+vite-frontend/.vinxi/
+vite-frontend/.tanstack/
+vite-frontend/.nitro/
+vite-frontend/.wrangler/
+vite-frontend/.env.local
+vite-frontend/.env.*.local
+
+# 发布说明和部署配置不参与程序编译，减小上下文并提高缓存命中率。
+Dockerfile*
+compose*.yml
+docker-compose*.yml
+docs/
+README.md

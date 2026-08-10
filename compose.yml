@@ -1,0 +1,51 @@
+# 默认部署只拉取 GitHub Container Registry 的稳定镜像，不在服务器本地编译源码。
+name: go-panel
+
+services:
+  panel:
+    # GO_PANEL_VERSION 默认跟随 latest；生产环境也可固定为 v0.1.0 等明确版本便于回滚。
+    image: ghcr.io/nxiaok/go-panel:${GO_PANEL_VERSION:-latest}
+    pull_policy: always
+    container_name: go-panel
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      # 容器必须监听全部接口；宿主机暴露范围由下方 ports 和防火墙控制。
+      LISTEN_ADDR: ":6365"
+      # 远程部署必须使用至少 32 字节随机密钥；修改后所有现有登录令牌立即失效。
+      JWT_SECRET: ${JWT_SECRET:?必须在 .env 中设置至少 32 字节的 JWT_SECRET}
+      # 首次创建管理员时使用；已有安全管理员后可清空，避免长期保存明文密码。
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin_user}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # 生产模式拒绝 CORS 通配符；必须填写实际访问面板的 http(s) 来源。
+      ENVIRONMENT: production
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:?必须在 .env 中设置面板访问来源}
+      # 仅填写真正终止 TLS/反向代理请求的 CIDR；空值时不信任任何转发头。
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      # 明文 HTTP 节点下载可能泄露节点密钥并被篡改，只应在受控升级窗口临时开启。
+      ALLOW_INSECURE_NODE_DOWNLOADS: ${ALLOW_INSECURE_NODE_DOWNLOADS:-false}
+      # 旧 nft 上报缺少幂等保障，仅在升级旧节点的短暂兼容窗口开启。
+      ALLOW_LEGACY_NFT_REPORTS: ${ALLOW_LEGACY_NFT_REPORTS:-false}
+      # 默认每 6 小时检查一次稳定 Release；失败不会影响面板正常运行。
+      UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-true}
+      UPDATE_REPOSITORY: ${UPDATE_REPOSITORY:-nXiaoK/go-panel}
+      UPDATE_CHECK_INTERVAL: ${UPDATE_CHECK_INTERVAL:-6h}
+      # 固定版本标签不会跨 Release 移动；后端据此隐藏无效的一键更新按钮。
+      UPDATE_IMAGE_TAG: ${GO_PANEL_VERSION:-latest}
+      # 数据库和更新前备份都位于此持久卷，重建容器不会丢失。
+      # 保留历史文件名以兼容旧数据卷；重命名会让升级后的面板误以为数据库为空。
+      DB_PATH: /app/data/flux-panel.db
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      # 若前面有反向代理，可改为 127.0.0.1:6365:6365，避免面板端口直接暴露公网。
+      - "${PANEL_BIND:-0.0.0.0}:${PANEL_PORT:-6365}:6365"
+    volumes:
+      - panel_data:/app/data
+    labels:
+      # 只有显式启用 compose.update.yml 时，受限更新侧车才处理此容器。
+      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.scope: "go-panel"
+
+volumes:
+  # 删除此卷会永久删除 SQLite 数据库与本地更新备份，升级时不得执行 docker compose down -v。
+  panel_data:
