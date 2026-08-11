@@ -124,6 +124,10 @@ docker compose -f compose.yml -f compose.update.yml up -d
 
 节点安装和升级默认要求 HTTPS。公网 HTTP 可能泄露节点密钥并允许程序被篡改，`ALLOW_INSECURE_NODE_DOWNLOADS=true` 只应在明确隔离的临时升级窗口使用。
 
+中国大陆节点安装 `gost` 或 nftables Agent 时不会直接访问 GitHub：脚本和节点程序均从面板地址下载。订阅服务器脚本安装 Xray、sing-box 等上游组件时仍需要 GitHub；可在“系统配置 → GitHub 下载代理”填写可信的 HTTPS 全链接代理前缀。该代理不会修改 APT/DNF/APK 软件源，系统包下载仍应使用服务器所在地区可达且可信的发行版镜像。下载代理能够替换可执行文件，禁止使用来源不明的公共服务。
+
+nftables 模式安装、远程组件升级和规则刷新都会写入 `/etc/sysctl.d/99-flux-nftables-forwarding.conf` 并立即启用 `net.ipv4.ip_forward=1`；否则 DNAT 规则虽然存在，数据包也不会进入 `forward` 链。卸载只删除这份持久配置，不会强制把运行时值改回 `0`，以免中断同机 Docker、VPN 或其他路由服务。
+
 ## 配置
 
 完整、带风险说明的模板见 [`.env.example`](.env.example)。主要变量如下：

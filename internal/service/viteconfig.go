@@ -2,6 +2,8 @@ package service
 
 import (
 	"fmt"
+	"net/url"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,6 +20,8 @@ const (
 	allowInsecureNodeDownloadsConfigName = "allow_insecure_node_downloads"
 	// 该字段只反映进程启动时的环境配置，不写入数据库；为 true 时即使页面开关关闭，仍允许通过 HTTP 下载节点程序。
 	allowInsecureNodeDownloadsEnvOverrideName = "allow_insecure_node_downloads_env_override"
+	// GitHub 下载代理仅传给订阅服务器脚本；空值保持直连，非空值必须是可信的 HTTPS 全链接代理前缀。
+	githubDownloadProxyConfigName = "github_download_proxy"
 )
 
 var publicConfigNames = map[string]struct{}{
@@ -103,15 +107,48 @@ func upsertConfig(db *gorm.DB, name, value string, now int64) error {
 // normalizeConfigValue 校验并规范化具备安全含义的系统配置。
 // allow_insecure_node_downloads 默认关闭，只接受明确的 true/false，避免拼写错误
 // 意外改变节点下载策略；开启后节点密钥与程序可能经明文 HTTP 传输。
+// github_download_proxy 默认留空并直连 GitHub；配置后代理可看到并替换下载内容，
+// 因此只接受不含凭据、查询参数和片段的 HTTPS 前缀。
 func normalizeConfigValue(name, value string) (string, error) {
-	if name != allowInsecureNodeDownloadsConfigName {
+	switch name {
+	case allowInsecureNodeDownloadsConfigName:
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		if normalized != "true" && normalized != "false" {
+			return "", fmt.Errorf("允许 HTTP 节点安装/升级配置只能为 true 或 false")
+		}
+		return normalized, nil
+	case githubDownloadProxyConfigName:
+		return normalizeGitHubDownloadProxy(value)
+	default:
 		return value, nil
 	}
-	normalized := strings.ToLower(strings.TrimSpace(value))
-	if normalized != "true" && normalized != "false" {
-		return "", fmt.Errorf("允许 HTTP 节点安装/升级配置只能为 true 或 false")
+}
+
+func normalizeGitHubDownloadProxy(value string) (string, error) {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return "", nil
 	}
-	return normalized, nil
+	if len(normalized) > 2048 {
+		return "", fmt.Errorf("GitHub 下载代理地址过长")
+	}
+	u, err := url.Parse(normalized)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.Hostname() == "" || u.User != nil {
+		return "", fmt.Errorf("GitHub 下载代理必须是无用户信息的 HTTPS 地址")
+	}
+	if u.ForceQuery || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("GitHub 下载代理不能包含查询参数或片段")
+	}
+	normalizedPath := strings.TrimRight(u.Path, "/")
+	cleanedPath := path.Clean(normalizedPath)
+	if cleanedPath == "." {
+		cleanedPath = ""
+	}
+	if u.RawPath != "" || cleanedPath != normalizedPath {
+		return "", fmt.Errorf("GitHub 下载代理路径不能包含编码斜杠、重复分隔符或目录跳转")
+	}
+	u.Path = normalizedPath
+	return u.String(), nil
 }
 
 // UpdateConfigs 批量更新配置

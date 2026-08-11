@@ -127,6 +127,12 @@ func TestNftInstallerInstallsStaticCrashSafeApplyScript(t *testing.T) {
 	if !strings.Contains(apply, `nft_flow_reporter \`) || !strings.Contains(apply, `--refresh "$TMP_RULES" "$SERVER_ADDR" "$SECRET" "$NFT_TABLE_NAME"`) {
 		t.Fatal("apply asset does not delegate refresh to reporter")
 	}
+	if !strings.Contains(apply, `FORWARD_SYSCTL_FILE="/etc/sysctl.d/99-flux-nftables-forwarding.conf"`) ||
+		!strings.Contains(apply, `net.ipv4.ip_forward = 1`) ||
+		!strings.Contains(apply, `> /proc/sys/net/ipv4/ip_forward`) ||
+		!strings.Contains(apply, `远程组件升级会直接替换本脚本而不重跑安装器`) {
+		t.Fatal("apply asset does not converge persistent and runtime IPv4 forwarding after remote upgrades")
+	}
 	for _, forbidden := range []string{"delete table", "add table", "nft -f -", "|| true"} {
 		if strings.Contains(apply, forbidden) {
 			t.Fatalf("apply asset contains unsafe legacy operation %q", forbidden)
@@ -151,8 +157,16 @@ func TestNftInstallerInstallsStaticCrashSafeApplyScript(t *testing.T) {
 			t.Fatalf("%s installer order does not install reporter -> apply script -> agent", name)
 		}
 		if !strings.Contains(script, `ACTIVE_TABLE_MARKER="$STATE_DIR/active-table"`) ||
-			!strings.Contains(script, `active_table="$(verified_active_nft_table)"`) {
-			t.Fatalf("%s installer does not verify the durable active generation after restoring rules", name)
+			!strings.Contains(script, `AGENT_SYNC_MARKER="/run/flux-nftables/agent-synced"`) ||
+			!strings.Contains(script, `active_table="$(wait_for_verified_active_nft_table)"`) ||
+			!strings.Contains(script, `[[ "$synced_table" == "$table_name" ]]`) {
+			t.Fatalf("%s installer does not wait for the current agent-synced active generation", name)
+		}
+		if !strings.Contains(script, `SYSCTL_FILE="/etc/sysctl.d/99-flux-nftables-forwarding.conf"`) ||
+			!strings.Contains(script, `net.ipv4.ip_forward = 1`) ||
+			!strings.Contains(script, `sysctl -w net.ipv4.ip_forward=1`) ||
+			!strings.Contains(script, `install_forwarding_sysctl`) {
+			t.Fatalf("%s installer does not persist and activate IPv4 forwarding", name)
 		}
 		if !strings.Contains(script, `已从面板同步此节点当前启用的转发规则`) ||
 			!strings.Contains(script, `当前活动规则表: inet $active_table`) {

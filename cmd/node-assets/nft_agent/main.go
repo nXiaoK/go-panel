@@ -8,8 +8,10 @@ const (
 	configPath       = "/etc/flux-nftables/config.env"
 	applyScriptPath  = "/etc/flux-nftables/apply_rules.sh"
 	flowReporterPath = "/etc/flux-nftables/nft_flow_reporter"
-	// 此版本把严格的异常 dormant flag 兼容扩展到 Debian 11 nftables 0.9.8。
-	version          = "nftables-go-1.3.10"
+	// 首次 WebSocket 全量对账成功后写入此运行时标记；安装脚本只在它与活动表标记一致时报告成功。
+	agentSyncMarkerPath = "/run/flux-nftables/agent-synced"
+	// 此版本增加首次对账同步标记，并由安装器持久启用 IPv4 内核转发。
+	version          = "nftables-go-1.3.11"
 	maxNodeAssetSize = int64(128 << 20)
 )
 

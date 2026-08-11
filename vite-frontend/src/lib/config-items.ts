@@ -63,6 +63,15 @@ export const keyConfigMeta: KeyConfigMeta[] = [
     type: "input",
   },
   {
+    // 默认留空并直连 GitHub；代理会接触可执行文件，必须使用自建或明确可信的 HTTPS 服务。
+    name: "github_download_proxy",
+    label: "GitHub 下载代理",
+    placeholder: "https://github-proxy.example.com",
+    description:
+      "可选。用于订阅服务器脚本下载 GitHub API、Release 与 raw 文件；代理需支持“代理前缀 + 完整 GitHub URL”。留空时直连。代理可看到并篡改下载内容，请仅填写可信的 HTTPS 服务；节点 Agent 自身已从面板下载，不依赖此项。",
+    type: "input",
+  },
+  {
     // 默认 false：只有管理员明确开启后，公网 HTTP 才能用于节点安装和升级。
     name: "allow_insecure_node_downloads",
     label: "允许 HTTP 节点安装/升级",

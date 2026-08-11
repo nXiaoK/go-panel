@@ -47,6 +47,9 @@ describe("normalizeConfigItems", () => {
     );
     assert.equal(unsafeDownloads?.type, "switch");
     assert.match(unsafeDownloads?.description ?? "", /明文 HTTP.*泄露.*篡改/);
+    const githubProxy = keyConfigMeta.find((item) => item.name === "github_download_proxy");
+    assert.equal(githubProxy?.type, "input");
+    assert.match(githubProxy?.description ?? "", /留空时直连.*篡改.*HTTPS/);
   });
 
   it("keeps backend values, hides unsupported captcha keys, and appends unknown config keys", () => {

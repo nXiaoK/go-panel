@@ -44,6 +44,28 @@ func TestNftUninstallScriptsRemoveKernelStateBeforePersistentState(t *testing.T)
 	}
 }
 
+func TestNftUninstallScriptsRemoveOnlyPersistentForwardingSetting(t *testing.T) {
+	for _, script := range loadNftUninstallScripts(t) {
+		t.Run(script.name, func(t *testing.T) {
+			contents := string(script.raw)
+			if !strings.Contains(contents, `SYSCTL_FILE="/etc/sysctl.d/99-flux-nftables-forwarding.conf"`) {
+				t.Fatal("uninstaller does not identify the Flux Panel forwarding sysctl file")
+			}
+			if !strings.Contains(contents, `"$SYSCTL_FILE"`) {
+				t.Fatal("uninstaller does not remove or verify the forwarding sysctl file")
+			}
+			for _, forbidden := range []string{
+				"sysctl -w net.ipv4.ip_forward=0",
+				"net.ipv4.ip_forward = 0",
+			} {
+				if strings.Contains(contents, forbidden) {
+					t.Fatalf("uninstaller could disrupt another forwarding service with %q", forbidden)
+				}
+			}
+		})
+	}
+}
+
 func TestNftUninstallHelpersDeleteOnlyStrictlyManagedTables(t *testing.T) {
 	const inventory = `table inet filter
 table inet flux_panel

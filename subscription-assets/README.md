@@ -35,3 +35,9 @@
 - `clash.yml`：Clash 订阅骨架，关键 DNS、代理组与分流规则在文件内使用中文注释说明。
 - `surge.config`：Surge 订阅骨架，代理与规则由面板渲染；修改 DNS、MITM 或直连规则前应评估泄漏与证书风险。
 - `vless-server.sh`：VLESS/VMess/Trojan 等服务端管理脚本，涉及防火墙、软件源和系统服务修改；只应在受控节点以 root 执行，并先审阅脚本来源和 Release 校验值。
+
+## GitHub 下载代理
+
+系统配置中的 `github_download_proxy` 默认留空，此时订阅服务器脚本直接访问 GitHub。中国大陆或其他无法稳定访问 GitHub 的服务器可填写可信的 HTTPS 代理前缀；代理必须支持“代理前缀 + `/` + 完整 GitHub URL”，并同时代理 `github.com`、`api.github.com` 与 `raw.githubusercontent.com`。面板生成绑定命令时会把该值安全传入脚本，脚本再将其保存在 `/etc/vless-reality/sub-panel.env`，供后续安装 Xray、sing-box、AnyTLS、ShadowTLS、acme.sh、wgcf 和脚本更新时复用。
+
+代理能看到并替换下载的可执行文件，错误或失陷的代理可能导致节点被植入恶意程序，因此必须优先使用自建或明确可信的服务，且只允许 HTTPS。清空该配置后，新生成的绑定命令不再下发代理；已绑定服务器需要重新执行绑定命令，或由管理员审阅后从 `sub-panel.env` 删除 `SUB_PANEL_GITHUB_PROXY`。操作系统的 APT/DNF/APK 软件源不经过此配置，仍需在服务器侧选择可达且可信的发行版镜像。

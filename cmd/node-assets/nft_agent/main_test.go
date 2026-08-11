@@ -594,6 +594,50 @@ func TestApplyNftRulesDoesNotRecursivelyAcquireReporterLock(t *testing.T) {
 	}
 }
 
+func TestApplyNftRulesResponseRequiresCurrentSessionSyncMarker(t *testing.T) {
+	applyErr := errors.New("apply failed")
+	markErr := errors.New("mark failed")
+	tests := []struct {
+		name      string
+		applyErr  error
+		markErr   error
+		wantCalls []string
+		wantErr   error
+	}{
+		{name: "success", wantCalls: []string{"apply", "mark"}},
+		{name: "apply failure", applyErr: applyErr, wantCalls: []string{"apply"}, wantErr: applyErr},
+		{name: "marker failure", markErr: markErr, wantCalls: []string{"apply", "mark"}, wantErr: markErr},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls []string
+			executor := &liveCommandExecutor{
+				applyRules: func() error {
+					calls = append(calls, "apply")
+					return tc.applyErr
+				},
+				markRulesSynced: func() error {
+					calls = append(calls, "mark")
+					return tc.markErr
+				},
+			}
+			resp := executor.Execute(context.Background(), commandMessage{Type: "ApplyNftRules"})
+			if !reflect.DeepEqual(calls, tc.wantCalls) {
+				t.Fatalf("calls=%v, want %v", calls, tc.wantCalls)
+			}
+			if tc.wantErr == nil {
+				if !resp.Success || resp.Message != "OK" {
+					t.Fatalf("success response=%+v", resp)
+				}
+				return
+			}
+			if resp.Success || resp.Message != tc.wantErr.Error() {
+				t.Fatalf("failure response=%+v, want %v", resp, tc.wantErr)
+			}
+		})
+	}
+}
+
 func writeAgentTestMarker(t *testing.T, table string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "active-table")

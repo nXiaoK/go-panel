@@ -66,6 +66,9 @@ STATE_DIR="/var/lib/flux-nftables"
 # 活动表标记由 reporter 在完整同步面板规则并完成原子切换后写入；实际表通常是
 # flux_panel_g_<32位hex>，运维检查不得固定假设仍使用历史表 flux_panel。
 ACTIVE_TABLE_MARKER="$STATE_DIR/active-table"
+# Agent 每次建立 WebSocket 会话都会先清除此运行时标记，首次全量规则对账成功后
+# 再写入当时代际表；安装输出只有在它与 active-table 一致时才可信。
+AGENT_SYNC_MARKER="/run/flux-nftables/agent-synced"
 SERVICE_FILE="/etc/systemd/system/flux-nftables.service"
 AGENT_SERVICE_FILE="/etc/systemd/system/flux-nftables-agent.service"
 SCRIPT_FILE="$INSTALL_DIR/apply_rules.sh"
@@ -73,6 +76,9 @@ AGENT_FILE="$INSTALL_DIR/nft_agent"
 RULE_HELPER_FILE="$INSTALL_DIR/nft_rule_payload"
 FLOW_REPORTER_FILE="$INSTALL_DIR/nft_flow_reporter"
 ENV_FILE="$INSTALL_DIR/config.env"
+# 此 sysctl 配置持久启用 IPv4 路由；没有它时 DNAT 可出现在 prerouting，
+# 但内核不会把数据包送入 forward 链，表现为规则存在、计数始终为 0。
+SYSCTL_FILE="/etc/sysctl.d/99-flux-nftables-forwarding.conf"
 # 固定历史表名限定项目所有权；卸载只额外接受严格的 32 位小写十六进制代际表，
 # 不从可编辑配置扩大删除范围，避免误删第三方 nftables 表。
 NFT_TABLE_NAME="flux_panel"
@@ -88,7 +94,7 @@ run_privileged() {
 }
 
 verified_active_nft_table() {
-  local table_name
+  local table_name synced_table final_table final_synced_table
   run_privileged systemctl is-active --quiet flux-nftables.service || return 1
   run_privileged systemctl is-active --quiet flux-nftables-agent.service || return 1
   if ! table_name="$(run_privileged cat "$ACTIVE_TABLE_MARKER" 2>/dev/null)"; then
@@ -97,8 +103,30 @@ verified_active_nft_table() {
   if [[ "$table_name" != "$NFT_TABLE_NAME" ]] && [[ ! "$table_name" =~ ^flux_panel_g_[0-9a-f]{32}$ ]]; then
     return 1
   fi
+  if ! synced_table="$(run_privileged cat "$AGENT_SYNC_MARKER" 2>/dev/null)"; then
+    return 1
+  fi
+  [[ "$synced_table" == "$table_name" ]] || return 1
   run_privileged nft list table inet "$table_name" >/dev/null 2>&1 || return 1
+  # nft 表验证期间仍可能发生下一次代际切换；复读两个标记可避免打印刚被替换的表名。
+  final_table="$(run_privileged cat "$ACTIVE_TABLE_MARKER" 2>/dev/null)" || return 1
+  final_synced_table="$(run_privileged cat "$AGENT_SYNC_MARKER" 2>/dev/null)" || return 1
+  [[ "$final_table" == "$table_name" && "$final_synced_table" == "$table_name" ]] || return 1
   printf '%s\n' "$table_name"
+}
+
+wait_for_verified_active_nft_table() {
+  local attempt active_table
+  # 最长等待 60 秒，覆盖节点首次 WebSocket 握手和面板完整对账；超时后明确失败，
+  # 不回退打印仅由启动服务写入、随后可能马上失效的旧代际表。
+  for ((attempt = 1; attempt <= 60; attempt++)); do
+    if active_table="$(verified_active_nft_table)"; then
+      printf '%s\n' "$active_table"
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
 }
 
 list_managed_nft_tables() {
@@ -137,7 +165,7 @@ verify_uninstall_cleanup() {
 
   for path in "$SERVICE_FILE" "$AGENT_SERVICE_FILE" \
     "/etc/systemd/system/flux-nftables.service.d" "/etc/systemd/system/flux-nftables-agent.service.d" \
-    "$INSTALL_DIR" "$STATE_DIR" "/run/flux-nftables" "/var/run/flux-nftables" \
+    "$INSTALL_DIR" "$STATE_DIR" "$SYSCTL_FILE" "/run/flux-nftables" "/var/run/flux-nftables" \
     "/var/log/flux-nftables" "/var/log/flux-nftables.log"; do
     if [[ -e "$path" || -L "$path" ]]; then
       echo "❌ 卸载后仍有残留: $path" >&2
@@ -290,6 +318,7 @@ ensure_dependencies() {
   command -v nft >/dev/null 2>&1 || need_install=1
   command -v curl >/dev/null 2>&1 || need_install=1
   command -v conntrack >/dev/null 2>&1 || need_install=1
+  command -v sysctl >/dev/null 2>&1 || need_install=1
 
   if [[ $need_install -eq 0 ]]; then
     return 0
@@ -299,30 +328,56 @@ ensure_dependencies() {
     . /etc/os-release
     case "$ID" in
       ubuntu|debian)
-        $SUDO_CMD apt update && $SUDO_CMD apt install -y nftables curl conntrack
+        $SUDO_CMD apt update && $SUDO_CMD apt install -y nftables curl conntrack procps
         ;;
       centos|rhel|rocky|almalinux|fedora)
         if command -v dnf >/dev/null 2>&1; then
-          $SUDO_CMD dnf install -y nftables curl conntrack-tools
+          $SUDO_CMD dnf install -y nftables curl conntrack-tools procps-ng
         else
-          $SUDO_CMD yum install -y nftables curl conntrack-tools
+          $SUDO_CMD yum install -y nftables curl conntrack-tools procps-ng
         fi
         ;;
       alpine)
-        $SUDO_CMD apk add --no-cache nftables curl conntrack-tools
+        $SUDO_CMD apk add --no-cache nftables curl conntrack-tools procps
         ;;
       arch|manjaro)
-        $SUDO_CMD pacman -Sy --noconfirm nftables curl conntrack-tools
+        $SUDO_CMD pacman -Sy --noconfirm nftables curl conntrack-tools procps-ng
         ;;
       *)
-        echo "❌ 当前发行版暂未自动适配，请先手动安装 nftables/curl/conntrack"
+        echo "❌ 当前发行版暂未自动适配，请先手动安装 nftables/curl/conntrack/sysctl"
         exit 1
         ;;
     esac
   else
-    echo "❌ 无法识别系统，请先手动安装 nftables/curl/conntrack"
+    echo "❌ 无法识别系统，请先手动安装 nftables/curl/conntrack/sysctl"
     exit 1
   fi
+}
+
+install_forwarding_sysctl() {
+  local sysctl_tmp current
+  sysctl_tmp=$(mktemp) || return 1
+  cat > "$sysctl_tmp" <<'EOF'
+# Flux Panel 的 IPv4 DNAT 转发依赖内核路由；默认必须为 1，否则数据包不会进入 forward 链。
+# 这是主机级网络开关，可能影响同机其他防火墙或路由服务；卸载时仅删除本文件，不强制关闭运行时值。
+net.ipv4.ip_forward = 1
+EOF
+  if ! install_staged_file "$sysctl_tmp" "$SYSCTL_FILE" 0644; then
+    rm -f "$sysctl_tmp"
+    return 1
+  fi
+  rm -f "$sysctl_tmp"
+
+  if ! run_privileged sysctl -w net.ipv4.ip_forward=1 >/dev/null; then
+    echo "❌ 无法启用 net.ipv4.ip_forward，nftables DNAT 不能转发流量" >&2
+    return 1
+  fi
+  current="$(run_privileged sysctl -n net.ipv4.ip_forward 2>/dev/null)" || return 1
+  if [[ "$current" != "1" ]]; then
+    echo "❌ net.ipv4.ip_forward 当前值为 $current，期望为 1" >&2
+    return 1
+  fi
+  echo "✅ IPv4 内核转发已启用并持久化"
 }
 
 write_rule_script() {
@@ -337,7 +392,8 @@ install_service() {
   cat > "$service_tmp" <<EOF
 [Unit]
 Description=Flux Panel nftables Forward Service
-After=network-online.target
+# 必须等待系统 sysctl 配置加载完成，确保本服务恢复 DNAT 规则前 IPv4 转发已经启用。
+After=network-online.target systemd-sysctl.service
 Wants=network-online.target
 
 [Service]
@@ -405,6 +461,9 @@ install_nftables_mode() {
   echo "🚀 开始安装 nftables 转发模式..."
   get_config_params
   ensure_dependencies
+  if ! install_forwarding_sysctl; then
+    exit 1
+  fi
 
   local SUDO_CMD
   SUDO_CMD=$(get_sudo_cmd)
@@ -436,11 +495,12 @@ install_nftables_mode() {
   $SUDO_CMD systemctl enable nftables >/dev/null 2>&1 || true
   $SUDO_CMD systemctl enable flux-nftables.service
   $SUDO_CMD systemctl enable flux-nftables-agent.service
+  $SUDO_CMD rm -f "$AGENT_SYNC_MARKER"
   $SUDO_CMD systemctl restart flux-nftables.service
   $SUDO_CMD systemctl restart flux-nftables-agent.service
 
   local active_table
-  if active_table="$(verified_active_nft_table)"; then
+  if active_table="$(wait_for_verified_active_nft_table)"; then
     echo "✅ nftables 转发模式安装完成"
     echo "🔄 已从面板同步此节点当前启用的转发规则"
     echo "📌 当前活动规则表: inet $active_table"
@@ -459,10 +519,15 @@ update_nftables_mode() {
     echo "❌ 未安装 nftables 转发模式，请先安装"
     exit 1
   fi
+  ensure_dependencies
+  if ! install_forwarding_sysctl; then
+    exit 1
+  fi
+  $SUDO_CMD rm -f "$AGENT_SYNC_MARKER"
   $SUDO_CMD systemctl restart flux-nftables.service
   $SUDO_CMD systemctl restart flux-nftables-agent.service
   local active_table
-  if ! active_table="$(verified_active_nft_table)"; then
+  if ! active_table="$(wait_for_verified_active_nft_table)"; then
     echo "❌ 规则刷新后活动规则表验证失败，请查看：journalctl -u flux-nftables.service -n 50 --no-pager" >&2
     exit 1
   fi
@@ -499,6 +564,10 @@ upgrade_nftables_mode() {
   fi
 
   echo "🚀 开始更新节点组件 (面板: $SERVER_ADDR)..."
+  ensure_dependencies
+  if ! install_forwarding_sysctl; then
+    exit 1
+  fi
 
   if ! install_binary "nft_flow_reporter" "$FLOW_REPORTER_FILE"; then
     exit 1
@@ -514,11 +583,12 @@ upgrade_nftables_mode() {
     exit 1
   fi
 
+  $SUDO_CMD rm -f "$AGENT_SYNC_MARKER"
   $SUDO_CMD systemctl restart flux-nftables.service
   $SUDO_CMD systemctl restart flux-nftables-agent.service
 
   local active_table
-  if active_table="$(verified_active_nft_table)"; then
+  if active_table="$(wait_for_verified_active_nft_table)"; then
     echo "✅ 节点组件更新完成"
     echo "🔄 已从面板重新同步此节点当前启用的转发规则"
     echo "📌 当前活动规则表: inet $active_table"
@@ -570,6 +640,8 @@ uninstall_nftables_mode() {
   remove_uninstall_path "/etc/systemd/system/flux-nftables-agent.service.d"
   remove_uninstall_path "$INSTALL_DIR"
   remove_uninstall_path "$STATE_DIR"
+  remove_uninstall_path "$SYSCTL_FILE"
+  echo "ℹ️ 已删除 Flux Panel 的 IPv4 转发持久配置；为避免中断同机其他网络服务，当前运行时 ip_forward 值未自动关闭。"
   remove_uninstall_path "/run/flux-nftables"
   remove_uninstall_path "/var/run/flux-nftables"
   remove_uninstall_path "/var/log/flux-nftables"

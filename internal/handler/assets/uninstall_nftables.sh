@@ -12,6 +12,9 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
 AGENT_SERVICE_FILE="/etc/systemd/system/${AGENT_SERVICE_NAME}"
 SERVICE_OVERRIDE_DIR="/etc/systemd/system/${SERVICE_NAME}.d"
 AGENT_SERVICE_OVERRIDE_DIR="/etc/systemd/system/${AGENT_SERVICE_NAME}.d"
+# 安装器用此配置持久启用 IPv4 DNAT 转发；卸载只删除文件，不强制把运行时值改回 0，
+# 避免中断同机 Docker、VPN、路由器等其他依赖内核转发的服务。
+SYSCTL_FILE="/etc/sysctl.d/99-flux-nftables-forwarding.conf"
 # 固定历史表名限定项目所有权；卸载只额外接受严格的 32 位小写十六进制代际表，
 # 不从可编辑配置扩大删除范围，避免误删第三方 nftables 表。
 NFT_TABLE_NAME="flux_panel"
@@ -150,7 +153,7 @@ verify_cleanup() {
   local path remaining
 
   for path in "$SERVICE_FILE" "$AGENT_SERVICE_FILE" "$SERVICE_OVERRIDE_DIR" "$AGENT_SERVICE_OVERRIDE_DIR" \
-    "$INSTALL_DIR" "$STATE_DIR" "/run/flux-nftables" "/var/run/flux-nftables" \
+    "$INSTALL_DIR" "$STATE_DIR" "$SYSCTL_FILE" "/run/flux-nftables" "/var/run/flux-nftables" \
     "/var/log/flux-nftables" "/var/log/flux-nftables.log"; do
     if [[ -e "$path" || -L "$path" ]]; then
       echo "Cleanup incomplete: $path" >&2
@@ -202,6 +205,8 @@ remove_path "$SERVICE_OVERRIDE_DIR"
 remove_path "$AGENT_SERVICE_OVERRIDE_DIR"
 remove_path "$INSTALL_DIR"
 remove_path "$STATE_DIR"
+remove_path "$SYSCTL_FILE"
+echo "Removed the persistent Flux Panel IPv4 forwarding setting; the current runtime ip_forward value was left unchanged to protect other network services."
 remove_path "/run/flux-nftables"
 remove_path "/var/run/flux-nftables"
 remove_path "/var/log/flux-nftables"

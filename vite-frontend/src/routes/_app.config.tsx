@@ -143,6 +143,10 @@ function ConfigPage() {
   const normalizeForSave = (payload: Record<string, string>) => {
     const next = { ...payload };
     if (next.ip !== undefined) next.ip = next.ip.trim().replace(/\/+$/, "");
+    // GitHub 代理默认留空；非空值去掉末尾斜杠，后端仍会执行 HTTPS 与路径安全校验。
+    if (next.github_download_proxy !== undefined) {
+      next.github_download_proxy = next.github_download_proxy.trim().replace(/\/+$/, "");
+    }
     return next;
   };
 

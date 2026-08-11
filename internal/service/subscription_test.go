@@ -1044,14 +1044,23 @@ func TestBuildVlessServerBootstrapCommand(t *testing.T) {
 	}
 	// 固定占位值只用于验证命令参数拼接，不是可用的订阅 API 密钥。
 	updateOrCreateConfig(subAPIKeyConfigName, "test-key")
+	updateOrCreateConfig(githubDownloadProxyConfigName, "https://proxy.example.com/github/")
 	cmd := BuildVlessServerBootstrapCommand("https://panel.example.com/", "")
 	for _, want := range []string{
 		"https://panel.example.com/api/v1/sub/vless-server.sh",
+		"FLUX_GITHUB_PROXY='https://proxy.example.com/github'",
 		"--flux-panel-bind 'https://panel.example.com' 'test-key'",
 	} {
 		if !strings.Contains(cmd, want) {
 			t.Fatalf("expected %q in command: %s", want, cmd)
 		}
+	}
+
+	// 旧数据库或手工恢复可能绕过当前写入校验；生成 root 命令时必须忽略不安全代理。
+	updateOrCreateConfig(githubDownloadProxyConfigName, "http://untrusted.example.com")
+	cmd = BuildVlessServerBootstrapCommand("https://panel.example.com/", "")
+	if strings.Contains(cmd, "FLUX_GITHUB_PROXY") || strings.Contains(cmd, "untrusted.example.com") {
+		t.Fatalf("bootstrap command included an unsafe legacy GitHub proxy: %s", cmd)
 	}
 }
 

@@ -92,6 +92,48 @@ func TestAllowInsecureNodeDownloadsConfigIsStrictAndNormalized(t *testing.T) {
 	}
 }
 
+func TestGitHubDownloadProxyConfigIsStrictAndNormalized(t *testing.T) {
+	if err := model.Init(filepath.Join(t.TempDir(), "panel.db")); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	t.Cleanup(func() { _ = model.Close() })
+
+	for _, value := range []string{
+		"http://proxy.example.com",
+		"https://user:password@proxy.example.com",
+		"https://proxy.example.com/base?target=github",
+		"https://proxy.example.com/base#fragment",
+		"https://proxy.example.com/base//nested",
+		"https://proxy.example.com/base/%2f/nested",
+	} {
+		res := UpdateConfigs(map[string]string{
+			"app_name":                    "must-not-save",
+			githubDownloadProxyConfigName: value,
+		})
+		if res.Code == 0 {
+			t.Fatalf("invalid GitHub proxy %q was accepted", value)
+		}
+		if got := GetConfigValue("app_name"); got == "must-not-save" {
+			t.Fatalf("invalid GitHub proxy %q caused a partial batch save", value)
+		}
+	}
+
+	if res := UpdateConfigs(map[string]string{
+		githubDownloadProxyConfigName: "  https://proxy.example.com/github/  ",
+	}); res.Code != 0 {
+		t.Fatalf("save GitHub proxy: code=%d msg=%s", res.Code, res.Msg)
+	}
+	if got := GetConfigValue(githubDownloadProxyConfigName); got != "https://proxy.example.com/github" {
+		t.Fatalf("normalized GitHub proxy=%q", got)
+	}
+	if res := UpdateConfigs(map[string]string{githubDownloadProxyConfigName: ""}); res.Code != 0 {
+		t.Fatalf("clear GitHub proxy: code=%d msg=%s", res.Code, res.Msg)
+	}
+	if got := GetConfigValue(githubDownloadProxyConfigName); got != "" {
+		t.Fatalf("cleared GitHub proxy=%q", got)
+	}
+}
+
 func TestConfigWriteFailuresAreReportedAndBatchRollsBack(t *testing.T) {
 	if err := model.Init(filepath.Join(t.TempDir(), "panel.db")); err != nil {
 		t.Fatalf("init db: %v", err)

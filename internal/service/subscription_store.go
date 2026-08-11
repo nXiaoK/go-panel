@@ -795,10 +795,20 @@ func BuildVlessServerBootstrapCommand(panelURL, apiKey string) string {
 	if key == "" {
 		key = GetConfigValue(subAPIKeyConfigName)
 	}
+	// GitHub 代理默认不启用；只有通过系统配置 HTTPS 校验的前缀才会传给订阅脚本。
+	// 代理会接触 Xray、sing-box 等可执行文件，管理员必须自行确认其可信度。
+	githubProxy, err := normalizeGitHubDownloadProxy(GetConfigValue(githubDownloadProxyConfigName))
+	if err != nil {
+		githubProxy = ""
+	}
+	runPrefix := ""
+	if githubProxy != "" {
+		runPrefix = "FLUX_GITHUB_PROXY=" + shellQuote(githubProxy) + " "
+	}
 	scriptURL := strings.TrimRight(base, "/") + "/api/v1/sub/" + url.PathEscape(vlessServerScriptName)
 	return fmt.Sprintf(
-		"curl -fsSL %s -o ./vless-server.sh && chmod +x ./vless-server.sh && ./vless-server.sh --flux-panel-bind %s %s",
-		shellQuote(scriptURL), shellQuote(base), shellQuote(key))
+		"curl -fsSL %s -o ./vless-server.sh && chmod +x ./vless-server.sh && %s./vless-server.sh --flux-panel-bind %s %s",
+		shellQuote(scriptURL), runPrefix, shellQuote(base), shellQuote(key))
 }
 
 func GetVlessServerScriptPath() (string, error) {

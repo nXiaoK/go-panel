@@ -48,6 +48,38 @@ readonly DB_FILE="$CFG/db.json"
 readonly SUB_PANEL_FILE="$CFG/sub-panel.env"
 readonly SUB_PANEL_NODE_ID_FILE="$CFG/sub-panel-node-id"
 
+# GitHub 下载代理默认留空并直连；面板可通过 FLUX_GITHUB_PROXY 首次下发，
+# 随后保存为 SUB_PANEL_GITHUB_PROXY。代理会接触可执行文件，只能使用可信 HTTPS 服务。
+github_proxy_base() {
+    local proxy="${FLUX_GITHUB_PROXY:-${SUB_PANEL_GITHUB_PROXY:-}}"
+    proxy="${proxy%/}"
+    [[ -z "$proxy" ]] && return 1
+    case "$proxy" in
+        https://*) ;;
+        *) return 1 ;;
+    esac
+    [[ "$proxy" != *[[:space:]?\#@]* ]] || return 1
+    local rest="${proxy#https://}" authority=""
+    authority="${rest%%/*}"
+    [[ -n "$authority" ]] || return 1
+    printf '%s\n' "$proxy"
+}
+
+# 代理格式为“HTTPS 代理前缀 + / + 完整 GitHub URL”；留空时返回原地址。
+# 仅允许项目实际使用的三个 GitHub HTTPS 域名，避免此函数被误用为任意 URL 转发器。
+github_download_url() {
+    local upstream="$1" proxy=""
+    case "$upstream" in
+        https://github.com/*|https://api.github.com/*|https://raw.githubusercontent.com/*) ;;
+        *) return 1 ;;
+    esac
+    if proxy=$(github_proxy_base); then
+        printf '%s/%s\n' "$proxy" "$upstream"
+    else
+        printf '%s\n' "$upstream"
+    fi
+}
+
 # 初始化数据库
 init_db() {
     mkdir -p "$CFG" || return 1
@@ -162,13 +194,19 @@ sub_panel_quote() {
 }
 
 save_sub_panel_config() {
-    local panel_url="$1" api_key="$2"
+    local panel_url="$1" api_key="$2" github_proxy=""
+    github_proxy=$(github_proxy_base 2>/dev/null || true)
     mkdir -p "$CFG" || return 1
     umask 077
-    cat > "$SUB_PANEL_FILE" <<EOF
-SUB_PANEL_URL=$(sub_panel_quote "$panel_url")
-SUB_PANEL_API_KEY=$(sub_panel_quote "$api_key")
-EOF
+    {
+        echo "# Flux Panel 地址和 API Key 用于节点上报；文件权限必须保持为仅 root 可读。"
+        echo "SUB_PANEL_URL=$(sub_panel_quote "$panel_url")"
+        echo "SUB_PANEL_API_KEY=$(sub_panel_quote "$api_key")"
+        if [[ -n "$github_proxy" ]]; then
+            echo "# GitHub 下载代理会接触可执行文件；仅保留面板校验后的可信 HTTPS 前缀。"
+            echo "SUB_PANEL_GITHUB_PROXY=$(sub_panel_quote "$github_proxy")"
+        fi
+    } > "$SUB_PANEL_FILE"
 }
 
 sub_panel_base_url() {
@@ -2902,7 +2940,9 @@ install_acme_tool() {
     # 方法2: 使用 git clone
     if command -v git &>/dev/null; then
         _info "尝试使用 git 安装..."
-        if git clone --depth 1 https://github.com/acmesh-official/acme.sh.git /tmp/acme.sh 2>/dev/null; then
+        local acme_repo_url
+        acme_repo_url=$(github_download_url "https://github.com/acmesh-official/acme.sh.git")
+        if git clone --depth 1 "$acme_repo_url" /tmp/acme.sh 2>/dev/null; then
             cd /tmp/acme.sh && ./acme.sh --install -m admin@example.com 2>/dev/null
             cd - >/dev/null
             rm -rf /tmp/acme.sh
@@ -2916,7 +2956,9 @@ install_acme_tool() {
     # 方法3: 直接下载脚本
     _info "尝试直接下载..."
     mkdir -p "$HOME/.acme.sh"
-    if curl -sL -o "$HOME/.acme.sh/acme.sh" "https://raw.githubusercontent.com/acmesh-official/acme.sh/master/acme.sh" 2>/dev/null; then
+    local acme_raw_url
+    acme_raw_url=$(github_download_url "https://raw.githubusercontent.com/acmesh-official/acme.sh/master/acme.sh")
+    if curl -sL -o "$HOME/.acme.sh/acme.sh" "$acme_raw_url" 2>/dev/null; then
         chmod +x "$HOME/.acme.sh/acme.sh"
         if [[ -f "$HOME/.acme.sh/acme.sh" ]]; then
             _ok "acme.sh 安装成功 (直接下载)"
@@ -3713,7 +3755,9 @@ fix_selinux_context() {
 # 获取 GitHub 最新版本号
 _get_latest_version() {
     local repo="$1"
-    curl -sL "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null | jq -r '.tag_name // empty' | sed 's/^v//'
+    local api_url
+    api_url=$(github_download_url "https://api.github.com/repos/$repo/releases/latest") || return 1
+    curl -sL "$api_url" 2>/dev/null | jq -r '.tag_name // empty' | sed 's/^v//'
 }
 
 # 架构映射 (减少重复代码)
@@ -3742,6 +3786,7 @@ _install_binary() {
     local arch=$(uname -m)
     local tmp=$(mktemp -d)
     local url=$(eval echo "$url_pattern")
+    url=$(github_download_url "$url") || { rm -rf "$tmp"; _err "$name 下载地址无效"; return 1; }
 
     if curl -sLo "$tmp/pkg" --connect-timeout 60 "$url"; then
         eval "$extract_cmd"
@@ -3788,7 +3833,12 @@ install_xray() {
     [[ -z "$version" ]] && { _err "获取 Xray-core 版本失败"; return 1; }
 
     local tmp=$(mktemp -d)
-    local url="https://github.com/XTLS/Xray-core/releases/download/v${version}/Xray-linux-${xarch}.zip"
+    local url
+    url=$(github_download_url "https://github.com/XTLS/Xray-core/releases/download/v${version}/Xray-linux-${xarch}.zip") || {
+        rm -rf "$tmp"
+        _err "Xray-core 下载地址无效"
+        return 1
+    }
 
     if curl -sLo "$tmp/pkg" --connect-timeout 60 "$url"; then
         if unzip -oq "$tmp/pkg" -d "$tmp/" && [[ -f "$tmp/xray" ]]; then
@@ -4208,8 +4258,14 @@ install_naive() {
     local tmp=$(mktemp -d)
 
     # 获取 tar.xz 下载链接 (使用 jq 解析 JSON)
+    local release_api_url
+    release_api_url=$(github_download_url "https://api.github.com/repos/klzgrad/forwardproxy/releases/latest") || {
+        rm -rf "$tmp"
+        _err "GitHub Release API 地址无效"
+        return 1
+    }
     local download_url=$(curl -sL --connect-timeout "$CURL_TIMEOUT_NORMAL" \
-        "https://api.github.com/repos/klzgrad/forwardproxy/releases/latest" | \
+        "$release_api_url" | \
         jq -r '.assets[] | select(.name | endswith(".tar.xz")) | .browser_download_url' 2>/dev/null | head -1)
 
     if [[ -z "$download_url" ]]; then
@@ -4217,6 +4273,11 @@ install_naive() {
         rm -rf "$tmp"
         return 1
     fi
+    download_url=$(github_download_url "$download_url") || {
+        _err "Release 返回了非 GitHub 下载地址"
+        rm -rf "$tmp"
+        return 1
+    }
 
     _info "下载: $download_url"
     if curl -fSLo "$tmp/caddy.tar.xz" --connect-timeout 60 --retry 3 "$download_url"; then
@@ -5374,7 +5435,8 @@ create_shortcut() {
             cp -f "$real_path" "$system_script"
         else
             # 内存运行模式，从网络下载
-            local raw_url="https://raw.githubusercontent.com/Chil30/vless-all-in-one/main/vless-server.sh"
+            local raw_url
+            raw_url=$(github_download_url "https://raw.githubusercontent.com/Chil30/vless-all-in-one/main/vless-server.sh")
             if ! curl -sL --connect-timeout 10 -o "$system_script" "$raw_url"; then
                 _warn "无法下载脚本到系统目录"
                 return 1
@@ -5472,31 +5534,29 @@ download_wgcf() {
 
     # 自动获取最新版本
     echo -ne "  ${C}▸${NC} 获取 wgcf 最新版本..."
-    local wgcf_ver=$(curl -sL --connect-timeout 10 "https://api.github.com/repos/ViRb3/wgcf/releases/latest" | jq -r '.tag_name' 2>/dev/null | tr -d 'v')
+    local wgcf_api_url
+    wgcf_api_url=$(github_download_url "https://api.github.com/repos/ViRb3/wgcf/releases/latest")
+    local wgcf_ver=$(curl -sL --connect-timeout 10 "$wgcf_api_url" | jq -r '.tag_name' 2>/dev/null | tr -d 'v')
     [[ -z "$wgcf_ver" || "$wgcf_ver" == "null" ]] && wgcf_ver="2.2.29"
     echo -e " v${wgcf_ver}"
 
-    local wgcf_urls=(
-        "https://github.com/ViRb3/wgcf/releases/download/v${wgcf_ver}/wgcf_${wgcf_ver}_linux_${wgcf_arch}"
-        "https://mirror.ghproxy.com/https://github.com/ViRb3/wgcf/releases/download/v${wgcf_ver}/wgcf_${wgcf_ver}_linux_${wgcf_arch}"
-        "https://gh-proxy.com/https://github.com/ViRb3/wgcf/releases/download/v${wgcf_ver}/wgcf_${wgcf_ver}_linux_${wgcf_arch}"
-    )
+    local wgcf_url
+    wgcf_url=$(github_download_url "https://github.com/ViRb3/wgcf/releases/download/v${wgcf_ver}/wgcf_${wgcf_ver}_linux_${wgcf_arch}") || {
+        _err "wgcf 下载地址无效"
+        return 1
+    }
 
     rm -f /usr/local/bin/wgcf
-    local try_num=1
-    for url in "${wgcf_urls[@]}"; do
-        echo -ne "  ${C}▸${NC} 下载 wgcf (尝试 $try_num/3)..."
-        if curl -fL -o /usr/local/bin/wgcf "$url" --connect-timeout 30 --max-time 120 2>/dev/null; then
-            if [[ -s /usr/local/bin/wgcf ]] && file /usr/local/bin/wgcf 2>/dev/null | grep -q "ELF"; then
-                chmod +x /usr/local/bin/wgcf
-                echo -e " ${G}✓${NC}"
-                return 0
-            fi
+    echo -ne "  ${C}▸${NC} 下载 wgcf..."
+    if curl -fL --retry 3 -o /usr/local/bin/wgcf "$wgcf_url" --connect-timeout 30 --max-time 120 2>/dev/null; then
+        if [[ -s /usr/local/bin/wgcf ]] && file /usr/local/bin/wgcf 2>/dev/null | grep -q "ELF"; then
+            chmod +x /usr/local/bin/wgcf
+            echo -e " ${G}✓${NC}"
+            return 0
         fi
-        echo -e " ${R}✗${NC}"
-        rm -f /usr/local/bin/wgcf
-        ((try_num++))
-    done
+    fi
+    echo -e " ${R}✗${NC}"
+    rm -f /usr/local/bin/wgcf
 
     _err "wgcf 下载失败"
     return 1
@@ -13954,7 +14014,11 @@ do_update() {
     echo -e "  当前版本: ${G}v${VERSION}${NC}"
     _info "检查最新版本..."
 
-    local raw_url="https://raw.githubusercontent.com/Chil30/vless-all-in-one/main/vless-server.sh"
+    local raw_url
+    raw_url=$(github_download_url "https://raw.githubusercontent.com/Chil30/vless-all-in-one/main/vless-server.sh") || {
+        _err "GitHub 更新地址无效"
+        return 1
+    }
     local tmp_file=$(mktemp)
 
     # 下载最新脚本
@@ -14043,6 +14107,8 @@ main_menu() {
     check_root
     init_log  # 初始化日志
     init_db   # 初始化 JSON 数据库
+    # 读取面板保存的 GitHub HTTPS 代理；未配置时所有下载保持直连。
+    load_sub_panel_config || true
 
     # 自动更新系统脚本 (确保 vless 命令始终是最新版本)
     _auto_update_system_script

@@ -51,6 +51,11 @@ func run(cfg config, onConnected func()) error {
 	if err != nil {
 		return err
 	}
+	// 每次连接尝试前清除旧同步标记；只有当前 WebSocket 会话收到并成功执行
+	// 面板的首次全量 ApplyNftRules 后，安装器才可把当前代际表报告为已同步。
+	if err := clearAgentSyncMarker(); err != nil {
+		return err
+	}
 	// 自定义 Dialer：限制握手超时，避免 TCP 接受但 WS 握手卡住时永久阻塞
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	conn, _, err := dialer.Dial(wsURL, nil)
@@ -124,6 +129,8 @@ type liveCommandExecutor struct {
 	conn             *websocket.Conn
 	secret           string
 	panelBaseURL     string
+	applyRules       func() error
+	markRulesSynced  func() error
 	upgradeRunner    func(json.RawMessage, string) error
 	restartScheduler func(string)
 	upgradeLog       io.Writer
@@ -140,7 +147,20 @@ func (e *liveCommandExecutor) Execute(_ context.Context, cmd commandMessage) com
 
 	switch cmd.Type {
 	case "ApplyNftRules":
-		if err := applyNftRulesWithRunner(applyScriptPath, runBoundedCommand); err != nil {
+		applyRules := e.applyRules
+		if applyRules == nil {
+			applyRules = func() error { return applyNftRulesWithRunner(applyScriptPath, runBoundedCommand) }
+		}
+		if err := applyRules(); err != nil {
+			resp.Success = false
+			resp.Message = err.Error()
+			break
+		}
+		markRulesSynced := e.markRulesSynced
+		if markRulesSynced == nil {
+			markRulesSynced = writeAgentSyncMarker
+		}
+		if err := markRulesSynced(); err != nil {
 			resp.Success = false
 			resp.Message = err.Error()
 		}
