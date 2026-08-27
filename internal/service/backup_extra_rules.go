@@ -105,9 +105,13 @@ func detectExtraRulesForNode(node *model.Node) []*ExtraRule {
 	seen := make(map[string]bool)
 
 	for _, rule := range parsedRules {
-		// 跳过已在数据库中的规则
+		// 只跳过数据库中仍存在的受管转发。强制删除后遗留的 fp 注释规则
+		// 必须继续暴露给管理员，否则它会在节点上长期保持可用。
 		if rule.ForwardID != 0 {
-			continue
+			var count int64
+			if err := model.DB.Model(&model.Forward{}).Where("id = ?", rule.ForwardID).Count(&count).Error; err == nil && count > 0 {
+				continue
+			}
 		}
 
 		// 去重
@@ -272,6 +276,13 @@ func HandleExtraRules(cu CurrentUser, req *HandleExtraRulesRequest) result.R {
 					Action:  "keep",
 					Success: false,
 					Error:   "隧道不存在",
+				})
+				continue
+			}
+			if tunnelHasRelay(&tunnel) {
+				details = append(details, HandleRuleActionResult{
+					NodeID: rule.NodeID, InPort: rule.InPort, Action: "keep", Success: false,
+					Error: "三节点串联规则必须由面板按完整 A→B→C 路径重建，不能保留单节点规则",
 				})
 				continue
 			}

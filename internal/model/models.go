@@ -67,11 +67,14 @@ func (Node) TableName() string { return "node" }
 
 // Tunnel 隧道表
 type Tunnel struct {
-	ID            int64   `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	Name          string  `gorm:"column:name;size:100;not null" json:"name"`
-	TrafficRatio  float64 `gorm:"column:traffic_ratio;not null;default:1.0" json:"trafficRatio"`
-	InNodeID      int64   `gorm:"column:in_node_id;not null" json:"inNodeId"`
-	InIP          string  `gorm:"column:in_ip;size:100;not null" json:"inIp"`
+	ID           int64   `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	Name         string  `gorm:"column:name;size:100;not null" json:"name"`
+	TrafficRatio float64 `gorm:"column:traffic_ratio;not null;default:1.0" json:"trafficRatio"`
+	InNodeID     int64   `gorm:"column:in_node_id;not null" json:"inNodeId"`
+	InIP         string  `gorm:"column:in_ip;size:100;not null" json:"inIp"`
+	// RelayNodeID/RelayIP 为空时保持原有两节点链路；非空时表示 nftables 中继节点。
+	RelayNodeID   *int64  `gorm:"column:relay_node_id;index" json:"relayNodeId,omitempty"`
+	RelayIP       *string `gorm:"column:relay_ip;size:100" json:"relayIp,omitempty"`
 	OutNodeID     int64   `gorm:"column:out_node_id;not null" json:"outNodeId"`
 	OutIP         string  `gorm:"column:out_ip;size:100;not null" json:"outIp"`
 	Type          int     `gorm:"column:type;not null" json:"type"`
@@ -115,9 +118,11 @@ func (Forward) TableName() string { return "forward" }
 
 // ForwardExitMember 转发出口成员表。
 type ForwardExitMember struct {
-	ID          int64 `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	ForwardID   int64 `gorm:"column:forward_id;not null;index" json:"forwardId"`
-	OutNodeID   int64 `gorm:"column:out_node_id;not null;index" json:"outNodeId"`
+	ID        int64 `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ForwardID int64 `gorm:"column:forward_id;not null;index" json:"forwardId"`
+	OutNodeID int64 `gorm:"column:out_node_id;not null;index" json:"outNodeId"`
+	// RelayPort 是三节点 nftables 链路在中继节点上的监听端口；0 表示传统两节点链路。
+	RelayPort   int   `gorm:"column:relay_port;not null;default:0" json:"relayPort"`
 	OutPort     int   `gorm:"column:out_port;not null" json:"outPort"`
 	Weight      int   `gorm:"column:weight;not null;default:1" json:"weight"`
 	Status      int   `gorm:"column:status;not null;default:1" json:"status"`

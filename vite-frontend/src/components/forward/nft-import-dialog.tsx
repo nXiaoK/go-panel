@@ -216,7 +216,7 @@ export function NftDetectDialog({
                 <div>
                   <div className="font-medium">隧道转发识别</div>
                   <div className="text-xs text-muted-foreground">
-                    识别通过中转节点的隧道转发配置（选择入口与出口节点）
+                    识别两节点隧道转发配置（A → B）；三节点 A → B → C 暂不支持导入
                   </div>
                 </div>
               </label>

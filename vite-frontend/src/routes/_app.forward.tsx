@@ -704,10 +704,29 @@ function renderForwardExit(f: Forward, tunnel: Tunnel | undefined, nodeMap: Map<
     ? f.exitMembers
     : defaultExitMembers(tunnel).map((m) => ({ ...m, outPort: f.outPort || undefined }));
   const visible = mode === "balance" ? members : members.filter((m) => m.active);
-  const names = (visible.length ? visible : members)
+  const renderedMembers = visible.length ? visible : members;
+  if (tunnel?.relayNodeId) {
+    const relayName = nodeMap.get(tunnel.relayNodeId)?.name || `#${tunnel.relayNodeId}`;
+    const paths = renderedMembers.map((member) => {
+      const exitName =
+        member.outNodeName || nodeMap.get(member.outNodeId)?.name || `#${member.outNodeId}`;
+      return `${relayName}:${member.relayPort || "-"} → ${exitName}:${member.outPort || "-"}`;
+    });
+    return (
+      <div className="min-w-[190px]">
+        <Badge variant="outline" className="border-border/60 text-[10px]">
+          {exitModeLabel(mode)} · 三节点
+        </Badge>
+        <div className="mt-1 font-mono text-[10px] text-muted-foreground" title={paths.join(", ")}>
+          {paths.join(", ") || "-"}
+        </div>
+      </div>
+    );
+  }
+  const names = renderedMembers
     .map((m) => m.outNodeName || nodeMap.get(m.outNodeId)?.name || `#${m.outNodeId}`)
     .join(", ");
-  const ports = (visible.length ? visible : members)
+  const ports = renderedMembers
     .map((m) => m.outPort)
     .filter(Boolean)
     .join(", ");

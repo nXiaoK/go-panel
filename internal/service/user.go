@@ -417,9 +417,11 @@ func loadTrafficTunnelOptions(scope packageTrafficScope) ([]dto.TrafficTunnelOpt
 		SELECT
 			t.id AS tunnel_id, t.name AS tunnel_name, t.type,
 			t.in_node_id AS in_node_id, COALESCE(in_node.name, '') AS in_node_name,
+			t.relay_node_id AS relay_node_id, COALESCE(relay_node.name, '') AS relay_node_name,
 			t.out_node_id AS out_node_id, COALESCE(out_node.name, '') AS out_node_name
 		FROM tunnel t
 		LEFT JOIN node in_node ON in_node.id = t.in_node_id
+		LEFT JOIN node relay_node ON relay_node.id = t.relay_node_id
 		LEFT JOIN node out_node ON out_node.id = t.out_node_id`
 	var options []dto.TrafficTunnelOption
 	query := selectSQL

@@ -136,6 +136,7 @@ export function ForwardFormDialog({
     const entryMode = selectedEntryNode?.forwardMode;
     return nodes.filter((n) => {
       if (n.id === selectedTunnel.inNodeId) return false;
+      if (n.id === selectedTunnel.relayNodeId) return false;
       if (entryMode && n.forwardMode && n.forwardMode !== entryMode) return false;
       return true;
     });
@@ -222,6 +223,13 @@ export function ForwardFormDialog({
       exitMembers,
     });
     if (validationError) return toast.error(validationError);
+    if (
+      tunnel?.relayNodeId &&
+      form.targetMode !== "manual" &&
+      form.targetAddrs.filter((item) => item.trim()).length > 1
+    ) {
+      return toast.error("三节点 nftables 串联暂不支持多目标自动负载，请使用手动目标");
+    }
     const entryNode = tunnel ? nodeMap.get(tunnel.inNodeId) : null;
     if (
       isTunnelForward(tunnel) &&

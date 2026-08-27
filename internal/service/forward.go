@@ -81,6 +81,9 @@ func createForwardInternal(cu CurrentUser, req dto.ForwardDto) (*model.Forward, 
 	if errMsg != "" {
 		return nil, result.Err(errMsg)
 	}
+	if errMsg := validateRelayTargetConfig(&tunnel, targetCfg); errMsg != "" {
+		return nil, result.Err(errMsg)
+	}
 	if errMsg := validateForwardNftNodeTargets(&tunnel, inNode, outNode, exitMembers); errMsg != "" {
 		return nil, result.Err(errMsg)
 	}
@@ -89,7 +92,8 @@ func createForwardInternal(cu CurrentUser, req dto.ForwardDto) (*model.Forward, 
 	defer unlockSaga()
 	var lockedTunnel model.Tunnel
 	if err := model.DB.First(&lockedTunnel, tunnel.ID).Error; err != nil || lockedTunnel.Status != tunnelStatusActive ||
-		lockedTunnel.Type != tunnel.Type || lockedTunnel.InNodeID != tunnel.InNodeID || lockedTunnel.OutNodeID != tunnel.OutNodeID {
+		lockedTunnel.Type != tunnel.Type || lockedTunnel.InNodeID != tunnel.InNodeID || lockedTunnel.OutNodeID != tunnel.OutNodeID ||
+		tunnelRelayNodeID(&lockedTunnel) != tunnelRelayNodeID(&tunnel) {
 		return nil, result.Err("隧道已变更，请重试")
 	}
 	tunnel = lockedTunnel
@@ -170,7 +174,14 @@ func createForwardInternal(cu CurrentUser, req dto.ForwardDto) (*model.Forward, 
 	if r := createGostServices(&forward, &tunnel, perm.limiter, inNode, outNode, perm.userTunnel); r.Code != 0 {
 		return nil, result.Err(fmt.Sprintf("创建运行配置失败: %v", failCreatedForwardSaga(errors.New(r.Msg), &forward, &tunnel, inNode, outNode, perm.userTunnel, affected)))
 	}
-	if deployErr := refreshNftNodesCheckedLocked(affected); deployErr != nil {
+	var deployErr error
+	if tunnelHasRelay(&tunnel) {
+		// C、B 均确认规则就绪后才启用 A，避免下游离线时先暴露入口黑洞。
+		deployErr = refreshNftNodesUntilErrorLocked(reverseNodeIDs(affected))
+	} else {
+		deployErr = refreshNftNodesCheckedLocked(affected)
+	}
+	if deployErr != nil {
 		return nil, result.Err(fmt.Sprintf("创建 nft 规则失败: %v", failCreatedForwardSaga(deployErr, &forward, &tunnel, inNode, outNode, perm.userTunnel, affected)))
 	}
 	return &forward, result.Ok("端口转发创建成功")
@@ -290,7 +301,7 @@ func updateForwardInternalWithFreshCurrent(req dto.ForwardUpdateDto, opUserID in
 		return result.Err("隧道已禁用，无法更新转发")
 	}
 
-	candidateNodes := []int64{tunnel.InNodeID, tunnel.OutNodeID}
+	candidateNodes := tunnelPathNodeIDs(&tunnel)
 	for _, member := range req.ExitMembers {
 		candidateNodes = append(candidateNodes, member.OutNodeID)
 	}
@@ -316,7 +327,8 @@ func updateForwardInternalWithFreshCurrent(req dto.ForwardUpdateDto, opUserID in
 	}
 	var lockedNewTunnel model.Tunnel
 	if err := model.DB.First(&lockedNewTunnel, req.TunnelID).Error; err != nil || lockedNewTunnel.Status != tunnelStatusActive ||
-		lockedNewTunnel.Type != tunnel.Type || lockedNewTunnel.InNodeID != tunnel.InNodeID || lockedNewTunnel.OutNodeID != tunnel.OutNodeID {
+		lockedNewTunnel.Type != tunnel.Type || lockedNewTunnel.InNodeID != tunnel.InNodeID || lockedNewTunnel.OutNodeID != tunnel.OutNodeID ||
+		tunnelRelayNodeID(&lockedNewTunnel) != tunnelRelayNodeID(&tunnel) {
 		return result.Err("目标隧道已变更，请重试")
 	}
 	tunnel = lockedNewTunnel
@@ -362,6 +374,9 @@ func updateForwardInternalWithFreshCurrent(req dto.ForwardUpdateDto, opUserID in
 	}
 	targetCfg, errMsg := normalizeForwardTargetConfig(targetModeRequest, req.RemoteAddr, activeRemoteRequest, forwardTargetsRequireLiteralIP(&tunnel, inNode, outNode, exitMembers))
 	if errMsg != "" {
+		return result.Err(errMsg)
+	}
+	if errMsg := validateRelayTargetConfig(&tunnel, targetCfg); errMsg != "" {
 		return result.Err(errMsg)
 	}
 	if errMsg := validateForwardNftNodeTargets(&tunnel, inNode, outNode, exitMembers); errMsg != "" {
@@ -498,7 +513,7 @@ func updateForwardInternalWithFreshCurrent(req dto.ForwardUpdateDto, opUserID in
 	rollbackPorts := func() error {
 		return restoreForwardDesiredSnapshot(*existForward, oldPersistedExitMembers)
 	}
-	affected := []int64{oldTunnel.InNodeID, oldTunnel.OutNodeID, tunnel.InNodeID, tunnel.OutNodeID}
+	affected := append(tunnelPathNodeIDs(&oldTunnel), tunnelPathNodeIDs(&tunnel)...)
 	for _, member := range oldDeployExitMembers {
 		affected = append(affected, member.OutNodeID)
 	}
@@ -696,8 +711,25 @@ func ForceDeleteForward(cu CurrentUser, id int64) result.R {
 	if forward == nil {
 		return result.Err("端口转发不存在")
 	}
+	forward, tunnel, unlockSaga, err := lockForwardSagaSnapshot(id, nil)
+	if err != nil {
+		return result.Err("隧道不存在")
+	}
+	defer unlockSaga()
+	affected := nftRuntimeNodeIDs(forward, &tunnel)
+	var flushErr error
+	if inNode, _, msg := getRequiredNodes(&tunnel); msg == "" {
+		flushErr = FlushForwardConntrackForUpdate(forward, &tunnel, inNode)
+	}
 	if err := deleteForwardRows(model.DB, id); err != nil {
 		return result.Err("端口转发强制删除失败")
+	}
+	refreshErr := refreshNftNodesDeletingCheckedLocked(affected)
+	if refreshErr != nil {
+		markNodesDirtyBestEffort(affected...)
+	}
+	if flushErr != nil || refreshErr != nil {
+		return result.OkMsg("端口转发已强制删除，离线节点或残留连接等待重连/超时清理")
 	}
 	return result.Ok("端口转发强制删除成功")
 }
@@ -844,23 +876,42 @@ func DiagnoseForward(cu CurrentUser, id int64) result.R {
 		if err := model.DB.First(&outNode, member.OutNodeID).Error; err != nil {
 			return result.Err("出口节点不存在")
 		}
-		// 入口->出口：优先测 forward 的 OutPort（gost remote service 端口），
-		// OutPort 缺失/为 0 时回退测 22（网络连通性）并标注
-		outPort := 22
-		desc := "入口->出口"
-		if member.OutPort > 0 {
-			outPort = member.OutPort
-		} else {
-			desc = "入口->出口(无出口端口,默认测SSH 22)"
-		}
-		results = append(results, performTcpPing(&inNode, outNode.ServerIP, outPort, desc, 2, 3000))
-		for _, remote := range remoteAddresses {
-			targetIP := extractHost(remote)
-			targetPort := extractPort(remote)
-			if targetIP == "" || targetPort == -1 {
-				return result.Err("无法解析目标地址: " + remote)
+		if relayNodeID := tunnelRelayNodeID(&tunnel); relayNodeID > 0 {
+			var relayNode model.Node
+			if err := model.DB.First(&relayNode, relayNodeID).Error; err != nil {
+				return result.Err("中继节点不存在")
 			}
-			results = append(results, performTcpPing(&outNode, targetIP, targetPort, "出口->目标", 2, 3000))
+			if member.RelayPort <= 0 || member.OutPort <= 0 {
+				return result.Err("三节点转发端口配置不完整")
+			}
+			results = append(results, performTcpPing(&inNode, relayNode.ServerIP, member.RelayPort, "入口->中继", 1, 2500))
+			results = append(results, performTcpPing(&relayNode, outNode.ServerIP, member.OutPort, "中继->出口", 1, 2500))
+			for _, remote := range remoteAddresses {
+				targetIP := extractHost(remote)
+				targetPort := extractPort(remote)
+				if targetIP == "" || targetPort == -1 {
+					return result.Err("无法解析目标地址: " + remote)
+				}
+				results = append(results, performTcpPing(&outNode, targetIP, targetPort, "出口->目标", 1, 2500))
+			}
+		} else {
+			// 两节点链路入口->出口：优先测 forward 的 OutPort；缺失时回退测 SSH 22。
+			outPort := 22
+			desc := "入口->出口"
+			if member.OutPort > 0 {
+				outPort = member.OutPort
+			} else {
+				desc = "入口->出口(无出口端口,默认测SSH 22)"
+			}
+			results = append(results, performTcpPing(&inNode, outNode.ServerIP, outPort, desc, 2, 3000))
+			for _, remote := range remoteAddresses {
+				targetIP := extractHost(remote)
+				targetPort := extractPort(remote)
+				if targetIP == "" || targetPort == -1 {
+					return result.Err("无法解析目标地址: " + remote)
+				}
+				results = append(results, performTcpPing(&outNode, targetIP, targetPort, "出口->目标", 2, 3000))
+			}
 		}
 	}
 

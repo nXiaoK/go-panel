@@ -221,20 +221,21 @@ type proxyRelayEndpointView struct {
 }
 
 type proxyRelayPreviewView struct {
-	NodeID              int64                  `json:"nodeId"`
-	NodeName            string                 `json:"nodeName"`
-	RelayMode           string                 `json:"relayMode,omitempty"`
-	TunnelID            int64                  `json:"tunnelId"`
-	TunnelName          string                 `json:"tunnelName"`
-	TunnelType          int                    `json:"tunnelType"`
-	TunnelTypeName      string                 `json:"tunnelTypeName"`
-	Protocol            string                 `json:"protocol,omitempty"`
-	Entry               proxyRelayEndpointView `json:"entry"`
-	Exit                proxyRelayEndpointView `json:"exit"`
-	Target              proxyRelayEndpointView `json:"target"`
-	SubscriptionAddress string                 `json:"subscriptionAddress,omitempty"`
-	ForwardID           int64                  `json:"forwardId,omitempty"`
-	ForwardName         string                 `json:"forwardName,omitempty"`
+	NodeID              int64                   `json:"nodeId"`
+	NodeName            string                  `json:"nodeName"`
+	RelayMode           string                  `json:"relayMode,omitempty"`
+	TunnelID            int64                   `json:"tunnelId"`
+	TunnelName          string                  `json:"tunnelName"`
+	TunnelType          int                     `json:"tunnelType"`
+	TunnelTypeName      string                  `json:"tunnelTypeName"`
+	Protocol            string                  `json:"protocol,omitempty"`
+	Entry               proxyRelayEndpointView  `json:"entry"`
+	Relay               *proxyRelayEndpointView `json:"relay,omitempty"`
+	Exit                proxyRelayEndpointView  `json:"exit"`
+	Target              proxyRelayEndpointView  `json:"target"`
+	SubscriptionAddress string                  `json:"subscriptionAddress,omitempty"`
+	ForwardID           int64                   `json:"forwardId,omitempty"`
+	ForwardName         string                  `json:"forwardName,omitempty"`
 }
 
 type subscriptionTunnelView struct {

@@ -68,6 +68,9 @@ func normalizeForwardExitMembers(tunnel *model.Tunnel, mode string, members []dt
 		if member.OutNodeID <= 0 || seen[member.OutNodeID] {
 			continue
 		}
+		if tunnelHasRelay(tunnel) && (member.OutNodeID == tunnel.InNodeID || member.OutNodeID == tunnelRelayNodeID(tunnel)) {
+			return nil, "三节点串联的出口不能与入口或中继节点重复"
+		}
 		seen[member.OutNodeID] = true
 		if member.Weight <= 0 {
 			member.Weight = 1
@@ -158,15 +161,20 @@ func saveForwardExitMembersWithTx(tx *gorm.DB, forward *model.Forward, tunnel *m
 		}
 	}
 	oldPortByNode := make(map[int64]int, len(oldRows))
+	oldRelayPortByNode := make(map[int64]int, len(oldRows))
 	for _, row := range oldRows {
 		if row.OutPort > 0 {
 			oldPortByNode[row.OutNodeID] = row.OutPort
+		}
+		if row.RelayPort > 0 {
+			oldRelayPortByNode[row.OutNodeID] = row.RelayPort
 		}
 	}
 
 	now := time.Now().UnixMilli()
 	rows := make([]model.ForwardExitMember, 0, len(members))
 	usedPortsInRequest := map[int64]map[int]bool{}
+	usedRelayPortsInRequest := map[int]bool{}
 	for _, member := range members {
 		var node model.Node
 		if err := tx.First(&node, member.OutNodeID).Error; err != nil {
@@ -192,6 +200,26 @@ func saveForwardExitMembersWithTx(tx *gorm.DB, forward *model.Forward, tunnel *m
 		}
 		usedPortsInRequest[member.OutNodeID][outPort] = true
 
+		relayPort := 0
+		if relayNodeID := tunnelRelayNodeID(tunnel); relayNodeID > 0 {
+			relayPort = oldRelayPortByNode[member.OutNodeID]
+			if relayPort == 0 {
+				port := allocatePortForNodeWithReservedDB(tx, relayNodeID, excludeForwardID, usedRelayPortsInRequest)
+				if port == nil {
+					var relayNode model.Node
+					if err := tx.First(&relayNode, relayNodeID).Error; err != nil {
+						return nil, "中继节点不存在"
+					}
+					return nil, fmt.Sprintf("中继节点 %s 端口已满，无法分配新端口", relayNode.Name)
+				}
+				relayPort = *port
+			}
+			if usedRelayPortsInRequest[relayPort] {
+				return nil, fmt.Sprintf("中继节点分配到重复端口 %d", relayPort)
+			}
+			usedRelayPortsInRequest[relayPort] = true
+		}
+
 		active := 0
 		if member.Active {
 			active = 1
@@ -199,6 +227,7 @@ func saveForwardExitMembersWithTx(tx *gorm.DB, forward *model.Forward, tunnel *m
 		rows = append(rows, model.ForwardExitMember{
 			ForwardID:   forward.ID,
 			OutNodeID:   member.OutNodeID,
+			RelayPort:   relayPort,
 			OutPort:     outPort,
 			Weight:      member.Weight,
 			Status:      1,
@@ -417,6 +446,7 @@ func forwardExitMemberViews(forwardIDs []int64) map[int64][]dto.ForwardExitMembe
 			OutNodeID:   member.OutNodeID,
 			OutNodeName: name,
 			OutNodeIP:   ip,
+			RelayPort:   member.RelayPort,
 			OutPort:     member.OutPort,
 			Weight:      member.Weight,
 			Status:      member.Status,

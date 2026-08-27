@@ -193,15 +193,39 @@ func buildForwardRuleSpecs(forward *model.Forward, nodeID int64) []nftRuleSpec {
 			if member == nil {
 				return nil
 			}
-			var outNode model.Node
-			if err := model.DB.First(&outNode, member.OutNodeID).Error; err != nil || strings.TrimSpace(outNode.ServerIP) == "" {
+			nextNodeID := member.OutNodeID
+			nextPort := member.OutPort
+			if relayNodeID := tunnelRelayNodeID(&tunnel); relayNodeID > 0 {
+				nextNodeID = relayNodeID
+				nextPort = member.RelayPort
+			}
+			var nextNode model.Node
+			if nextPort <= 0 || model.DB.First(&nextNode, nextNodeID).Error != nil || strings.TrimSpace(nextNode.ServerIP) == "" {
 				return nil
 			}
-			target, err := parseTargetHostPort(outNode.ServerIP, member.OutPort, true)
+			target, err := parseTargetHostPort(nextNode.ServerIP, nextPort, true)
 			if err != nil {
 				return nil
 			}
 			return buildRuleSpecsForTarget(&tunnel, forward.InPort, target.IP, target.Port)
+		}
+		if tunnelRelayNodeID(&tunnel) == nodeID {
+			var specs []nftRuleSpec
+			for _, member := range deployForwardExitMembers(forward, &tunnel) {
+				if member.RelayPort <= 0 || member.OutPort <= 0 {
+					continue
+				}
+				var outNode model.Node
+				if model.DB.First(&outNode, member.OutNodeID).Error != nil {
+					continue
+				}
+				target, err := parseTargetHostPort(outNode.ServerIP, member.OutPort, true)
+				if err != nil {
+					continue
+				}
+				specs = append(specs, buildRuleSpecsForTarget(&tunnel, member.RelayPort, target.IP, target.Port)...)
+			}
+			return specs
 		}
 		var specs []nftRuleSpec
 		for _, member := range nftForwardExitMembersForNode(forward, &tunnel, nodeID) {
@@ -375,6 +399,11 @@ func buildForwardNftRulesToAdd(forward *model.Forward, tunnel *model.Tunnel, nod
 			if err := appendEntryRulesToAdd(&rules, forward, tunnel, node); err != nil {
 				return nil, err
 			}
+		} else if tunnelRelayNodeID(tunnel) == node.ID {
+			// 中继节点规则
+			if err := appendRelayRulesToAdd(&rules, forward, tunnel); err != nil {
+				return nil, err
+			}
 		} else if len(nftForwardExitMembersForNode(forward, tunnel, node.ID)) > 0 {
 			// 出口节点规则
 			if err := appendExitRulesToAdd(&rules, forward, tunnel, node); err != nil {
@@ -400,11 +429,17 @@ func appendEntryRulesToAdd(out *[]NftRuleToAdd, forward *model.Forward, tunnel *
 		if member == nil {
 			return nil
 		}
-		var outNode model.Node
-		if err := model.DB.First(&outNode, member.OutNodeID).Error; err != nil || outNode.ServerIP == "" {
+		nextNodeID := member.OutNodeID
+		nextPort := member.OutPort
+		if relayNodeID := tunnelRelayNodeID(tunnel); relayNodeID > 0 {
+			nextNodeID = relayNodeID
+			nextPort = member.RelayPort
+		}
+		var nextNode model.Node
+		if nextPort <= 0 || model.DB.First(&nextNode, nextNodeID).Error != nil || nextNode.ServerIP == "" {
 			return nil
 		}
-		target, err := parseTargetHostPort(outNode.ServerIP, member.OutPort, true)
+		target, err := parseTargetHostPort(nextNode.ServerIP, nextPort, true)
 		if err != nil {
 			return nil
 		}
@@ -417,6 +452,28 @@ func appendEntryRulesToAdd(out *[]NftRuleToAdd, forward *model.Forward, tunnel *
 	}
 
 	return appendTargetRules(out, forward, tunnel, forward.InPort, true)
+}
+
+func appendRelayRulesToAdd(out *[]NftRuleToAdd, forward *model.Forward, tunnel *model.Tunnel) error {
+	for _, member := range deployForwardExitMembers(forward, tunnel) {
+		if member.RelayPort <= 0 || member.OutPort <= 0 {
+			continue
+		}
+		var outNode model.Node
+		if err := model.DB.First(&outNode, member.OutNodeID).Error; err != nil || strings.TrimSpace(outNode.ServerIP) == "" {
+			continue
+		}
+		target, err := parseTargetHostPort(outNode.ServerIP, member.OutPort, true)
+		if err != nil {
+			continue
+		}
+		for _, protocol := range resolveProtocols(tunnel) {
+			if err := appendProtocolRules(out, forward, tunnel, protocol, member.RelayPort, target.IP, target.Port, false); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // appendExitRulesToAdd 添加出口节点规则

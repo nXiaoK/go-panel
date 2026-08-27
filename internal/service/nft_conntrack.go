@@ -40,12 +40,13 @@ func FlushForwardConntrack(forward *model.Forward, tunnel *model.Tunnel, node *m
 }
 
 func FlushForwardConntrackOnNodes(forward *model.Forward, tunnel *model.Tunnel, nodes ...model.Node) error {
+	var errs []error
 	for _, node := range nodes {
 		if err := FlushForwardConntrack(forward, tunnel, &node); err != nil {
-			return err
+			errs = append(errs, fmt.Errorf("node %d: %w", node.ID, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func FlushForwardConntrackForUpdate(forward *model.Forward, tunnel *model.Tunnel, inNode *model.Node) error {
@@ -54,6 +55,13 @@ func FlushForwardConntrackForUpdate(forward *model.Forward, tunnel *model.Tunnel
 	}
 	nodesByID := map[int64]model.Node{inNode.ID: *inNode}
 	if tunnel.Type == tunnelTypeTunnelForward {
+		if relayNodeID := tunnelRelayNodeID(tunnel); relayNodeID > 0 {
+			var relayNode model.Node
+			if err := model.DB.First(&relayNode, relayNodeID).Error; err != nil {
+				return fmt.Errorf("读取中继节点: %w", err)
+			}
+			nodesByID[relayNode.ID] = relayNode
+		}
 		for _, node := range forwardExitNodeMap(deployForwardExitMembers(forward, tunnel)) {
 			nodesByID[node.ID] = node
 		}
@@ -71,6 +79,14 @@ func forwardListenPortForNode(forward *model.Forward, tunnel *model.Tunnel, node
 	}
 	if tunnel.InNodeID == nodeID {
 		return forward.InPort, true
+	}
+	if tunnelRelayNodeID(tunnel) == nodeID {
+		for _, member := range deployForwardExitMembers(forward, tunnel) {
+			if member.RelayPort > 0 {
+				return member.RelayPort, true
+			}
+		}
+		return 0, false
 	}
 	for _, member := range deployForwardExitMembers(forward, tunnel) {
 		if member.OutNodeID == nodeID {

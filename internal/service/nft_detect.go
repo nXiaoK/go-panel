@@ -187,22 +187,51 @@ func loadPortDetectScope(nodeID int64) portDetectScope {
 	var entryTunnels []model.Tunnel
 	model.DB.Where("in_node_id = ? AND type = ?", nodeID, tunnelTypeTunnelForward).Find(&entryTunnels)
 	for _, tunnel := range entryTunnels {
-		var outNode model.Node
-		if err := model.DB.First(&outNode, tunnel.OutNodeID).Error; err != nil {
+		nextNodeID := tunnel.OutNodeID
+		if relayNodeID := tunnelRelayNodeID(&tunnel); relayNodeID > 0 {
+			nextNodeID = relayNodeID
+		}
+		var nextNode model.Node
+		if err := model.DB.First(&nextNode, nextNodeID).Error; err != nil {
 			continue
 		}
-		for _, ip := range getNodeIPs(&outNode) {
+		for _, ip := range getNodeIPs(&nextNode) {
 			if ip = strings.TrimSpace(ip); ip != "" {
 				scope.tunnelEntryHosts[strings.ToLower(ip)] = true
 			}
 		}
 		forwardRows := forwardsForTunnel(tunnel.ID)
 		for _, f := range forwardRows {
-			if f.OutPort == nil {
+			nextPort := 0
+			if tunnelHasRelay(&tunnel) {
+				if member := nftForwardExitMember(&f, &tunnel); member != nil {
+					nextPort = member.RelayPort
+				}
+			} else if f.OutPort != nil {
+				nextPort = *f.OutPort
+			}
+			if nextPort <= 0 {
 				continue
 			}
 			for _, protocol := range resolveProtocols(&tunnel) {
-				scope.tunnelEntryRules[buildForwardKey(protocol, f.InPort, outNode.ServerIP, *f.OutPort)] = true
+				scope.tunnelEntryRules[buildForwardKey(protocol, f.InPort, nextNode.ServerIP, nextPort)] = true
+			}
+		}
+	}
+
+	// 三节点中继 B 的本机监听端口也属于受管隧道规则，不能被普通端口
+	// 转发识别误报为“数据库缺失”。
+	var relayTunnels []model.Tunnel
+	model.DB.Where("relay_node_id = ? AND type = ?", nodeID, tunnelTypeTunnelForward).Find(&relayTunnels)
+	for _, tunnel := range relayTunnels {
+		for _, f := range forwardsForTunnel(tunnel.ID) {
+			for _, member := range deployForwardExitMembers(&f, &tunnel) {
+				if member.RelayPort <= 0 {
+					continue
+				}
+				for _, protocol := range resolveProtocols(&tunnel) {
+					scope.tunnelExitPorts[buildProtocolPortKey(protocol, member.RelayPort)] = true
+				}
 			}
 		}
 	}
@@ -360,14 +389,19 @@ func createForwardFromNft(cu CurrentUser, nodeID int64, rule *CompleteForwardRul
 	if tunnel.InNodeID != nodeID {
 		return 0, fmt.Errorf("识别节点与隧道入口节点不匹配")
 	}
+	if tunnelHasRelay(&tunnel) {
+		return 0, fmt.Errorf("三节点串联隧道不支持从已有两节点 NFT 规则补全")
+	}
 	lockedInNodeID, lockedOutNodeID, lockedTunnelType := tunnel.InNodeID, tunnel.OutNodeID, tunnel.Type
-	affected := []int64{lockedInNodeID, lockedOutNodeID}
+	lockedRelayNodeID := tunnelRelayNodeID(&tunnel)
+	affected := tunnelPathNodeIDs(&tunnel)
 	unlockSaga := lockNftSagaNodes(affected)
 	defer unlockSaga()
 	// The tunnel may have been edited while this request waited for its node
 	// locks. Re-read it before deriving the operation snapshot.
 	if err := model.DB.First(&tunnel, rule.TunnelID).Error; err != nil || tunnel.Status != tunnelStatusActive ||
-		tunnel.InNodeID != lockedInNodeID || tunnel.OutNodeID != lockedOutNodeID || tunnel.Type != lockedTunnelType {
+		tunnel.InNodeID != lockedInNodeID || tunnel.OutNodeID != lockedOutNodeID || tunnel.Type != lockedTunnelType ||
+		tunnelRelayNodeID(&tunnel) != lockedRelayNodeID {
 		return 0, fmt.Errorf("隧道已变更，请重试")
 	}
 	if err := validateCompleteProtocolSelection(&tunnel, rule); err != nil {
@@ -891,7 +925,7 @@ func convergeCompleteErrorDesired(forward *model.Forward, applied []completeRule
 	if err := model.DB.First(&tunnel, forward.TunnelID).Error; err != nil {
 		return err
 	}
-	nodeIDs = append(nodeIDs, tunnel.InNodeID, tunnel.OutNodeID)
+	nodeIDs = append(nodeIDs, tunnelPathNodeIDs(&tunnel)...)
 	members, err := loadPersistedForwardExitMembersDB(model.DB, forward.ID)
 	if err != nil {
 		return err

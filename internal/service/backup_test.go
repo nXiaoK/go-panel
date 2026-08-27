@@ -159,6 +159,14 @@ func TestRestoreSiteBackupMigratesLegacySQLiteBackup(t *testing.T) {
 	if !model.DB.Migrator().HasTable(&model.ForwardExitMember{}) {
 		t.Fatal("forward_exit_member table should be created during restore migration")
 	}
+	for _, column := range []string{"relay_node_id", "relay_ip"} {
+		if !model.DB.Migrator().HasColumn(&model.Tunnel{}, column) {
+			t.Fatalf("tunnel.%s column should be created during restore migration", column)
+		}
+	}
+	if !model.DB.Migrator().HasColumn(&model.ForwardExitMember{}, "relay_port") {
+		t.Fatal("forward_exit_member.relay_port column should be created during restore migration")
+	}
 	for _, column := range []string{"target_mode", "active_remote_addr", "exit_mode", "exit_strategy"} {
 		if !model.DB.Migrator().HasColumn(&model.Forward{}, column) {
 			t.Fatalf("forward.%s column should be created during restore migration", column)

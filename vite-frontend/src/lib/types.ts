@@ -135,12 +135,14 @@ export interface Tunnel {
   name: string;
   type: number; // 1: 端口转发, 2: 隧道转发
   inNodeId: number;
+  relayNodeId?: number;
   outNodeId?: number;
   entryNodeId?: number;
   exitNodeId?: number;
   entryNodeName?: string;
   exitNodeName?: string;
   inIp?: string;
+  relayIp?: string;
   outIp?: string;
   protocol?: string;
   tcpListenAddr?: string;
@@ -157,6 +159,7 @@ export interface TunnelForm {
   name: string;
   type: number;
   inNodeId: number | null;
+  relayNodeId?: number | null;
   outNodeId?: number | null;
   protocol: string;
   tcpListenAddr: string;
@@ -235,6 +238,7 @@ export interface ForwardExitMember {
   outNodeId: number;
   outNodeName?: string;
   outNodeIp?: string;
+  relayPort?: number;
   outPort?: number;
   weight?: number;
   status?: number;

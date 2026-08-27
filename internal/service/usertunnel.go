@@ -55,7 +55,7 @@ func forwardRuntimeSnapshot(db *gorm.DB, forward *model.Forward, tunnel *model.T
 	if permission != nil {
 		snapshot.permission = *permission
 	}
-	nodeIDs := []int64{tunnel.InNodeID, tunnel.OutNodeID}
+	nodeIDs := tunnelPathNodeIDs(tunnel)
 	for _, member := range members {
 		nodeIDs = append(nodeIDs, member.OutNodeID)
 	}
@@ -97,7 +97,7 @@ func loadUserTunnelRuntimeSnapshot(db *gorm.DB, id int64) (userTunnelRuntimeSnap
 		}
 	}
 	snapshot.members = make(map[int64][]model.ForwardExitMember, len(snapshot.forwards))
-	nodeIDs := []int64{snapshot.tunnel.InNodeID, snapshot.tunnel.OutNodeID}
+	nodeIDs := tunnelPathNodeIDs(&snapshot.tunnel)
 	for _, member := range allMembers {
 		snapshot.members[member.ForwardID] = append(snapshot.members[member.ForwardID], member)
 		nodeIDs = append(nodeIDs, member.OutNodeID)

@@ -185,7 +185,7 @@ func lockSpeedLimitTunnelSagaSnapshot(speedLimitID, targetTunnelID int64) (model
 	if err := model.DB.First(&beforeTarget, targetTunnelID).Error; err != nil {
 		return model.SpeedLimit{}, model.Tunnel{}, model.Tunnel{}, nil, "指定的隧道不存在"
 	}
-	lockedNodeIDs := []int64{beforeOld.InNodeID, beforeOld.OutNodeID, beforeTarget.InNodeID, beforeTarget.OutNodeID}
+	lockedNodeIDs := append(tunnelPathNodeIDs(&beforeOld), tunnelPathNodeIDs(&beforeTarget)...)
 	for {
 		lockedNodeIDs = normalizeNodeSagaLockIDs(lockedNodeIDs)
 		unlock := lockNftSagaNodes(lockedNodeIDs)
@@ -203,7 +203,7 @@ func lockSpeedLimitTunnelSagaSnapshot(speedLimitID, targetTunnelID int64) (model
 			unlock()
 			return model.SpeedLimit{}, model.Tunnel{}, model.Tunnel{}, nil, "指定的隧道不存在"
 		}
-		actualNodeIDs := []int64{oldTunnel.InNodeID, oldTunnel.OutNodeID, targetTunnel.InNodeID, targetTunnel.OutNodeID}
+		actualNodeIDs := append(tunnelPathNodeIDs(&oldTunnel), tunnelPathNodeIDs(&targetTunnel)...)
 		if nodeIDSetContains(lockedNodeIDs, actualNodeIDs) {
 			return current, oldTunnel, targetTunnel, unlock, ""
 		}

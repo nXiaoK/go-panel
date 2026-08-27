@@ -24,6 +24,23 @@ func CreateTunnel(req dto.TunnelDto) result.R {
 	if req.Type == tunnelTypeTunnelForward && (req.OutNodeID == nil || *req.OutNodeID <= 0) {
 		return result.Err("隧道转发必须选择出口节点")
 	}
+	if req.Type == tunnelTypePortForward && req.RelayNodeID != nil {
+		return result.Err("端口转发不支持中继节点")
+	}
+	if req.RelayNodeID != nil && *req.RelayNodeID <= 0 {
+		return result.Err("中继节点参数错误")
+	}
+	// 与节点模式切换共用 saga 锁，保证“三台均为 nftables”的校验结果
+	// 一直稳定到隧道落库；否则并发 UpdateNode 可能在校验后切成 Gost。
+	nodeIDs := []int64{req.InNodeID}
+	if req.RelayNodeID != nil {
+		nodeIDs = append(nodeIDs, *req.RelayNodeID)
+	}
+	if req.OutNodeID != nil {
+		nodeIDs = append(nodeIDs, *req.OutNodeID)
+	}
+	unlockNodes := lockNftSagaNodes(nodeIDs)
+	defer unlockNodes()
 
 	// 名称唯一性
 	var exist model.Tunnel
@@ -90,6 +107,28 @@ func CreateTunnel(req dto.TunnelDto) result.R {
 		}
 		tunnel.OutNodeID = *req.OutNodeID
 		tunnel.OutIP = outNode.ServerIP
+
+		if req.RelayNodeID != nil {
+			if *req.RelayNodeID == req.InNodeID || *req.RelayNodeID == *req.OutNodeID {
+				return result.Err("入口、中继和出口节点不能重复")
+			}
+			var relayNode model.Node
+			if err := model.DB.First(&relayNode, *req.RelayNodeID).Error; err != nil {
+				return result.Err("中继节点不存在")
+			}
+			if relayNode.Status != nodeStatusOnline {
+				return result.Err("中继节点当前离线，请确保节点正常运行")
+			}
+			if msg := validateRelayNftNodes(&inNode, &relayNode, &outNode); msg != "" {
+				return result.Err(msg)
+			}
+			relayID := relayNode.ID
+			relayIP := relayNode.ServerIP
+			tunnel.RelayNodeID = &relayID
+			tunnel.RelayIP = &relayIP
+			protocol := "tcp+udp"
+			tunnel.Protocol = &protocol
+		}
 	}
 
 	now := time.Now().UnixMilli()
@@ -301,7 +340,7 @@ func lockTunnelSagaSnapshot(id int64) (model.Tunnel, func(), error) {
 	if err := model.DB.First(&before, id).Error; err != nil {
 		return model.Tunnel{}, nil, err
 	}
-	lockedNodeIDs := []int64{before.InNodeID, before.OutNodeID}
+	lockedNodeIDs := tunnelPathNodeIDs(&before)
 	for {
 		lockedNodeIDs = normalizeNodeSagaLockIDs(lockedNodeIDs)
 		unlock := lockNftSagaNodes(lockedNodeIDs)
@@ -310,7 +349,7 @@ func lockTunnelSagaSnapshot(id int64) (model.Tunnel, func(), error) {
 			unlock()
 			return model.Tunnel{}, nil, err
 		}
-		actualNodeIDs := []int64{current.InNodeID, current.OutNodeID}
+		actualNodeIDs := tunnelPathNodeIDs(&current)
 		if nodeIDSetContains(lockedNodeIDs, actualNodeIDs) {
 			return current, unlock, nil
 		}
@@ -444,16 +483,45 @@ func DiagnoseTunnel(tunnelID int64) result.R {
 		// - 无活跃转发 → 回退测出口节点 22（验证两机网络连通性），并在描述中标注
 		// 参数 count=2, timeout=3000ms：总耗时 ≤ 6s < 面板 10s 响应超时，避免“等待响应超时”误判
 		outPort := 22
-		desc := "入口->出口"
+		relayPort := 22
+		hasActiveForward := false
 		var forwards []model.Forward
-		if err := model.DB.Where("tunnel_id = ? AND status = 1", tunnelID).Limit(1).Find(&forwards).Error; err == nil &&
-			len(forwards) > 0 && forwards[0].OutPort != nil && *forwards[0].OutPort > 0 {
-			outPort = *forwards[0].OutPort
-		} else {
-			desc = "入口->出口(未检测到转发,默认测SSH 22)"
+		if err := model.DB.Where("tunnel_id = ? AND status = 1", tunnelID).Limit(1).Find(&forwards).Error; err == nil && len(forwards) > 0 {
+			if member := activeForwardExitMember(&forwards[0], &tunnel); member != nil && member.OutPort > 0 {
+				outPort = member.OutPort
+				relayPort = member.RelayPort
+				hasActiveForward = true
+			} else if forwards[0].OutPort != nil && *forwards[0].OutPort > 0 {
+				outPort = *forwards[0].OutPort
+				hasActiveForward = true
+			}
 		}
-		results = append(results, performTcpPing(&inNode, outNode.ServerIP, outPort, desc, 2, 3000))
-		results = append(results, performTcpPing(&outNode, "www.google.com", 443, "出口->外网", 2, 3000))
+
+		if relayNodeID := tunnelRelayNodeID(&tunnel); relayNodeID > 0 {
+			var relayNode model.Node
+			if err := model.DB.First(&relayNode, relayNodeID).Error; err != nil {
+				return result.Err("中继节点不存在")
+			}
+			firstDesc := "入口->中继"
+			secondDesc := "中继->出口"
+			if !hasActiveForward || relayPort <= 0 {
+				relayPort = 22
+				outPort = 22
+				firstDesc += "(未检测到转发,默认测SSH 22)"
+				secondDesc += "(未检测到转发,默认测SSH 22)"
+			}
+			// 三个检查单次最多约 2.5 秒，串行总时长仍低于面板 API 超时。
+			results = append(results, performTcpPing(&inNode, relayNode.ServerIP, relayPort, firstDesc, 1, 2500))
+			results = append(results, performTcpPing(&relayNode, outNode.ServerIP, outPort, secondDesc, 1, 2500))
+			results = append(results, performTcpPing(&outNode, "www.google.com", 443, "出口->外网", 1, 2500))
+		} else {
+			desc := "入口->出口"
+			if !hasActiveForward {
+				desc = "入口->出口(未检测到转发,默认测SSH 22)"
+			}
+			results = append(results, performTcpPing(&inNode, outNode.ServerIP, outPort, desc, 2, 3000))
+			results = append(results, performTcpPing(&outNode, "www.google.com", 443, "出口->外网", 2, 3000))
+		}
 	}
 
 	tunnelTypeName := "端口转发"

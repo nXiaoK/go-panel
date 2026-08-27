@@ -82,6 +82,7 @@ type NodeUpdateDto struct {
 type TunnelDto struct {
 	Name          string   `json:"name" binding:"required"`
 	InNodeID      int64    `json:"inNodeId" binding:"required"`
+	RelayNodeID   *int64   `json:"relayNodeId"`
 	OutNodeID     *int64   `json:"outNodeId"`
 	Type          int      `json:"type" binding:"required"`
 	Flow          int      `json:"flow" binding:"required"`
@@ -434,6 +435,7 @@ type ForwardExitMemberView struct {
 	OutNodeID   int64   `json:"outNodeId"`
 	OutNodeName *string `json:"outNodeName"`
 	OutNodeIP   *string `json:"outNodeIp"`
+	RelayPort   int     `json:"relayPort"`
 	OutPort     int     `json:"outPort"`
 	Weight      int     `json:"weight"`
 	Status      int     `json:"status"`
@@ -499,13 +501,15 @@ type UserForwardDetail struct {
 // TrafficTunnelOption 控制台流量趋势可选隧道。
 // 节点名称用于展示“入口 → 出口”，避免同名或含义不清的隧道难以辨认。
 type TrafficTunnelOption struct {
-	TunnelID    int64  `json:"tunnelId"`
-	TunnelName  string `json:"tunnelName"`
-	Type        int    `json:"type"`
-	InNodeID    int64  `json:"inNodeId"`
-	InNodeName  string `json:"inNodeName"`
-	OutNodeID   int64  `json:"outNodeId"`
-	OutNodeName string `json:"outNodeName"`
+	TunnelID      int64  `json:"tunnelId"`
+	TunnelName    string `json:"tunnelName"`
+	Type          int    `json:"type"`
+	InNodeID      int64  `json:"inNodeId"`
+	InNodeName    string `json:"inNodeName"`
+	RelayNodeID   *int64 `json:"relayNodeId,omitempty"`
+	RelayNodeName string `json:"relayNodeName,omitempty"`
+	OutNodeID     int64  `json:"outNodeId"`
+	OutNodeName   string `json:"outNodeName"`
 }
 
 // TunnelListItem 用户可用隧道（创建转发时下拉）

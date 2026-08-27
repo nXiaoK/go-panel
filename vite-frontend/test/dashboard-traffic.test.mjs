@@ -236,6 +236,20 @@ describe("dashboard traffic helpers", () => {
       }),
       "主线路 · A → B",
     );
+    assert.equal(
+      trafficTunnelLabel({
+        tunnelId: 8,
+        tunnelName: "三节点",
+        type: 2,
+        inNodeId: 1,
+        inNodeName: "A",
+        relayNodeId: 2,
+        relayNodeName: "B",
+        outNodeId: 3,
+        outNodeName: "C",
+      }),
+      "三节点 · A → B → C",
+    );
     assert.equal(trafficTunnelLabel(null), "全部隧道");
   });
 

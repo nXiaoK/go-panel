@@ -589,7 +589,7 @@ func closeDerivedProxyNodeRelay(cu CurrentUser, node model.ProxyNode) (int, int,
 }
 
 func buildProxyRelayPreview(node model.ProxyNode, tunnel model.Tunnel, inPort *int, forward *model.Forward) proxyRelayPreviewView {
-	inNode, outNode := relayPreviewNodes(tunnel)
+	inNode, relayNode, outNode := relayPreviewNodes(tunnel)
 	entryPort := 0
 	entryPortText := "创建时自动分配"
 	if forward != nil {
@@ -607,6 +607,17 @@ func buildProxyRelayPreview(node model.ProxyNode, tunnel model.Tunnel, inPort *i
 		if forward != nil && forward.OutPort != nil && *forward.OutPort > 0 {
 			exitPort = *forward.OutPort
 			exitPortText = strconv.Itoa(*forward.OutPort)
+		}
+	}
+	relayPort := 0
+	relayPortText := ""
+	if tunnelHasRelay(&tunnel) {
+		relayPortText = "创建时自动分配"
+		if forward != nil {
+			if member := activeForwardExitMember(forward, &tunnel); member != nil && member.RelayPort > 0 {
+				relayPort = member.RelayPort
+				relayPortText = strconv.Itoa(member.RelayPort)
+			}
 		}
 	}
 
@@ -661,19 +672,32 @@ func buildProxyRelayPreview(node model.ProxyNode, tunnel model.Tunnel, inPort *i
 		view.ForwardID = forward.ID
 		view.ForwardName = forward.Name
 	}
+	if tunnelHasRelay(&tunnel) {
+		relayIP := ""
+		if tunnel.RelayIP != nil {
+			relayIP = *tunnel.RelayIP
+		}
+		view.Relay = &proxyRelayEndpointView{
+			NodeID: tunnelRelayNodeID(&tunnel), NodeName: nodeNameOf(relayNode), IP: relayIP,
+			Port: relayPort, PortText: relayPortText,
+		}
+	}
 	return view
 }
 
-func relayPreviewNodes(tunnel model.Tunnel) (*model.Node, *model.Node) {
-	var inNode, outNode model.Node
-	var inPtr, outPtr *model.Node
+func relayPreviewNodes(tunnel model.Tunnel) (*model.Node, *model.Node, *model.Node) {
+	var inNode, relayNode, outNode model.Node
+	var inPtr, relayPtr, outPtr *model.Node
 	if tunnel.InNodeID != 0 && model.DB.First(&inNode, tunnel.InNodeID).Error == nil {
 		inPtr = &inNode
+	}
+	if relayNodeID := tunnelRelayNodeID(&tunnel); relayNodeID > 0 && model.DB.First(&relayNode, relayNodeID).Error == nil {
+		relayPtr = &relayNode
 	}
 	if tunnel.OutNodeID != 0 && model.DB.First(&outNode, tunnel.OutNodeID).Error == nil {
 		outPtr = &outNode
 	}
-	return inPtr, outPtr
+	return inPtr, relayPtr, outPtr
 }
 
 func nodeNameOf(node *model.Node) string {

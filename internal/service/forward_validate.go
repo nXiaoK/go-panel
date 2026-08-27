@@ -30,11 +30,51 @@ func forwardTargetsRequireLiteralIP(tunnel *model.Tunnel, inNode, outNode *model
 	return false
 }
 
+func validateRelayNftNodes(inNode, relayNode, outNode *model.Node) string {
+	if !isNftablesMode(inNode) || !isNftablesMode(relayNode) || !isNftablesMode(outNode) {
+		return "三节点串联仅支持全部节点使用 nftables 模式"
+	}
+	for _, node := range []*model.Node{inNode, relayNode, outNode} {
+		target, err := parseTargetHostPort(node.ServerIP, 1, true)
+		if err != nil || !target.IP.Is4() {
+			return "三节点串联当前仅支持 IPv4 节点地址"
+		}
+	}
+	return ""
+}
+
+func validateRelayTargetConfig(tunnel *model.Tunnel, target normalizedForwardTarget) string {
+	if !tunnelHasRelay(tunnel) {
+		return ""
+	}
+	if target.Mode == targetModeBalance && len(splitRemoteAddresses(target.RemoteAddr)) > 1 {
+		return "三节点 nftables 串联暂不支持多目标自动负载，请使用手动目标"
+	}
+	effective := target.RemoteAddr
+	if target.Mode == targetModeManual {
+		effective = target.ActiveAddr
+	}
+	for _, address := range splitRemoteAddresses(effective) {
+		parsed, err := ParseTargetAddress(address, true)
+		if err != nil || !parsed.IP.Is4() {
+			return "三节点串联当前仅支持 IPv4 目标地址"
+		}
+	}
+	return ""
+}
+
 func validateForwardNftNodeTargets(tunnel *model.Tunnel, inNode, outNode *model.Node, exitMembers []dto.ForwardExitMemberDto) string {
 	if tunnel == nil || tunnel.Type != tunnelTypeTunnelForward || !isNftablesMode(inNode) {
 		return ""
 	}
 	nodes := map[int64]model.Node{}
+	if relayNodeID := tunnelRelayNodeID(tunnel); relayNodeID > 0 {
+		var relayNode model.Node
+		if err := model.DB.First(&relayNode, relayNodeID).Error; err != nil {
+			return "中继节点不存在"
+		}
+		nodes[relayNode.ID] = relayNode
+	}
 	if outNode != nil {
 		nodes[outNode.ID] = *outNode
 	}
@@ -48,8 +88,15 @@ func validateForwardNftNodeTargets(tunnel *model.Tunnel, inNode, outNode *model.
 		}
 	}
 	for _, node := range nodes {
-		if _, err := parseTargetHostPort(node.ServerIP, 1, true); err != nil {
+		if tunnelHasRelay(tunnel) && !isNftablesMode(&node) {
+			return "三节点串联的所有出口节点必须使用 nftables 模式"
+		}
+		target, err := parseTargetHostPort(node.ServerIP, 1, true)
+		if err != nil {
 			return "出口节点地址格式错误"
+		}
+		if tunnelHasRelay(tunnel) && !target.IP.Is4() {
+			return "三节点串联当前仅支持 IPv4 节点地址"
 		}
 	}
 	return ""
@@ -78,6 +125,18 @@ func getRequiredNodes(tunnel *model.Tunnel) (*model.Node, *model.Node, string) {
 		var outNode model.Node
 		if err := model.DB.First(&outNode, tunnel.OutNodeID).Error; err != nil {
 			return nil, nil, "出口节点不存在"
+		}
+		if relayNodeID := tunnelRelayNodeID(tunnel); relayNodeID > 0 {
+			if relayNodeID == inNode.ID || relayNodeID == outNode.ID || inNode.ID == outNode.ID {
+				return nil, nil, "入口、中继和出口节点不能重复"
+			}
+			var relayNode model.Node
+			if err := model.DB.First(&relayNode, relayNodeID).Error; err != nil {
+				return nil, nil, "中继节点不存在"
+			}
+			if msg := validateRelayNftNodes(&inNode, &relayNode, &outNode); msg != "" {
+				return nil, nil, msg
+			}
 		}
 		return &inNode, &outNode, ""
 	}
@@ -237,6 +296,12 @@ func allocatePortForNode(nodeID int64, excludeForwardID *int64) *int {
 }
 
 func allocatePortForNodeWithDB(db *gorm.DB, nodeID int64, excludeForwardID *int64) *int {
+	return allocatePortForNodeWithReservedDB(db, nodeID, excludeForwardID, nil)
+}
+
+// allocatePortForNodeWithReservedDB 在数据库占用集合之外，再排除同一请求尚未落库的端口。
+// 三节点隧道的多个出口成员共享一个中继节点，必须在一次事务内显式保留已分配端口。
+func allocatePortForNodeWithReservedDB(db *gorm.DB, nodeID int64, excludeForwardID *int64, reserved map[int]bool) *int {
 	if db == nil {
 		return nil
 	}
@@ -252,7 +317,7 @@ func allocatePortForNodeWithDB(db *gorm.DB, nodeID int64, excludeForwardID *int6
 	}
 	var available []int
 	for port := node.PortSta; port <= node.PortEnd; port++ {
-		if !used[port] {
+		if !used[port] && !reserved[port] {
 			available = append(available, port)
 		}
 	}
@@ -344,6 +409,26 @@ func getAllUsedPortsOnNodeWithDB(db *gorm.DB, nodeID int64, excludeForwardID *in
 	for _, member := range exitMembers {
 		if member.OutPort != 0 {
 			used[member.OutPort] = true
+		}
+	}
+
+	// 三节点链路的中继监听端口。它与该节点作为其他隧道入口/出口时的
+	// 端口共享同一命名空间，因此必须合并到统一占用集合。
+	relayQuery := db.Table("forward_exit_member AS fem").
+		Select("fem.*").
+		Joins("JOIN forward AS f ON f.id = fem.forward_id").
+		Joins("JOIN tunnel AS t ON t.id = f.tunnel_id").
+		Where("t.relay_node_id = ?", nodeID)
+	if excludeForwardID != nil {
+		relayQuery = relayQuery.Where("fem.forward_id <> ?", *excludeForwardID)
+	}
+	var relayMembers []model.ForwardExitMember
+	if err := relayQuery.Find(&relayMembers).Error; err != nil {
+		return nil, fmt.Errorf("查询中继端口失败: %w", err)
+	}
+	for _, member := range relayMembers {
+		if member.RelayPort != 0 {
+			used[member.RelayPort] = true
 		}
 	}
 	return used, nil

@@ -77,6 +77,7 @@ const emptyForm = (): TunnelForm => ({
   name: "",
   type: 1,
   inNodeId: null,
+  relayNodeId: null,
   outNodeId: null,
   protocol: "tcp",
   tcpListenAddr: "0.0.0.0",
@@ -124,8 +125,12 @@ function TunnelPage() {
   const nftModeFor = useCallback(
     (t: Tunnel) => {
       const a = nodeMap.get(t.inNodeId)?.forwardMode;
+      const relay = t.relayNodeId ? nodeMap.get(t.relayNodeId)?.forwardMode : undefined;
       const b = t.outNodeId ? nodeMap.get(t.outNodeId)?.forwardMode : undefined;
-      return a === "nftables" && (t.type === 1 || b === "nftables");
+      return (
+        a === "nftables" &&
+        (t.type === 1 || (b === "nftables" && (!t.relayNodeId || relay === "nftables")))
+      );
     },
     [nodeMap],
   );
@@ -202,6 +207,7 @@ function TunnelPage() {
       name: t.name,
       type: t.type,
       inNodeId: t.inNodeId,
+      relayNodeId: t.relayNodeId ?? null,
       outNodeId: t.outNodeId ?? null,
       protocol: t.protocol || "tcp",
       tcpListenAddr: t.tcpListenAddr || "0.0.0.0",
@@ -216,14 +222,28 @@ function TunnelPage() {
 
   const isNftForm = useMemo(() => {
     const a = nodeMap.get(form.inNodeId || 0)?.forwardMode;
+    const relay = nodeMap.get(form.relayNodeId || 0)?.forwardMode;
     const b = nodeMap.get(form.outNodeId || 0)?.forwardMode;
-    return a === "nftables" && (form.type === 1 || b === "nftables");
-  }, [form.inNodeId, form.outNodeId, form.type, nodeMap]);
+    return (
+      a === "nftables" &&
+      (form.type === 1 || (b === "nftables" && (!form.relayNodeId || relay === "nftables")))
+    );
+  }, [form.inNodeId, form.relayNodeId, form.outNodeId, form.type, nodeMap]);
 
   const submit = async () => {
     if (!form.name.trim()) return toast.error("请输入隧道名称");
     if (!form.inNodeId) return toast.error("请选择入口节点");
     if (form.type === 2 && !form.outNodeId) return toast.error("隧道转发需要选择出口节点");
+    if (
+      form.type === 2 &&
+      form.relayNodeId &&
+      (form.relayNodeId === form.inNodeId || form.relayNodeId === form.outNodeId)
+    ) {
+      return toast.error("入口、中继和出口节点不能重复");
+    }
+    if (form.type === 2 && form.relayNodeId && !isNftForm) {
+      return toast.error("三节点串联要求入口、中继和出口均为 nftables 模式");
+    }
     const payload = {
       ...form,
       // nftables 模式下强制 tcp+udp（原逻辑）
@@ -261,7 +281,7 @@ function TunnelPage() {
           </>
         }
         title="隧道管理"
-        description="端口转发与隧道转发规则，节点为 nftables 模式时协议自动为 TCP+UDP"
+        description="支持两节点及 A → B → C 三节点 IPv4 nftables 串联，nftables 模式协议自动为 TCP+UDP"
         actions={
           <>
             <Button
@@ -344,13 +364,14 @@ function TunnelPage() {
 
       <Card className="border-border/60 bg-card/60">
         <div className="overflow-x-auto">
-          <Table className="min-w-[1100px]">
+          <Table className="min-w-[1180px]">
             <TableHeader>
               <TableRow className="border-border/60 hover:bg-transparent">
                 <TableHead className="w-[60px]">ID</TableHead>
                 <TableHead>名称</TableHead>
                 <TableHead>类型</TableHead>
                 <TableHead>入口节点</TableHead>
+                <TableHead>中继节点</TableHead>
                 <TableHead>出口节点</TableHead>
                 <TableHead>协议</TableHead>
                 <TableHead>监听</TableHead>
@@ -364,7 +385,7 @@ function TunnelPage() {
               {loading && tunnels.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={11}
+                    colSpan={12}
                     className="h-32 text-left text-muted-foreground lg:text-center"
                   >
                     <Loader2 className="mx-auto h-5 w-5 animate-spin" />
@@ -374,7 +395,7 @@ function TunnelPage() {
               {!loading && filtered.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={11}
+                    colSpan={12}
                     className="h-32 text-left text-muted-foreground lg:text-center"
                   >
                     暂无数据
@@ -383,6 +404,7 @@ function TunnelPage() {
               )}
               {filtered.map((t) => {
                 const inNode = nodeMap.get(t.inNodeId);
+                const relayNode = t.relayNodeId ? nodeMap.get(t.relayNodeId) : undefined;
                 const outNode = t.outNodeId ? nodeMap.get(t.outNodeId) : undefined;
                 const nft = nftModeFor(t);
                 const proto = nft ? "tcp+udp" : t.protocol || "tcp";
@@ -399,6 +421,9 @@ function TunnelPage() {
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {inNode?.name || `#${t.inNodeId}`}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {t.relayNodeId ? relayNode?.name || `#${t.relayNodeId}` : "-"}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {t.type === 2
@@ -485,8 +510,16 @@ function TunnelPage() {
             <div className="grid grid-cols-2 gap-3">
               <Field label="类型">
                 <Select
+                  disabled={Boolean(editingId)}
                   value={String(form.type)}
-                  onValueChange={(v) => setForm({ ...form, type: Number(v) })}
+                  onValueChange={(v) =>
+                    setForm({
+                      ...form,
+                      type: Number(v),
+                      relayNodeId: Number(v) === 2 ? form.relayNodeId : null,
+                      outNodeId: Number(v) === 2 ? form.outNodeId : null,
+                    })
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -512,9 +545,10 @@ function TunnelPage() {
                 </Select>
               </Field>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-3">
               <Field label="入口节点">
                 <Select
+                  disabled={Boolean(editingId)}
                   value={form.inNodeId ? String(form.inNodeId) : ""}
                   onValueChange={(v) => setForm({ ...form, inNodeId: Number(v) })}
                 >
@@ -530,9 +564,30 @@ function TunnelPage() {
                   </SelectContent>
                 </Select>
               </Field>
+              <Field label="中继节点（可选）">
+                <Select
+                  disabled={form.type !== 2 || Boolean(editingId)}
+                  value={form.relayNodeId ? String(form.relayNodeId) : "none"}
+                  onValueChange={(v) =>
+                    setForm({ ...form, relayNodeId: v === "none" ? null : Number(v) })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="不使用中继" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">不使用中继</SelectItem>
+                    {nodes.map((n) => (
+                      <SelectItem key={n.id} value={String(n.id)}>
+                        {n.name} · {n.forwardMode || "gost"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
               <Field label="出口节点">
                 <Select
-                  disabled={form.type !== 2}
+                  disabled={form.type !== 2 || Boolean(editingId)}
                   value={form.outNodeId ? String(form.outNodeId) : ""}
                   onValueChange={(v) => setForm({ ...form, outNodeId: Number(v) })}
                 >

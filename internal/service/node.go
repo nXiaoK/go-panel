@@ -189,6 +189,17 @@ func UpdateNode(req dto.NodeUpdateDto) result.R {
 		return result.Err("节点不存在")
 	}
 	if normalizeForwardMode(node.ForwardMode) != mode {
+		var relayTunnelCount int64
+		if err := model.DB.Model(&model.Tunnel{}).
+			Where("relay_node_id IS NOT NULL AND (in_node_id = ? OR relay_node_id = ? OR out_node_id = ?)", req.ID, req.ID, req.ID).
+			Count(&relayTunnelCount).Error; err != nil {
+			unlock()
+			return result.Err("节点更新失败")
+		}
+		if relayTunnelCount > 0 {
+			unlock()
+			return result.Err("该节点正用于三节点 nftables 串联隧道，不能切换转发模式")
+		}
 		referenced, err := nodeReferencedByForward(req.ID)
 		if err != nil {
 			unlock()
@@ -243,6 +254,9 @@ func UpdateNode(req dto.NodeUpdateDto) result.R {
 		if err := tx.Model(&model.Tunnel{}).Where("in_node_id = ?", req.ID).Update("in_ip", req.IP).Error; err != nil {
 			return err
 		}
+		if err := tx.Model(&model.Tunnel{}).Where("relay_node_id = ?", req.ID).Update("relay_ip", serverTarget.Host).Error; err != nil {
+			return err
+		}
 		return tx.Model(&model.Tunnel{}).Where("out_node_id = ?", req.ID).Update("out_ip", serverTarget.Host).Error
 	}); err != nil {
 		unlock()
@@ -272,7 +286,7 @@ func nodeReferencedByForward(nodeID int64) (bool, error) {
 	var tunnelReferenceCount int64
 	if err := model.DB.Table("forward AS f").
 		Joins("JOIN tunnel AS t ON t.id = f.tunnel_id").
-		Where("t.in_node_id = ? OR t.out_node_id = ?", nodeID, nodeID).
+		Where("t.in_node_id = ? OR t.relay_node_id = ? OR t.out_node_id = ?", nodeID, nodeID, nodeID).
 		Count(&tunnelReferenceCount).Error; err != nil {
 		return false, err
 	}
@@ -297,11 +311,11 @@ func resyncNodeRelatedForwards(nodeID int64, serverIPChanged bool) error {
 	var errs []error
 	seenForwards := map[int64]struct{}{}
 	if serverIPChanged {
-		var outTunnels []model.Tunnel
-		if err := model.DB.Where("out_node_id = ? AND type = ?", nodeID, tunnelTypeTunnelForward).Find(&outTunnels).Error; err != nil {
+		var dependentTunnels []model.Tunnel
+		if err := model.DB.Where("(relay_node_id = ? OR out_node_id = ?) AND type = ?", nodeID, nodeID, tunnelTypeTunnelForward).Find(&dependentTunnels).Error; err != nil {
 			return err
 		}
-		for _, t := range outTunnels {
+		for _, t := range dependentTunnels {
 			var forwards []model.Forward
 			if err := model.DB.Where("tunnel_id = ?", t.ID).Find(&forwards).Error; err != nil {
 				errs = append(errs, err)
@@ -362,10 +376,14 @@ func DeleteNode(id int64) result.R {
 		return result.Err("节点不存在")
 	}
 
-	var inCount, outCount int64
+	var inCount, relayCount, outCount int64
 	model.DB.Model(&model.Tunnel{}).Where("in_node_id = ?", id).Count(&inCount)
 	if inCount > 0 {
 		return result.Err(fmt.Sprintf("该节点还有 %d 个隧道作为入口节点在使用，请先删除相关隧道", inCount))
+	}
+	model.DB.Model(&model.Tunnel{}).Where("relay_node_id = ?", id).Count(&relayCount)
+	if relayCount > 0 {
+		return result.Err(fmt.Sprintf("该节点还有 %d 个隧道作为中继节点在使用，请先删除相关隧道", relayCount))
 	}
 	model.DB.Model(&model.Tunnel{}).Where("out_node_id = ?", id).Count(&outCount)
 	if outCount > 0 {
@@ -652,6 +670,10 @@ func collectNftRefreshNodeIDs(nodeID int64) ([]int64, error) {
 	}
 	refreshed := map[int64]bool{nodeID: true}
 	for _, t := range tunnels {
+		if relayNodeID := tunnelRelayNodeID(&t); relayNodeID > 0 && !refreshed[relayNodeID] {
+			refreshed[relayNodeID] = true
+			nodeIDs = append(nodeIDs, relayNodeID)
+		}
 		var forwards []model.Forward
 		if err := model.DB.Where("tunnel_id = ? AND status = 1", t.ID).Find(&forwards).Error; err != nil {
 			return nil, fmt.Errorf("读取 nft 关联转发: %w", err)
@@ -704,6 +726,27 @@ func refreshNftNodesCheckedLocked(nodeIDs []int64) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// refreshNftNodesUntilErrorLocked 用于三节点首次发布：按调用方给定的
+// 下游到上游顺序执行，任一下游失败都不会继续启用入口规则。
+func refreshNftNodesUntilErrorLocked(nodeIDs []int64) error {
+	seen := make(map[int64]struct{}, len(nodeIDs))
+	for _, nodeID := range nodeIDs {
+		if nodeID <= 0 {
+			continue
+		}
+		if _, duplicate := seen[nodeID]; duplicate {
+			continue
+		}
+		seen[nodeID] = struct{}{}
+		// 首次发布不能接受“请求可能已执行但响应丢失”：下游未确认时
+		// 必须停止，不能继续启用 B/A。补偿与重连会从错误期望态收敛。
+		if err := doRefreshNodeForwardRulesWithPolicy(nodeID, false); err != nil {
+			return fmt.Errorf("node %d: %w", nodeID, err)
+		}
+	}
+	return nil
 }
 
 func doRefreshNodeForwardRulesChecked(nodeID int64) error {
@@ -770,6 +813,9 @@ func buildNftRules(nodeID int64) ([]dto.NftRuleDto, error) {
 		if err := appendEntryRules(tx, &rules, nodeID); err != nil {
 			return err
 		}
+		if err := appendRelayRules(tx, &rules, nodeID); err != nil {
+			return err
+		}
 		return appendExitRules(tx, &rules, nodeID)
 	})
 	if err != nil {
@@ -828,14 +874,23 @@ func appendEntryRules(db *gorm.DB, out *[]dto.NftRuleDto, nodeID int64) error {
 			if member == nil {
 				continue
 			}
-			var outNode model.Node
-			if err := db.First(&outNode, member.OutNodeID).Error; err != nil {
-				return err
+			nextNodeID := member.OutNodeID
+			nextPort := member.OutPort
+			if relayNodeID := tunnelRelayNodeID(tunnel); relayNodeID > 0 {
+				nextNodeID = relayNodeID
+				nextPort = member.RelayPort
 			}
-			if strings.TrimSpace(outNode.ServerIP) == "" {
+			if nextPort <= 0 {
 				continue
 			}
-			target, err := parseTargetHostPort(outNode.ServerIP, member.OutPort, true)
+			var nextNode model.Node
+			if err := db.First(&nextNode, nextNodeID).Error; err != nil {
+				return err
+			}
+			if strings.TrimSpace(nextNode.ServerIP) == "" {
+				continue
+			}
+			target, err := parseTargetHostPort(nextNode.ServerIP, nextPort, true)
 			if err != nil {
 				continue
 			}
@@ -863,6 +918,68 @@ func appendEntryRules(db *gorm.DB, out *[]dto.NftRuleDto, nodeID int64) error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// appendRelayRules 构建三节点链路的中继规则：B:relayPort -> C:outPort。
+// 中继不写流量计数器，用户流量只在入口 A 统计一次。
+func appendRelayRules(db *gorm.DB, out *[]dto.NftRuleDto, nodeID int64) error {
+	var tunnels []model.Tunnel
+	if err := db.Where("relay_node_id = ? AND type = ?", nodeID, tunnelTypeTunnelForward).Find(&tunnels).Error; err != nil {
+		return err
+	}
+	for i := range tunnels {
+		tunnel := &tunnels[i]
+		var forwards []model.Forward
+		if err := db.Where("tunnel_id = ? AND status = ?", tunnel.ID, forwardStatusActive).Find(&forwards).Error; err != nil {
+			return err
+		}
+		for j := range forwards {
+			forward := &forwards[j]
+			allowed, err := forwardPermissionAllowsRuntimeDB(db, forward)
+			if err != nil {
+				return err
+			}
+			if !allowed {
+				continue
+			}
+			members, err := deployForwardExitMembersDB(db, forward, tunnel)
+			if err != nil {
+				return err
+			}
+			for _, member := range members {
+				if member.RelayPort <= 0 || member.OutPort <= 0 {
+					continue
+				}
+				var outNode model.Node
+				if err := db.First(&outNode, member.OutNodeID).Error; err != nil {
+					return err
+				}
+				target, err := parseTargetHostPort(outNode.ServerIP, member.OutPort, true)
+				if err != nil {
+					continue
+				}
+				if err := appendRelayRulesForMember(db, out, forward, tunnel, member.RelayPort, target.IP, target.Port); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func appendRelayRulesForMember(db *gorm.DB, out *[]dto.NftRuleDto, forward *model.Forward, tunnel *model.Tunnel, listenPort int, targetIP netip.Addr, targetPort int) error {
+	userTunnelID, err := resolveUserTunnelIDDB(db, forward.UserID, tunnel.ID)
+	if err != nil {
+		return err
+	}
+	for _, protocol := range resolveProtocols(tunnel) {
+		rules, err := gost.BuildExitRulesWithComment(forward.ID, forward.UserID, userTunnelID, determineFamily(targetIP), protocol, listenPort, targetIP, targetPort)
+		if err != nil {
+			continue
+		}
+		appendRuleDtos(out, forward, tunnel, protocol, listenPort, targetIP, targetPort, rules)
 	}
 	return nil
 }

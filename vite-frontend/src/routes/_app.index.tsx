@@ -288,6 +288,11 @@ function Dashboard() {
     () => (isAdmin ? adminTunnels.filter((t) => t.type === 2) : []),
     [adminTunnels, isAdmin],
   );
+  const selectedStressTunnel = useMemo(
+    () => stressTunnels.find((t: any) => stressTunnelIdOf(t) === Number(stressTunnelId)),
+    [stressTunnelId, stressTunnels],
+  );
+  const stressHasRelay = Boolean(selectedStressTunnel?.relayNodeId);
   const visibleForwards = isAdmin && adminForwards.length > 0 ? adminForwards : packageForwards;
   const legacyForwardTrafficBytes = visibleForwards.reduce(
     (sum: number, f: any) => sum + Number(f.inFlow || 0) + Number(f.outFlow || 0),
@@ -504,6 +509,7 @@ function Dashboard() {
   useEffect(() => {
     if (!stressOpen || stressTunnelId || stressTunnels.length === 0) return;
     setStressTunnelId(String(stressTunnelIdOf(stressTunnels[0])));
+    setStressDirection(stressTunnels[0]?.relayNodeId ? "in-to-relay" : "in-to-out");
   }, [stressOpen, stressTunnelId, stressTunnels]);
 
   const openStressTest = () => {
@@ -513,6 +519,7 @@ function Dashboard() {
     connectSpeedWs();
     if (!stressTunnelId && stressTunnelIdOf(stressTunnels[0])) {
       setStressTunnelId(String(stressTunnelIdOf(stressTunnels[0])));
+      setStressDirection(stressTunnels[0]?.relayNodeId ? "in-to-relay" : "in-to-out");
     }
   };
 
@@ -921,7 +928,13 @@ function Dashboard() {
               <div className="text-xs font-medium text-muted-foreground">选择隧道</div>
               <Select
                 value={stressTunnelId}
-                onValueChange={setStressTunnelId}
+                onValueChange={(value) => {
+                  setStressTunnelId(value);
+                  const selected = stressTunnels.find(
+                    (t: any) => stressTunnelIdOf(t) === Number(value),
+                  );
+                  setStressDirection(selected?.relayNodeId ? "in-to-relay" : "in-to-out");
+                }}
                 disabled={stressTunnels.length === 0 || stressLoading}
               >
                 <SelectTrigger>
@@ -953,8 +966,19 @@ function Dashboard() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="in-to-out">入口节点 → 出口节点</SelectItem>
-                    <SelectItem value="out-to-in">出口节点 → 入口节点</SelectItem>
+                    {stressHasRelay ? (
+                      <>
+                        <SelectItem value="in-to-relay">入口节点 → 中继节点</SelectItem>
+                        <SelectItem value="relay-to-out">中继节点 → 出口节点</SelectItem>
+                        <SelectItem value="out-to-relay">出口节点 → 中继节点</SelectItem>
+                        <SelectItem value="relay-to-in">中继节点 → 入口节点</SelectItem>
+                      </>
+                    ) : (
+                      <>
+                        <SelectItem value="in-to-out">入口节点 → 出口节点</SelectItem>
+                        <SelectItem value="out-to-in">出口节点 → 入口节点</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

@@ -37,6 +37,8 @@ export interface TrafficTunnelOption {
   type?: number;
   inNodeId?: number;
   inNodeName?: string;
+  relayNodeId?: number;
+  relayNodeName?: string;
   outNodeId?: number;
   outNodeName?: string;
 }
@@ -45,11 +47,15 @@ export function trafficTunnelLabel(option: TrafficTunnelOption | null | undefine
   if (!option) return "全部隧道";
   const name = String(option.tunnelName || "").trim();
   const inNode = String(option.inNodeName || "").trim();
+  const relayNode = String(option.relayNodeName || "").trim();
   const outNode = String(option.outNodeName || "").trim();
   const isDistinctRoute =
     Number(option.type) === 2 ||
     (inNode && outNode && Number(option.inNodeId || 0) !== Number(option.outNodeId || 0));
-  const route = isDistinctRoute && inNode && outNode ? `${inNode} → ${outNode}` : inNode || outNode;
+  const route =
+    isDistinctRoute && inNode && outNode
+      ? [inNode, relayNode, outNode].filter(Boolean).join(" → ")
+      : inNode || relayNode || outNode;
   if (name && route && name !== route) return `${name} · ${route}`;
   return name || route || `隧道 #${Number(option.tunnelId || 0)}`;
 }

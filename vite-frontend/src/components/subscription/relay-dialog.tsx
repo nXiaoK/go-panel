@@ -26,9 +26,19 @@ import { FormField as Field } from "@/components/page";
 type RelayPreview = {
   tunnelName?: string;
   tunnelTypeName?: string;
-  entry?: { address?: string; ip?: string; port?: number };
+  entry?: RelayEndpoint;
+  relay?: RelayEndpoint;
+  exit?: RelayEndpoint;
   target?: { address?: string; ip?: string; port?: number };
 } | null;
+
+type RelayEndpoint = {
+  nodeName?: string;
+  address?: string;
+  ip?: string;
+  port?: number;
+  portText?: string;
+};
 
 export function SubscriptionRelayDialog({
   open,
@@ -180,6 +190,18 @@ export function SubscriptionRelayDialog({
                 {preview.entry?.address ||
                   `${preview.entry?.ip || ""}:${preview.entry?.port || ""}`}
               </div>
+              {preview.relay ? (
+                <div>
+                  中继：{preview.relay.nodeName || "-"} · {preview.relay.ip || ""}:
+                  {preview.relay.port || preview.relay.portText || ""}
+                </div>
+              ) : null}
+              {preview.exit ? (
+                <div>
+                  出口：{preview.exit.nodeName || "-"} · {preview.exit.ip || ""}:
+                  {preview.exit.port || preview.exit.portText || ""}
+                </div>
+              ) : null}
               <div>
                 目标：
                 {preview.target?.address ||

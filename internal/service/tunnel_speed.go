@@ -16,8 +16,12 @@ import (
 )
 
 const (
-	speedDirectionInToOut = "in-to-out"
-	speedDirectionOutToIn = "out-to-in"
+	speedDirectionInToOut    = "in-to-out"
+	speedDirectionOutToIn    = "out-to-in"
+	speedDirectionInToRelay  = "in-to-relay"
+	speedDirectionRelayToOut = "relay-to-out"
+	speedDirectionOutToRelay = "out-to-relay"
+	speedDirectionRelayToIn  = "relay-to-in"
 )
 
 type Iperf3Summary struct {
@@ -55,7 +59,9 @@ func normalizeTunnelSpeedTestRequest(req dto.TunnelSpeedTestDto) dto.TunnelSpeed
 	if req.TestID == "" {
 		req.TestID = uuid.NewString()
 	}
-	if req.Direction != speedDirectionOutToIn {
+	switch req.Direction {
+	case speedDirectionOutToIn, speedDirectionInToRelay, speedDirectionRelayToOut, speedDirectionOutToRelay, speedDirectionRelayToIn:
+	default:
 		req.Direction = speedDirectionInToOut
 	}
 	if req.DurationSeconds <= 0 {
@@ -85,10 +91,27 @@ func validateIperfPort(port int) error {
 
 func speedTestNodeIDs(tunnel model.Tunnel, direction string) (int64, int64, error) {
 	if tunnel.Type != tunnelTypeTunnelForward {
-		return 0, 0, errors.New("压力测试仅支持由两个节点建立的隧道转发")
+		return 0, 0, errors.New("压力测试仅支持隧道转发")
 	}
 	if tunnel.InNodeID == 0 || tunnel.OutNodeID == 0 || tunnel.InNodeID == tunnel.OutNodeID {
 		return 0, 0, errors.New("隧道节点配置不完整")
+	}
+	if relayNodeID := tunnelRelayNodeID(&tunnel); relayNodeID > 0 {
+		if relayNodeID == tunnel.InNodeID || relayNodeID == tunnel.OutNodeID {
+			return 0, 0, errors.New("三节点隧道配置不完整")
+		}
+		switch direction {
+		case speedDirectionInToOut, speedDirectionOutToIn:
+			return 0, 0, errors.New("三节点串联不支持端到端直测，请选择具体相邻节点方向")
+		case speedDirectionRelayToOut:
+			return relayNodeID, tunnel.OutNodeID, nil
+		case speedDirectionOutToRelay:
+			return tunnel.OutNodeID, relayNodeID, nil
+		case speedDirectionRelayToIn:
+			return relayNodeID, tunnel.InNodeID, nil
+		default:
+			return tunnel.InNodeID, relayNodeID, nil
+		}
 	}
 	if direction == speedDirectionOutToIn {
 		return tunnel.OutNodeID, tunnel.InNodeID, nil

@@ -71,6 +71,39 @@ func TestSpeedTestNodeIDsForDirection(t *testing.T) {
 	}
 }
 
+func TestSpeedTestNodeIDsForThreeNodeHops(t *testing.T) {
+	relayID := int64(17)
+	tunnel := model.Tunnel{Type: tunnelTypeTunnelForward, InNodeID: 11, RelayNodeID: &relayID, OutNodeID: 22}
+	tests := []struct {
+		direction string
+		src       int64
+		dst       int64
+	}{
+		{direction: speedDirectionInToRelay, src: 11, dst: 17},
+		{direction: speedDirectionRelayToOut, src: 17, dst: 22},
+		{direction: speedDirectionOutToRelay, src: 22, dst: 17},
+		{direction: speedDirectionRelayToIn, src: 17, dst: 11},
+	}
+	for _, tt := range tests {
+		src, dst, err := speedTestNodeIDs(tunnel, tt.direction)
+		if err != nil {
+			t.Fatalf("%s returned error: %v", tt.direction, err)
+		}
+		if src != tt.src || dst != tt.dst {
+			t.Fatalf("%s src=%d dst=%d, want %d -> %d", tt.direction, src, dst, tt.src, tt.dst)
+		}
+		req := normalizeTunnelSpeedTestRequest(dto.TunnelSpeedTestDto{Direction: tt.direction})
+		if req.Direction != tt.direction {
+			t.Fatalf("normalized direction=%q, want %q", req.Direction, tt.direction)
+		}
+	}
+	for _, direction := range []string{speedDirectionInToOut, speedDirectionOutToIn} {
+		if _, _, err := speedTestNodeIDs(tunnel, direction); err == nil {
+			t.Fatalf("legacy direction %q should be rejected for a three-node tunnel", direction)
+		}
+	}
+}
+
 func TestSpeedTestNodeIDsRejectsPortForwardTunnel(t *testing.T) {
 	_, _, err := speedTestNodeIDs(model.Tunnel{Type: tunnelTypePortForward, InNodeID: 11, OutNodeID: 11}, speedDirectionInToOut)
 	if err == nil {

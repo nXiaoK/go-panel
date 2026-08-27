@@ -37,7 +37,14 @@ func nftRuntimeNodeIDs(forward *model.Forward, tunnel *model.Tunnel) []int64 {
 		return nil
 	}
 	ids := []int64{tunnel.InNodeID}
-	for _, member := range loadForwardExitMembers(forward, tunnel) {
+	if relayNodeID := tunnelRelayNodeID(tunnel); relayNodeID > 0 {
+		ids = append(ids, relayNodeID)
+	}
+	members := loadForwardExitMembers(forward, tunnel)
+	if tunnel.Type == tunnelTypeTunnelForward && len(members) == 0 {
+		ids = append(ids, tunnel.OutNodeID)
+	}
+	for _, member := range members {
 		ids = append(ids, member.OutNodeID)
 	}
 	return ids
@@ -49,6 +56,9 @@ func requestedRuntimeNodeIDs(tunnel *model.Tunnel, members []dto.ForwardExitMemb
 	}
 	ids := []int64{tunnel.InNodeID}
 	if tunnel.Type == tunnelTypeTunnelForward {
+		if relayNodeID := tunnelRelayNodeID(tunnel); relayNodeID > 0 {
+			ids = append(ids, relayNodeID)
+		}
 		if len(members) == 0 {
 			ids = append(ids, tunnel.OutNodeID)
 		} else {
@@ -436,7 +446,7 @@ func UpdateForwardA(forward *model.Forward) error {
 	if err != nil {
 		return err
 	}
-	nodeIDs := []int64{tunnel.InNodeID, tunnel.OutNodeID}
+	nodeIDs := tunnelPathNodeIDs(&tunnel)
 	for _, member := range members {
 		nodeIDs = append(nodeIDs, member.OutNodeID)
 	}
