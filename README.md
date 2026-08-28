@@ -150,7 +150,7 @@ nftables 模式安装、远程组件升级和规则刷新都会写入 `/etc/sysc
 
 ## 本地开发
 
-需要 Go 1.26.5、Node.js 22 和 npm：
+需要 Go 1.26.7、Node.js 22 和 npm：
 
 ```bash
 npm ci --prefix vite-frontend

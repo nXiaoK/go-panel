@@ -26,7 +26,8 @@ jobs:
       run:
         working-directory: vite-frontend
     steps:
-      - uses: actions/checkout@v4
+      # checkout v5 使用 Node.js 24；回退 v4 会恢复 Node.js 20 弃用警告。
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           # 与 Dockerfile 保持一致，防止本地和 CI 使用不同 Node 主版本。
@@ -51,17 +52,19 @@ jobs:
     runs-on: ubuntu-latest
     needs: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      # checkout v5 与 setup-go v6 使用 Node.js 24，避免后端任务依赖已弃用运行时。
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           # 该版本同时用于主程序、节点工具和 Docker 构建，升级时必须三处一起修改。
-          go-version: "1.26.5"
+          go-version: "1.26.7"
           cache-dependency-path: |
             go.sum
             go-gost/go.sum
             go-gost/x/go.sum
       - name: 下载前端产物
-        uses: actions/download-artifact@v4
+        # v5 使用 Node.js 24；回退 v4 会恢复 Node.js 20 弃用警告。
+        uses: actions/download-artifact@v5
         with:
           name: vite-spa-dist
           path: vite-frontend/dist
@@ -110,7 +113,8 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      # checkout v5 使用 Node.js 24；回退 v4 会恢复 Node.js 20 弃用警告。
+      - uses: actions/checkout@v5
       - name: 计算构建版本元数据
         id: build
         shell: bash
@@ -178,15 +182,17 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      # checkout v5 使用 Node.js 24；回退 v4 会恢复 Node.js 20 弃用警告。
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: vite-frontend/package-lock.json
-      - uses: actions/setup-go@v5
+      # setup-go v6 使用 Node.js 24；Go 安全补丁版本由下方显式固定。
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.26.5"
+          go-version: "1.26.7"
           cache-dependency-path: |
             go.sum
             go-gost/go.sum

@@ -228,14 +228,15 @@ func TestDeploymentUsesConsistentSQLiteBackup(t *testing.T) {
 	}
 }
 
-func TestDockerfileUsesPinnedGoToolchain(t *testing.T) {
+func TestDeploymentUsesPinnedGoToolchain(t *testing.T) {
+	const goVersion = "1.26.7"
 	raw, err := os.ReadFile("Dockerfile")
 	if err != nil {
 		t.Fatal(err)
 	}
 	dockerfile := string(raw)
-	if !strings.Contains(dockerfile, "FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS backend") {
-		t.Fatal("Dockerfile backend builder must pin Go 1.26.5")
+	if !strings.Contains(dockerfile, "FROM --platform=$BUILDPLATFORM golang:"+goVersion+"-alpine AS backend") {
+		t.Fatalf("Dockerfile backend builder must pin Go %s", goVersion)
 	}
 	for _, required := range []string{
 		"sh ./scripts/build-node-assets.sh",
@@ -245,6 +246,28 @@ func TestDockerfileUsesPinnedGoToolchain(t *testing.T) {
 	} {
 		if !strings.Contains(dockerfile, required) {
 			t.Fatalf("Dockerfile is missing %q", required)
+		}
+	}
+	for _, file := range []string{"go.mod", "go-gost/go.mod", "go-gost/x/go.mod"} {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(content), "\ngo "+goVersion+"\n") {
+			t.Fatalf("%s must pin Go %s", file, goVersion)
+		}
+	}
+	workflowRaw, err := os.ReadFile(".github/workflows/ci.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(workflowRaw)
+	if strings.Count(workflow, `go-version: "`+goVersion+`"`) != 2 {
+		t.Fatalf("backend and release jobs must both pin Go %s", goVersion)
+	}
+	for _, action := range []string{"actions/checkout@v5", "actions/setup-go@v6", "actions/download-artifact@v5"} {
+		if !strings.Contains(workflow, action) {
+			t.Fatalf("workflow must use %s", action)
 		}
 	}
 }

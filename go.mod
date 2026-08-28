@@ -1,7 +1,7 @@
 module github.com/nXiaoK/go-panel
 
-// Go 版本与 Dockerfile、GitHub Actions 保持一致；降低版本可能无法解析当前依赖。
-go 1.26.5
+// Go 版本与 Dockerfile、GitHub Actions 保持一致；1.26.7 包含当前标准库安全修复，降低版本会恢复已知漏洞。
+go 1.26.7
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.3

@@ -1,7 +1,7 @@
 module github.com/go-gost/gost
 
-// 内置节点与面板使用同一 Go 工具链；调整时必须同步更新 CI 和 Docker 构建环境。
-go 1.26.5
+// 内置节点与面板使用同一 Go 工具链；1.26.7 包含当前标准库安全修复，调整时必须同步更新 CI 和 Docker。
+go 1.26.7
 
 require (
 	github.com/go-gost/core v0.3.1
@@ -74,8 +74,9 @@ require (
 	github.com/prometheus/common v0.48.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
-	github.com/quic-go/quic-go v0.59.1 // indirect
-	github.com/quic-go/webtransport-go v0.10.0 // indirect
+	// QUIC/WebTransport 提供 HTTP/3 传输；这些版本包含 GO-2026-6099 修复，降级会恢复内存耗尽风险。
+	github.com/quic-go/quic-go v0.60.0 // indirect
+	github.com/quic-go/webtransport-go v0.11.1 // indirect
 	github.com/riobard/go-bloom v0.0.0-20200614022211-cdc8013cb5b3 // indirect
 	github.com/rs/xid v1.3.0 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect

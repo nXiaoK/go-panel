@@ -1,7 +1,7 @@
 module github.com/go-gost/x
 
-// 协议扩展依赖新版 QUIC、WebTransport 与 DTLS API，不能使用更早的 Go 工具链。
-go 1.26.5
+// 协议扩展依赖新版 QUIC、WebTransport 与 DTLS API；1.26.7 包含当前标准库安全修复，不能降级。
+go 1.26.7
 
 require github.com/shirou/gopsutil/v3 v3.24.5
 
@@ -27,8 +27,9 @@ require (
 	github.com/pion/dtls/v3 v3.1.5
 	github.com/pires/go-proxyproto v0.7.0
 	github.com/prometheus/client_golang v1.19.1
-	github.com/quic-go/quic-go v0.59.1
-	github.com/quic-go/webtransport-go v0.10.0
+	// QUIC/WebTransport 提供 HTTP/3 传输；这些版本包含 GO-2026-6099 修复，降级会恢复内存耗尽风险。
+	github.com/quic-go/quic-go v0.60.0
+	github.com/quic-go/webtransport-go v0.11.1
 	github.com/rs/xid v1.3.0
 	github.com/shadowsocks/go-shadowsocks2 v0.1.5
 	github.com/shadowsocks/shadowsocks-go v0.0.0-20200409064450-3e585ff90601

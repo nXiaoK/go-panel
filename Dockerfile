@@ -10,8 +10,8 @@ COPY ["vite-frontend/", "./"]
 RUN npm run build
 
 
-# Go 阶段同时交叉编译面板和两种架构的节点程序；版本参数由 GitHub Actions 注入。
-FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS backend
+# Go 阶段同时交叉编译面板和两种架构的节点程序；1.26.7 包含当前标准库安全修复，不能降级。
+FROM --platform=$BUILDPLATFORM golang:1.26.7-alpine AS backend
 
 ARG TARGETOS=linux
 ARG TARGETARCH
