@@ -503,7 +503,8 @@ func updateForwardInternalWithFreshCurrent(req dto.ForwardUpdateDto, opUserID in
 					return errors.New(msg)
 				}
 			}
-			return tx.Save(&updated).Error
+			// 流量由上报事务独立累加，配置快照不能覆盖等待节点锁期间新增的计数。
+			return tx.Omit("in_flow", "out_flow").Save(&updated).Error
 		})
 	}()
 	if persistErr != nil {
@@ -691,7 +692,7 @@ func DeleteForward(cu CurrentUser, id int64) result.R {
 	}
 	forward.Status = forwardStatusPaused
 	forward.UpdatedTime = time.Now().UnixMilli()
-	if err := model.DB.Save(forward).Error; err != nil {
+	if err := model.DB.Omit("in_flow", "out_flow").Save(forward).Error; err != nil {
 		return result.Err(fmt.Sprintf("保存删除期望状态失败: %v", errors.Join(err, restoreGost())))
 	}
 	if err := refreshNftNodesCheckedLocked(affected); err != nil {
@@ -837,7 +838,7 @@ func changeForwardStatus(cu CurrentUser, id int64, targetStatus int, operation s
 	}
 	forward.Status = targetStatus
 	forward.UpdatedTime = time.Now().UnixMilli()
-	if err := model.DB.Save(forward).Error; err != nil {
+	if err := model.DB.Omit("in_flow", "out_flow").Save(forward).Error; err != nil {
 		return result.Err(fmt.Sprintf("更新状态失败: %v", restoreGostStatus(err)))
 	}
 	if err := refreshNftNodesCheckedLocked(affected); err != nil {

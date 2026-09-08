@@ -295,15 +295,19 @@ func ResetFlow(req dto.ResetFlowDto) result.R {
 		if err := model.DB.First(&user, req.ID).Error; err != nil {
 			return result.Err("用户不存在")
 		}
-		model.DB.Model(&model.User{}).Where("id = ?", req.ID).
-			Updates(map[string]interface{}{"in_flow": 0, "out_flow": 0})
+		if err := model.DB.Model(&model.User{}).Where("id = ?", req.ID).
+			Updates(map[string]interface{}{"in_flow": 0, "out_flow": 0}).Error; err != nil {
+			return result.Err("账号流量清零失败")
+		}
 	} else {
 		var ut model.UserTunnel
 		if err := model.DB.First(&ut, req.ID).Error; err != nil {
 			return result.Err("隧道不存在")
 		}
-		model.DB.Model(&model.UserTunnel{}).Where("id = ?", req.ID).
-			Updates(map[string]interface{}{"in_flow": 0, "out_flow": 0})
+		if err := model.DB.Model(&model.UserTunnel{}).Where("id = ?", req.ID).
+			Updates(map[string]interface{}{"in_flow": 0, "out_flow": 0}).Error; err != nil {
+			return result.Err("隧道流量清零失败")
+		}
 	}
 	return result.OkEmpty()
 }

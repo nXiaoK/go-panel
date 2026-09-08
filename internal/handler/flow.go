@@ -68,8 +68,8 @@ func uploadFlowData(c *gin.Context) {
 		respondApplyFlowError(c, err)
 		return
 	}
+	writeFlowAcknowledgement(c, "text/plain; charset=utf-8", []byte(successResponse))
 	service.EnforceGostFlowLimits(flow)
-	c.String(http.StatusOK, successResponse)
 }
 
 // uploadNftFlowBatch POST /flow/nft-upload （X-Node-Secret 头或 ?secret=）
@@ -114,8 +114,8 @@ func uploadNftFlowBatch(c *gin.Context) {
 		respondApplyFlowError(c, err)
 		return
 	}
+	writeFlowAcknowledgement(c, "text/plain; charset=utf-8", []byte(successResponse))
 	service.EnforceNftFlowLimits(batch.Items)
-	c.String(http.StatusOK, successResponse)
 }
 
 // uploadNftFlowBatchV2 POST /flow/nft-upload-v2 implements durable idempotent accounting.
@@ -143,7 +143,22 @@ func uploadNftFlowBatchV2(c *gin.Context) {
 		respondApplyFlowError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, ack)
+	rawAck, err := json.Marshal(ack)
+	if err != nil {
+		flowError(c, http.StatusInternalServerError, "flow acknowledgement failed")
+		return
+	}
+	writeFlowAcknowledgement(c, "application/json; charset=utf-8", rawAck)
+	// 重放也检查当前限额，允许上次 ACK 送达后中断的清理在重试时继续。
+	service.EnforceNftFlowLimits(batch.Items)
+}
+
+// writeFlowAcknowledgement 只在计费事务提交后调用。显式长度与 Flush 让节点
+// 在规则清理完成前就读完 ACK 并释放采集锁；不能只刷新分块响应的响应头。
+func writeFlowAcknowledgement(c *gin.Context, contentType string, body []byte) {
+	c.Header("Content-Length", strconv.Itoa(len(body)))
+	c.Data(http.StatusOK, contentType, body)
+	c.Writer.Flush()
 }
 
 // uploadGostConfig POST /flow/config （X-Node-Secret 头或 ?secret=，gost 配置自检）

@@ -1,6 +1,9 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log"
 	"math"
@@ -19,6 +22,10 @@ import (
 // 流量上报处理（对应 Java FlowController 业务部分）
 
 const defaultUserTunnelID int64 = 0
+
+// 退役引用与伪造已有转发不同：V2 可确认并丢弃已删除转发的尾量，避免阻塞整条节点队列。
+// 旧接口仍按节点不匹配拒绝，不能据缺失记录猜测用户、隧道或计费倍率。
+var errFlowForwardRetired = errors.Join(ErrFlowNodeMismatch, errors.New("flow forward retired"))
 
 type flowServiceRef struct {
 	forwardID      int64
@@ -82,7 +89,24 @@ func ApplyGostFlow(tx *gorm.DB, node AuthenticatedNode, flow dto.FlowDto) error 
 	if !ok || !validateGostFlowBounds(flow.U, flow.D) {
 		return ErrInvalidFlowReport
 	}
-	return applyAuthenticatedFlow(tx, node, forwardModeGost, ref, flow, time.Now())
+	if tx == nil || node.ID <= 0 || normalizeForwardMode(node.ForwardMode) != forwardModeGost {
+		return ErrFlowNodeMismatch
+	}
+	now := time.Now()
+	apply := func() error { return applyAuthenticatedFlow(tx, node, forwardModeGost, ref, flow, now) }
+	if flow.ReporterID == "" && flow.Sequence == 0 {
+		return apply()
+	}
+	if !validFlowReporterToken(flow.ReporterID) || flow.Sequence == 0 || flow.Sequence > math.MaxInt64 {
+		return ErrInvalidFlowReport
+	}
+	raw, err := json.Marshal(flow)
+	if err != nil {
+		return ErrInvalidFlowReport
+	}
+	digest := sha256.Sum256(raw)
+	// 使用固定短批次标识；完整服务名、方向和字节数都参与摘要，重试不能换内容。
+	return applyFlowReportOnce(tx, node.ID, flow.ReporterID, flow.Sequence, "gost", hex.EncodeToString(digest[:]), now.UnixMilli(), apply)
 }
 
 func ApplyNftFlowItem(tx *gorm.DB, node AuthenticatedNode, item dto.NftFlowItem) error {
@@ -115,7 +139,7 @@ func applyAuthenticatedFlow(tx *gorm.DB, node AuthenticatedNode, expectedMode st
 	var forward model.Forward
 	if err := tx.First(&forward, ref.forwardID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrFlowNodeMismatch
+			return errFlowForwardRetired
 		}
 		return err
 	}
@@ -285,7 +309,7 @@ func checkUserRelatedLimits(userID int64) {
 		log.Printf("用户流量限制检查失败(user=%d): %v", userID, err)
 		return
 	}
-	if flowLimitBytes(user.Flow) < totalFlowBytes(user.InFlow, user.OutFlow) ||
+	if flowLimitBytes(user.Flow) <= totalFlowBytes(user.InFlow, user.OutFlow) ||
 		(user.ExpTime != nil && *user.ExpTime <= time.Now().UnixMilli()) ||
 		!isActiveUserStatus(user.Status) {
 		pauseAllUserServices(userID)

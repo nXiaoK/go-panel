@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-gost/x/internal/util/crypto"
 	"github.com/go-gost/x/internal/util/panelurl"
 	"github.com/go-gost/x/registry"
+	"github.com/rs/xid"
 )
 
 var httpReportURL string
@@ -26,6 +28,61 @@ type TrafficReportItem struct {
 	N string `json:"n"` // 服务名（name缩写）
 	U int64  `json:"u"` // 上行流量（up缩写）
 	D int64  `json:"d"` // 下行流量（down缩写）
+	// 同一服务实例使用稳定 ID 和递增序号；失败后必须原样重试，需配合支持去重的面板。
+	ReporterID string `json:"reporterId,omitempty"`
+	Sequence   uint64 `json:"sequence,omitempty"`
+}
+
+// 单次每方向不超过 1 TiB，与面板流量协议保持一致；长时间离线的积压分次发送。
+const maxTrafficReportBytes uint64 = 1 << 40
+
+type trafficReportState struct {
+	reporterID                    string
+	sequence                      uint64
+	inputBaseline, outputBaseline uint64
+	pending                       *TrafficReportItem
+	pendingInput, pendingOutput   uint64
+}
+
+// report 由每个服务的单一采样循环调用。只推进已确认基线，不写入连接共享的
+// 累计计数器，避免 ACK 期间的新流量被覆盖；待确认内容不随新流量改变。
+func (r *trafficReportState) report(ctx context.Context, name string, st stats.Stats, send func(context.Context, TrafficReportItem) (bool, error)) error {
+	if r.pending == nil {
+		input, output := st.Get(stats.KindInputBytes), st.Get(stats.KindOutputBytes)
+		up, nextInput := trafficReportDelta(r.inputBaseline, input)
+		down, nextOutput := trafficReportDelta(r.outputBaseline, output)
+		if up == 0 && down == 0 {
+			return nil
+		}
+		if r.reporterID == "" {
+			r.reporterID = "gost-" + xid.New().String()
+		}
+		if r.sequence >= math.MaxInt64 {
+			return fmt.Errorf("流量上报序号已耗尽")
+		}
+		// 入口连接 Read 是客户端上传，Write 是客户端下载，与 nftables 的方向一致。
+		r.pending = &TrafficReportItem{N: name, U: int64(up), D: int64(down), ReporterID: r.reporterID, Sequence: r.sequence + 1}
+		r.pendingInput, r.pendingOutput = nextInput, nextOutput
+	}
+	ok, err := send(ctx, *r.pending)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("流量上报未确认")
+	}
+	r.sequence = r.pending.Sequence
+	r.inputBaseline, r.outputBaseline = r.pendingInput, r.pendingOutput
+	r.pending = nil
+	return nil
+}
+
+func trafficReportDelta(previous, current uint64) (uint64, uint64) {
+	if current < previous {
+		previous = 0
+	}
+	delta := min(current-previous, maxTrafficReportBytes)
+	return delta, previous + delta
 }
 
 // SetHTTPReportURL 根据节点持久化的同一面板基址构造流量和配置上报地址。

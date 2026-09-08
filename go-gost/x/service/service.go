@@ -366,6 +366,7 @@ func (s *defaultService) observeStats(ctx context.Context) {
 	}
 
 	var events []observer.Event
+	var traffic trafficReportState
 
 	ticker := time.NewTicker(d)
 	defer ticker.Stop()
@@ -373,17 +374,20 @@ func (s *defaultService) observeStats(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
+			st := s.status.Stats()
+			if st == nil {
+				continue
+			}
+			// HTTP 计费重试独立于观察器的更新标记和事件重试；空闲连接也要补发未确认流量。
+			if err := traffic.report(ctx, s.name, st, sendTrafficReport); err != nil {
+				fmt.Printf("发送流量报告失败: %v\n", err)
+			}
 
 			// First, try to send any pending events
 			if len(events) > 0 {
 				if err := s.options.observer.Observe(ctx, events); err == nil {
 					events = nil
 				}
-				continue
-			}
-
-			st := s.status.Stats()
-			if st == nil {
 				continue
 			}
 
@@ -403,22 +407,6 @@ func (s *defaultService) observeStats(ctx context.Context) {
 						TotalErrs:    st.Get(stats.KindTotalErrs),
 					},
 				}
-				if outputBytes > 0 || inputBytes > 0 {
-					reportItems := TrafficReportItem{
-						N: s.name,
-						U: int64(outputBytes),
-						D: int64(inputBytes),
-					}
-					success, err := sendTrafficReport(ctx, reportItems)
-					if err != nil {
-						fmt.Printf("发送流量报告失败: %v", err)
-					} else if success {
-						if xstats, ok := st.(*xstats.Stats); ok {
-							xstats.ResetTraffic(st.Get(stats.KindInputBytes)-inputBytes, st.Get(stats.KindOutputBytes)-outputBytes)
-						}
-					}
-				}
-
 				if err := s.options.observer.Observe(ctx, evs); err != nil {
 					fmt.Printf("发送观察器事件失败: %v", err)
 					events = evs

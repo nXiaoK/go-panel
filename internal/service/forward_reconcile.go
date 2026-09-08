@@ -16,6 +16,14 @@ import (
 
 func restoreForwardDesiredSnapshot(forward model.Forward, members []model.ForwardExitMember) error {
 	return model.DB.Transaction(func(tx *gorm.DB) error {
+		// 回滚只恢复期望配置；节点切换期间已确认的流量必须保留。
+		// 若记录已被删除才使用快照重建，并保留快照中原有的历史计数。
+		var current model.Forward
+		if err := tx.Select("id", "in_flow", "out_flow").First(&current, forward.ID).Error; err == nil {
+			forward.InFlow, forward.OutFlow = current.InFlow, current.OutFlow
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("load flow counters before restore: %w", err)
+		}
 		if err := tx.Save(&forward).Error; err != nil {
 			return fmt.Errorf("restore forward snapshot: %w", err)
 		}

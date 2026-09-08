@@ -29,6 +29,20 @@ const {
 const gb = 1024 ** 3;
 
 describe("dashboard traffic helpers", () => {
+  it("preserves sub-megabyte traffic in series, hover values and empty-state detection", () => {
+    for (const range of ["24h", "7d", "30d"]) {
+      const time = range === "24h" ? "23:00" : "09-08";
+      const series = buildTrafficSeries([{ time, inFlow: 123, outFlow: 456 }], range);
+      assert.equal(series.at(-1)?.down, 123 / gb);
+      assert.equal(series.at(-1)?.up, 456 / gb);
+      assert.equal(getTrafficTrendState(series), "ready");
+      const hover = pickTrafficHoverPoint(series, 400, 400);
+      assert.equal(hover?.down, 123 / gb);
+      assert.equal(hover?.up, 456 / gb);
+      assert.equal(hover?.total, 579 / gb);
+    }
+  });
+
   it("keeps a 24 point hourly series and places newest data at the end", () => {
     const series = buildTrafficSeries([{ time: "23:00", flow: gb, totalFlow: gb * 2 }], "24h");
 

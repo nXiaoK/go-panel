@@ -142,8 +142,8 @@ function bucketUpBytes(row: TrafficFlowRow) {
 function toPoint(row: TrafficFlowRow): TrafficPoint {
   return {
     time: String(row?.time || ""),
-    down: roundGb(bytesToGb(bucketDownBytes(row))),
-    up: roundGb(bytesToGb(bucketUpBytes(row))),
+    down: bytesToGb(bucketDownBytes(row)),
+    up: bytesToGb(bucketUpBytes(row)),
   };
 }
 
@@ -190,8 +190,8 @@ export function buildTrafficSeries(
 
   series[series.length - 1] = {
     ...series[series.length - 1],
-    down: roundGb(total.down),
-    up: roundGb(total.up),
+    down: total.down,
+    up: total.up,
   };
   return series;
 }
@@ -210,15 +210,15 @@ export function pickTrafficHoverPoint(
     lastIndex === 0 ? 0 : clamp(Math.round((clampedX / chartWidth) * lastIndex), 0, lastIndex);
   const point = data[index];
   const xPercent = lastIndex === 0 ? 0 : roundGb((index / lastIndex) * 100);
-  const down = roundGb(Number(point?.down || 0));
-  const up = roundGb(Number(point?.up || 0));
+  const down = nonNegativeNumber(point?.down);
+  const up = nonNegativeNumber(point?.up);
 
   return {
     index,
     time: String(point?.time || ""),
     down,
     up,
-    total: roundGb(down + up),
+    total: down + up,
     xPercent,
     tooltipLeftPercent: clamp(xPercent, 8, 92),
   };

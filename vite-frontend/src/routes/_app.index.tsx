@@ -95,6 +95,9 @@ function formatTraffic(bytes: number) {
 
 function formatTrafficGb(value: number) {
   const gb = Number(value || 0);
+  if (gb > 0 && gb < 1 / 1024 / 1024) return `${Math.round(gb * 1024 ** 3)} B`;
+  if (gb > 0 && gb < 1 / 1024) return `${(gb * 1024 * 1024).toFixed(2)} KB`;
+  if (gb > 0 && gb < 1) return `${(gb * 1024).toFixed(2)} MB`;
   return `${gb.toFixed(gb >= 10 ? 2 : 3)} GB`;
 }
 
@@ -113,7 +116,7 @@ function timeGreeting(date = new Date()) {
 }
 
 function chartPointY(value: number, max: number) {
-  const safeMax = Math.max(1, Number(max || 0));
+  const safeMax = Number.isFinite(max) && max > 0 ? max : 1;
   const y = 92 - (Number(value || 0) / safeMax) * 78;
   return Math.max(8, Math.min(92, y));
 }
@@ -425,7 +428,7 @@ function Dashboard() {
   );
 
   const trafficMax = useMemo(
-    () => Math.max(1, ...trafficData.flatMap((item) => [item.down, item.up])),
+    () => Math.max(0, ...trafficData.flatMap((item) => [item.down, item.up])) || 1,
     [trafficData],
   );
   const downPath = useMemo(

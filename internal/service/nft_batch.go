@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"log"
 	"math"
 	"regexp"
 	"time"
@@ -40,60 +41,28 @@ func ProcessNftBatch(node AuthenticatedNode, batch dto.NftFlowBatchV2Dto) (dto.N
 		return dto.NftFlowAckDto{}, ErrInvalidFlowReport
 	}
 
-	var ack dto.NftFlowAckDto
-	applied := false
-	// 新节点使用持久化的采集时间，断线重传不会落入面板恢复所在小时；旧节点
-	// 没有该字段时仍按接收时间处理。同一批内所有转发始终写入同一个小时桶。
+	// 这里只提交收据和计费；HTTP 层必须完整送达 ACK 后再执行限额清理，
+	// 否则节点持有采集锁等待 ACK，面板又等待同一节点刷新规则，会互相阻塞。
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
-		var state model.FlowReporterState
-		err := tx.Where("node_id = ? AND reporter_id = ?", node.ID, batch.ReporterID).First(&state).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			state = model.FlowReporterState{NodeID: node.ID, ReporterID: batch.ReporterID, UpdatedTime: receivedAt.UnixMilli()}
-			if err := tx.Create(&state).Error; err != nil {
-				return err
+		return applyFlowReportOnce(tx, node.ID, batch.ReporterID, batch.Sequence, batch.BatchID, batchDigest, receivedAt.UnixMilli(), func() error {
+			for _, item := range batch.Items {
+				if err := applyNftFlowItemAt(tx, node, item, recordedAt); err != nil {
+					if errors.Is(err, errFlowForwardRetired) {
+						// 删除后冻结的旧规则仍可能产生尾量。已不存在的转发无法再可靠归账，
+						// 只退役该项；批次中其他转发必须继续入账并推进持久化序号。
+						log.Printf("忽略已删除转发的 NFT 尾量(node=%d forward=%d)", node.ID, *item.ForwardID)
+						continue
+					}
+					return err
+				}
 			}
-		} else if err != nil {
-			return err
-		}
-
-		if batch.Sequence == state.LastSequence {
-			if batch.BatchID != state.LastBatchID || batchDigest != state.LastAckDigest {
-				return ErrFlowBatchConflict
-			}
-			ack = nftBatchAck(state.ReporterID, state.LastSequence, state.LastBatchID, state.LastAckDigest)
 			return nil
-		}
-		if batch.Sequence != state.LastSequence+1 {
-			return ErrFlowSequence
-		}
-
-		for _, item := range batch.Items {
-			if err := applyNftFlowItemAt(tx, node, item, recordedAt); err != nil {
-				return err
-			}
-		}
-		ack = nftBatchAck(batch.ReporterID, batch.Sequence, batch.BatchID, batchDigest)
-		result := tx.Model(&model.FlowReporterState{}).Where("id = ? AND last_sequence = ?", state.ID, state.LastSequence).Updates(map[string]any{
-			"last_sequence":   batch.Sequence,
-			"last_batch_id":   batch.BatchID,
-			"last_ack_digest": ack.AckDigest,
-			"updated_time":    receivedAt.UnixMilli(),
 		})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrFlowSequence
-		}
-		applied = true
-		return nil
 	})
 	if err != nil {
 		return dto.NftFlowAckDto{}, err
 	}
-	if applied {
-		EnforceNftFlowLimits(batch.Items)
-	}
+	ack := nftBatchAck(batch.ReporterID, batch.Sequence, batch.BatchID, batchDigest)
 	return ack, nil
 }
 

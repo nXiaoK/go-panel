@@ -205,6 +205,9 @@ type FlowDto struct {
 	N string `json:"n"`
 	U int64  `json:"u"`
 	D int64  `json:"d"`
+	// 新节点以服务实例 ID 和递增序号去重；两者省略时兼容旧版增量协议，旧节点重试仍无法去重。
+	ReporterID string `json:"reporterId,omitempty"`
+	Sequence   uint64 `json:"sequence,omitempty"`
 }
 
 // NFT flow protocol limits are shared by the panel and node reporter.
