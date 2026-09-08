@@ -155,9 +155,18 @@ func saveForwardExitMembersWithTx(tx *gorm.DB, forward *model.Forward, tunnel *m
 	forward.ExitStrategy = strategy
 
 	var oldRows []model.ForwardExitMember
+	oldRelayNodeID := int64(0)
 	if forward.ID != 0 {
 		if err := tx.Where("forward_id = ?", forward.ID).Find(&oldRows).Error; err != nil {
 			return nil, "读取旧出口成员失败"
+		}
+		if len(oldRows) > 0 && tunnelHasRelay(tunnel) {
+			var oldTunnel model.Tunnel
+			if err := tx.Joins("JOIN forward AS f ON f.tunnel_id = tunnel.id").
+				Where("f.id = ?", forward.ID).First(&oldTunnel).Error; err != nil {
+				return nil, "读取旧中继节点失败"
+			}
+			oldRelayNodeID = tunnelRelayNodeID(&oldTunnel)
 		}
 	}
 	oldPortByNode := make(map[int64]int, len(oldRows))
@@ -166,7 +175,8 @@ func saveForwardExitMembersWithTx(tx *gorm.DB, forward *model.Forward, tunnel *m
 		if row.OutPort > 0 {
 			oldPortByNode[row.OutNodeID] = row.OutPort
 		}
-		if row.RelayPort > 0 {
+		// 中继端口属于具体节点；跨中继迁移必须重新分配，避免越界或覆盖新节点已有转发。
+		if row.RelayPort > 0 && oldRelayNodeID == tunnelRelayNodeID(tunnel) {
 			oldRelayPortByNode[row.OutNodeID] = row.RelayPort
 		}
 	}
@@ -175,6 +185,13 @@ func saveForwardExitMembersWithTx(tx *gorm.DB, forward *model.Forward, tunnel *m
 	rows := make([]model.ForwardExitMember, 0, len(members))
 	usedPortsInRequest := map[int64]map[int]bool{}
 	usedRelayPortsInRequest := map[int]bool{}
+	reservedRelayPorts := map[int]bool{}
+	// 默认保留仍在请求中的旧成员端口，先预留再分配，不能让成员排序影响端口占用。
+	for _, member := range members {
+		if port := oldRelayPortByNode[member.OutNodeID]; port > 0 {
+			reservedRelayPorts[port] = true
+		}
+	}
 	for _, member := range members {
 		var node model.Node
 		if err := tx.First(&node, member.OutNodeID).Error; err != nil {
@@ -204,7 +221,7 @@ func saveForwardExitMembersWithTx(tx *gorm.DB, forward *model.Forward, tunnel *m
 		if relayNodeID := tunnelRelayNodeID(tunnel); relayNodeID > 0 {
 			relayPort = oldRelayPortByNode[member.OutNodeID]
 			if relayPort == 0 {
-				port := allocatePortForNodeWithReservedDB(tx, relayNodeID, excludeForwardID, usedRelayPortsInRequest)
+				port := allocatePortForNodeWithReservedDB(tx, relayNodeID, excludeForwardID, reservedRelayPorts)
 				if port == nil {
 					var relayNode model.Node
 					if err := tx.First(&relayNode, relayNodeID).Error; err != nil {
@@ -218,6 +235,7 @@ func saveForwardExitMembersWithTx(tx *gorm.DB, forward *model.Forward, tunnel *m
 				return nil, fmt.Sprintf("中继节点分配到重复端口 %d", relayPort)
 			}
 			usedRelayPortsInRequest[relayPort] = true
+			reservedRelayPorts[relayPort] = true
 		}
 
 		active := 0

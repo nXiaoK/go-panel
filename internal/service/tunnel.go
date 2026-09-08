@@ -488,6 +488,12 @@ func DiagnoseTunnel(tunnelID int64) result.R {
 		var forwards []model.Forward
 		if err := model.DB.Where("tunnel_id = ? AND status = 1", tunnelID).Limit(1).Find(&forwards).Error; err == nil && len(forwards) > 0 {
 			if member := activeForwardExitMember(&forwards[0], &tunnel); member != nil && member.OutPort > 0 {
+				// 手动出口可以覆盖隧道默认出口；地址与端口必须来自同一成员，才能诊断实际路径。
+				var selectedExit model.Node
+				if err := model.DB.First(&selectedExit, member.OutNodeID).Error; err != nil {
+					return result.Err("当前出口节点不存在")
+				}
+				outNode = selectedExit
 				outPort = member.OutPort
 				relayPort = member.RelayPort
 				hasActiveForward = true

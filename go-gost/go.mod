@@ -111,16 +111,24 @@ require (
 	github.com/zalando/go-keyring v0.2.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
+	// SSH 安全基线：v0.56.0 修复 GO-2026-6303/6354/6355；降级会恢复认证来源约束绕过和通道死锁风险。
+	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/exp v0.0.0-20241210194714-1829a127f884 // indirect
-	golang.org/x/mod v0.37.0 // indirect
-	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/term v0.44.0 // indirect
-	golang.org/x/text v0.39.0 // indirect
+	// Go 模块解析工具；版本由 SSH 安全升级后的依赖图要求，需与 x 模块保持一致。
+	golang.org/x/mod v0.38.0 // indirect
+	// HTTP/2 等网络扩展；采用 x/crypto v0.56.0 所需版本，单独降级可能破坏协议兼容性。
+	golang.org/x/net v0.57.0 // indirect
+	// 并发同步原语；跟随安全升级的依赖图，避免主模块与协议扩展选择不同实现。
+	golang.org/x/sync v0.22.0 // indirect
+	// 操作系统调用封装；与新版加密依赖同步，影响节点跨平台编译兼容性。
+	golang.org/x/sys v0.47.0 // indirect
+	// 终端处理支持；使用新版 SSH 依赖所需版本，保持终端交互兼容。
+	golang.org/x/term v0.45.0 // indirect
+	// 文本编码与规范化支持；与网络扩展依赖图同步，避免版本回退引发兼容问题。
+	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
+	// Go 分析工具依赖；随安全升级同步，并与 x/mod、x/sync 保持兼容。
+	golang.org/x/tools v0.48.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	golang.zx2c4.com/wireguard v0.0.0-20231211153847-12269c276173 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect

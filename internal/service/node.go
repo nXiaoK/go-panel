@@ -188,6 +188,26 @@ func UpdateNode(req dto.NodeUpdateDto) result.R {
 		unlock()
 		return result.Err("节点不存在")
 	}
+	// 三节点链路仅支持 IPv4。节点编辑同样约束已有路径（含未启用的手动出口），
+	// 并在保存或发送运行配置前拒绝 IPv6，避免不同跳使用不同地址族导致断流。
+	if !serverTarget.IP.Is4() {
+		var relayReferenceCount int64
+		if err := model.DB.Model(&model.Tunnel{}).
+			Where("relay_node_id > 0").
+			Where(`in_node_id = ? OR relay_node_id = ? OR out_node_id = ? OR id IN (
+				SELECT f.tunnel_id FROM forward AS f
+				JOIN forward_exit_member AS fem ON fem.forward_id = f.id
+				WHERE fem.out_node_id = ?
+			)`, req.ID, req.ID, req.ID, req.ID).
+			Count(&relayReferenceCount).Error; err != nil {
+			unlock()
+			return result.Err("节点更新失败")
+		}
+		if relayReferenceCount > 0 {
+			unlock()
+			return result.Err("三节点串联当前仅支持 IPv4 节点地址")
+		}
+	}
 	if normalizeForwardMode(node.ForwardMode) != mode {
 		var relayTunnelCount int64
 		if err := model.DB.Model(&model.Tunnel{}).

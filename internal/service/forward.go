@@ -713,6 +713,12 @@ func ForceDeleteForward(cu CurrentUser, id int64) result.R {
 	}
 	forward, tunnel, unlockSaga, err := lockForwardSagaSnapshot(id, nil)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 强制删除也用于清理损坏或恢复不完整的数据；不能要求原隧道始终存在。
+			if cleanupErr := deleteOrphanForwardRows(cu, id); cleanupErr == nil {
+				return result.OkMsg("端口转发已强制删除；原隧道缺失，节点残留规则需手动清理")
+			}
+		}
 		return result.Err("隧道不存在")
 	}
 	defer unlockSaga()
@@ -721,7 +727,7 @@ func ForceDeleteForward(cu CurrentUser, id int64) result.R {
 	if inNode, _, msg := getRequiredNodes(&tunnel); msg == "" {
 		flushErr = FlushForwardConntrackForUpdate(forward, &tunnel, inNode)
 	}
-	if err := deleteForwardRows(model.DB, id); err != nil {
+	if err := model.DB.Transaction(func(tx *gorm.DB) error { return deleteForwardRows(tx, id) }); err != nil {
 		return result.Err("端口转发强制删除失败")
 	}
 	refreshErr := refreshNftNodesDeletingCheckedLocked(affected)
