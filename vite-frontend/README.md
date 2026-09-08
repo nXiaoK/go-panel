@@ -18,6 +18,12 @@
 
 `package.json` 中的版本范围允许 npm 获取兼容补丁，`package-lock.json` 决定实际安装版本。升级 Vite、React、TanStack Router/Start 或 Tailwind 主版本可能改变路由生成、SSR/SPA 行为和样式输出，必须单独评估，不能只依赖编译通过。
 
+## 浏览器兼容性依赖
+
+`package-lock.json` 中的 `node_modules/browserslist` 由 Babel/TanStack 构建链间接引入，当前锁定为 `4.28.9`。`4.28.6` 及更早版本受 GHSA-c83g-rgw3-j3cx 和 GHSA-73wf-gq98-2v4g 影响，可能因查询缓存无限增长或异常自定义统计数据导致内存耗尽、进程崩溃或原型写入；不能为通过构建而回退版本或降低审计门槛。
+
+同一锁文件中的 `baseline-browser-mapping`、`caniuse-lite`、`electron-to-chromium`、`node-releases` 和 `update-browserslist-db` 提供浏览器/运行时版本数据及更新工具，随 Browserslist 的依赖要求同步升级。默认构建读取锁定的数据版本；数据变化可能影响浏览器目标选择，因此更新后需使用 Node.js 22 执行 `npm ci`、前端完整检查及生产依赖审计。
+
 ## 其他构建配置
 
 - `vite.spa.config.ts` 是 Docker、GitHub Release 和本地 `npm run build` 的正式入口，输出到会被 Go 嵌入的 `dist/`。开发/预览默认监听 `::`，可能暴露到局域网，非可信网络应改成 `127.0.0.1`。
