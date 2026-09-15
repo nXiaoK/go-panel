@@ -26,6 +26,8 @@
 
 ## 其他构建配置
 
+`package-lock.json` 中的 `node_modules/js-yaml` 由 TanStack Start → `xmlbuilder2` 和 ESLint 间接引入，当前锁定为兼容现有 `^4.1.1` 范围的 `4.3.2`。`4.0.0` 至 `4.3.1` 受 GHSA-2883-xcq3-v3hh 影响，空 YAML 合并源可绕过 `maxTotalMergeKeys` 限制并造成 CPU 资源耗尽。默认 `npm ci` 按锁文件安装修复版本；不要回退到受影响版本或降低生产依赖审计门槛，后续更新需重新执行前端完整检查及安全审计。
+
 - `vite.spa.config.ts` 是 Docker、GitHub Release 和本地 `npm run build` 的正式入口，输出到会被 Go 嵌入的 `dist/`。开发/预览默认监听 `::`，可能暴露到局域网，非可信网络应改成 `127.0.0.1`。
 - `vite.config.ts` 仅兼容原 Lovable/TanStack Start 开发环境，不参与正式 SPA 构建；其中的开发桥接和错误上报不能视为生产监控。
 - `tsconfig.json` 开启严格类型并使用 Bundler 解析，`tsconfig.audit.json` 额外把未使用变量和参数视为错误。两者都只检查、不生成 JavaScript。
