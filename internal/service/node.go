@@ -30,8 +30,9 @@ const (
 	localPanelBaseURLNftMinVersion = "nftables-go-1.3.4"
 	// GOST 1.2.6 会上报本机持久化的面板入口，并在升级时优先复用该历史地址。
 	latestGostNodeVersion = "1.2.6"
-	// nftables-go 1.3.11 增加首次全量对账同步标记，并由安装器持久启用 IPv4 内核转发。
-	latestNftNodeVersion = "nftables-go-1.3.11"
+	// nftables-go 1.3.12 随节点组件升级下发 Debian 12 nft 空 JSON 兼容修复。
+	// 必须与 nft_agent 上报版本同步递增，否则同版本升级会被拒绝，旧规则工具无法替换。
+	latestNftNodeVersion = "nftables-go-1.3.12"
 )
 
 var versionNumberPattern = regexp.MustCompile(`\d+`)

@@ -507,6 +507,53 @@ func TestUpgradeNodePassesRuntimeFlagToCommand(t *testing.T) {
 	}
 }
 
+func TestUpgradeNftNode1311ReceivesReporterCompatibilityFix(t *testing.T) {
+	if err := model.Init(filepath.Join(t.TempDir(), "panel.db")); err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	t.Cleanup(func() { _ = model.Close() })
+	ConfigureNodeRuntime(NodeRuntimeConfig{})
+	t.Cleanup(func() { ConfigureNodeRuntime(NodeRuntimeConfig{}) })
+	updateOrCreateConfig("ip", "https://panel.example.com")
+	oldVersion := "nftables-go-1.3.11"
+	node := model.Node{
+		Name: "nft-reporter-upgrade", Secret: "test-secret", IP: "192.0.2.1",
+		ForwardMode: forwardModeNftables, Version: &oldVersion, Status: 1,
+	}
+	if err := model.DB.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	enrichNodeVersionInfo(&node)
+	if !node.UpgradeAvailable {
+		t.Fatal("1.3.11 node must advertise the reporter compatibility upgrade")
+	}
+	originalSender := nodeUpgradeSender
+	t.Cleanup(func() { nodeUpgradeSender = originalSender })
+	calls := 0
+	nodeUpgradeSender = func(id int64, baseURL, mode, latest string, allowInsecure bool) ws.GostResult {
+		calls++
+		if id != node.ID || baseURL != "https://panel.example.com" || mode != forwardModeNftables || latest != node.LatestVersion || allowInsecure {
+			t.Fatalf("unexpected upgrade command: id=%d base=%q mode=%q latest=%q insecure=%v", id, baseURL, mode, latest, allowInsecure)
+		}
+		return ws.GostResult{Msg: gost.SuccessMsg}
+	}
+	if res := UpgradeNode(node.ID); res.Code != 0 {
+		t.Fatalf("UpgradeNode: %s", res.Msg)
+	}
+	if calls != 1 {
+		t.Fatalf("upgrade calls=%d, want 1", calls)
+	}
+	if err := model.DB.Model(&node).Update("version", latestNftNodeVersion).Error; err != nil {
+		t.Fatal(err)
+	}
+	if res := UpgradeNode(node.ID); res.Code == 0 || !strings.Contains(res.Msg, "最新版本") {
+		t.Fatalf("up-to-date node should reject redundant upgrade: %+v", res)
+	}
+	if calls != 1 {
+		t.Fatalf("up-to-date node dispatched another upgrade: calls=%d", calls)
+	}
+}
+
 func TestUpgradeNodeUsesSystemHTTPSetting(t *testing.T) {
 	if err := model.Init(filepath.Join(t.TempDir(), "panel.db")); err != nil {
 		t.Fatalf("init db: %v", err)

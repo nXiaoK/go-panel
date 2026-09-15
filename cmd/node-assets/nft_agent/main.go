@@ -10,8 +10,9 @@ const (
 	flowReporterPath = "/etc/flux-nftables/nft_flow_reporter"
 	// 首次 WebSocket 全量对账成功后写入此运行时标记；安装脚本只在它与活动表标记一致时报告成功。
 	agentSyncMarkerPath = "/run/flux-nftables/agent-synced"
-	// 此版本增加首次对账同步标记，并由安装器持久启用 IPv4 内核转发。
-	version          = "nftables-go-1.3.11"
+	// 此版本下发 Debian 12 nft 空 JSON 兼容修复；与面板 latestNftNodeVersion 同步，
+	// 使已有 1.3.11 节点可升级并替换 nft_flow_reporter，而非误报为最新版本。
+	version          = "nftables-go-1.3.12"
 	maxNodeAssetSize = int64(128 << 20)
 )
 
