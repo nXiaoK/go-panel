@@ -570,6 +570,134 @@ func TestRuntimeCapabilityProbeVerifiesEveryTransitionAndPreservesExistingTables
 	}
 }
 
+func TestRuntimeProbeSupportsDebian12EmptyDormantJSON(t *testing.T) {
+	t.Parallel()
+	probeName := "flux_panel_g_00000000000000000000000000000000"
+	state, jsonReads, textReads := 0, 0, 0
+	wantTransactions := []string{
+		"create table inet " + probeName + " { flags dormant; }\nadd chain inet " + probeName + " forward { type filter hook forward priority filter; policy accept; }\n",
+		activeTableTransaction(probeName),
+		dormantTableTransaction(probeName),
+		"delete table inet " + probeName + "\n",
+	}
+	runtime := newTestExecRuntime(t, func(_ context.Context, _ string, args []string, stdout, stderr io.Writer) error {
+		switch {
+		case reflect.DeepEqual(args, []string{"-j", "list", "tables"}):
+			jsonReads++
+			if state == 1 || state == 3 {
+				return nil // 复现临时 dormant 表存在时成功退出但无 JSON 输出。
+			}
+			entries := []string{tableJSON("inet", "filter", nil), tableJSON("inet", testGenerationA, nil)}
+			if state == 2 {
+				entries = append(entries, tableJSON("inet", probeName, nil))
+			}
+			_, _ = io.WriteString(stdout, nftTablesJSON(entries...))
+		case reflect.DeepEqual(args, []string{"--version"}):
+			_, _ = io.WriteString(stdout, "nftables v1.0.6 (Lester Gooch #5)\n")
+		case reflect.DeepEqual(args, []string{"list", "tables"}):
+			_, _ = fmt.Fprintf(stdout, "table inet filter\ntable inet %s\ntable inet %s\n", testGenerationA, probeName)
+		case len(args) == 4 && reflect.DeepEqual(args[:3], []string{"list", "table", "inet"}):
+			textReads++
+			if args[3] != probeName && args[3] != testGenerationA {
+				t.Fatalf("unexpected table read: %v", args)
+			}
+			_, _ = io.WriteString(stdout, nftTableTextFixture(args[3], args[3] == probeName))
+		default:
+			transaction := readRecordedCommand(t, args).transaction
+			if state >= len(wantTransactions) || transaction != wantTransactions[state] {
+				t.Fatalf("unexpected transaction at state %d: %q", state, transaction)
+			}
+			state++
+		}
+		return nil
+	})
+	runtime.random = bytes.NewReader(make([]byte, 16))
+	if err := runtime.Probe(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if state != 4 || jsonReads != 5 || textReads != 4 {
+		t.Fatalf("state=%d JSON reads=%d text reads=%d", state, jsonReads, textReads)
+	}
+}
+
+func TestEmptyJSONCompatibilityFailsClosed(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, json, version, inventory, tableText, wantErr string
+		commandErr                                         string
+	}{
+		{name: "unknown version", version: "nftables v1.0.9 (Old Doc Yak)", wantErr: "requires nftables"},
+		{name: "wrong release", version: "nftables v1.0.6 (other)", wantErr: "requires nftables"},
+		{name: "version failure", commandErr: "--version", wantErr: "read nft version"},
+		{name: "inventory failure", commandErr: "list tables", wantErr: "list compatible nft tables"},
+		{name: "empty text inventory", wantErr: "empty nft text table inventory"},
+		{name: "malformed inventory", inventory: "table inet", wantErr: "invalid nft text inventory"},
+		{name: "wrong family", inventory: "table ip " + testGenerationA, wantErr: "unexpected family"},
+		{name: "invalid owned name", inventory: "table inet flux_panel_g_bad", wantErr: "ownership"},
+		{name: "duplicate owned table", inventory: "table inet " + testGenerationA + "\ntable inet " + testGenerationA, wantErr: "duplicate"},
+		{name: "table read failure", inventory: "table inet " + testGenerationA, commandErr: "list table inet " + testGenerationA, wantErr: "text state"},
+		{name: "empty table", inventory: "table inet " + testGenerationA, wantErr: "empty nft table text"},
+		{name: "wrong table", inventory: "table inet " + testGenerationA, tableText: nftTableTextFixture(testGenerationB, true), wantErr: "unexpected header"},
+		{name: "unknown flag", inventory: "table inet " + testGenerationA, tableText: strings.Replace(nftTableTextFixture(testGenerationA, true), "flags dormant", "flags owner", 1), wantErr: "unexpected top-level statement"},
+		{name: "truncated JSON", json: `{"nftables":`, wantErr: "decode nft table inventory"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runtime := newTestExecRuntime(t, func(_ context.Context, _ string, args []string, stdout, stderr io.Writer) error {
+				if strings.Join(args, " ") == test.commandErr {
+					return errors.New("simulated command failure")
+				}
+				if test.json != "" && !reflect.DeepEqual(args, []string{"-j", "list", "tables"}) {
+					t.Fatalf("nonempty malformed JSON must not use fallback: %v", args)
+				}
+				switch {
+				case reflect.DeepEqual(args, []string{"-j", "list", "tables"}):
+					_, _ = io.WriteString(stdout, test.json)
+				case reflect.DeepEqual(args, []string{"--version"}):
+					version := test.version
+					if version == "" {
+						version = "nftables v1.0.6 (Lester Gooch #5)"
+					}
+					_, _ = io.WriteString(stdout, version)
+				case reflect.DeepEqual(args, []string{"list", "tables"}):
+					if test.version != "" {
+						t.Fatal("unsupported version reached text fallback")
+					}
+					_, _ = io.WriteString(stdout, test.inventory)
+				case reflect.DeepEqual(args, []string{"list", "table", "inet", testGenerationA}):
+					_, _ = io.WriteString(stdout, test.tableText)
+				default:
+					t.Fatalf("unexpected command: %v", args)
+				}
+				return nil
+			})
+			if _, err := runtime.Discover(context.Background()); err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("Discover error=%v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestEmptyJSONCompatibilityPreservesEmptyOwnedInventory(t *testing.T) {
+	t.Parallel()
+	runtime := newTestExecRuntime(t, func(_ context.Context, _ string, args []string, stdout, stderr io.Writer) error {
+		switch strings.Join(args, " ") {
+		case "-j list tables":
+			_, _ = io.WriteString(stdout, " \n\t")
+		case "--version":
+			_, _ = io.WriteString(stdout, "nftables v1.0.6 (Lester Gooch #5)\n")
+		case "list tables":
+			_, _ = io.WriteString(stdout, "table inet filter\n")
+		default:
+			t.Fatalf("unexpected command: %v", args)
+		}
+		return nil
+	})
+	// 与正常 JSON 路径保持一致，确保探测前后无自有表时不会因 nil/空切片误报变化。
+	if err := runtime.verifyProbeState(context.Background(), []GenerationTable{}, testGenerationA, false, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRuntimeCapabilityProbeSupportsKnownReleaseNameFlagQuirks(t *testing.T) {
 	t.Parallel()
 

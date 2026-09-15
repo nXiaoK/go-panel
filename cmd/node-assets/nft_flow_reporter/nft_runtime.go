@@ -348,6 +348,16 @@ func (r *execNftRuntime) inspectTables(ctx context.Context) ([]GenerationTable, 
 	if parseErr == nil {
 		return tables, nil
 	}
+	// Debian 12 的 nft 1.0.6 在存在 dormant 表时还可能成功退出但输出空 JSON。
+	// 仅空输出走此兼容路径：先精确核对版本，再从文本清单发现表并逐表验证状态。
+	// 不能把空输出当作无表，否则可能漏掉生效中的规则并错误切换流量。
+	if strings.TrimSpace(stdout) == "" {
+		verified, verifyErr := r.inspectEmptyJSONTables(ctx)
+		if verifyErr != nil {
+			return nil, errors.Join(parseErr, fmt.Errorf("verify empty nft JSON compatibility: %w", verifyErr))
+		}
+		return verified, nil
+	}
 	var flagErr *unsupportedNftTableFlagError
 	if !errors.As(parseErr, &flagErr) {
 		return nil, parseErr
@@ -373,8 +383,60 @@ func (r *execNftRuntime) inspectTables(ctx context.Context) ([]GenerationTable, 
 	return verified, nil
 }
 
+func (r *execNftRuntime) inspectEmptyJSONTables(ctx context.Context) ([]GenerationTable, error) {
+	version, _, err := r.run(ctx, []string{"--version"})
+	if err != nil {
+		return nil, fmt.Errorf("read nft version: %w", err)
+	}
+	if strings.TrimSpace(version) != "nftables v"+debian12NftVersion+" ("+debian12NftReleaseName+")" {
+		return nil, errors.New("empty nft JSON compatibility requires nftables v1.0.6 (Lester Gooch #5)")
+	}
+	stdout, _, err := r.run(ctx, []string{"list", "tables"})
+	if err != nil {
+		return nil, fmt.Errorf("list compatible nft tables: %w", err)
+	}
+	tables, err := parseNftTableTextInventory(stdout)
+	if err != nil {
+		return nil, err
+	}
+	return r.verifyKnownQuirkTableStates(ctx, tables)
+}
+
+func parseNftTableTextInventory(raw string) ([]GenerationTable, error) {
+	entries := make([]json.RawMessage, 0)
+	for i, line := range strings.Split(raw, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if len(fields) != 3 || fields[0] != "table" {
+			return nil, fmt.Errorf("invalid nft text inventory line %d", i+1)
+		}
+		table, err := json.Marshal(nftTableInfo{Family: fields[1], Name: fields[2]})
+		if err != nil {
+			return nil, err
+		}
+		entry, err := json.Marshal(nftListElement{Table: table})
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	// JSON 和文本都为空时无法确认清单完整性，必须停止，不能据此删除或启用表。
+	if len(entries) == 0 {
+		return nil, errors.New("empty nft text table inventory")
+	}
+	document, err := json.Marshal(nftListDocument{Nftables: &entries})
+	if err != nil {
+		return nil, err
+	}
+	// 复用 JSON 路径的 family、归属、表名、重复项检查和排序；dormant 随后读表确认。
+	return parseNftTables(document)
+}
+
 func (r *execNftRuntime) verifyKnownQuirkTableStates(ctx context.Context, tables []GenerationTable) ([]GenerationTable, error) {
-	verified := append([]GenerationTable(nil), tables...)
+	verified := make([]GenerationTable, len(tables))
+	copy(verified, tables)
 	for i := range verified {
 		stdout, _, err := r.runWithOutputLimits(
 			ctx,
