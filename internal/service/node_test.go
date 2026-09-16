@@ -815,6 +815,8 @@ func TestNodeVersionComparison(t *testing.T) {
 		{latest: latestNftNodeVersion, current: "nftables-go-1.3.8", want: true},
 		{latest: latestNftNodeVersion, current: "nftables-go-1.3.9", want: true},
 		{latest: latestNftNodeVersion, current: "nftables-go-1.3.10", want: true},
+		{latest: latestNftNodeVersion, current: "nftables-go-1.3.11", want: true},
+		{latest: latestNftNodeVersion, current: "nftables-go-1.3.12", want: true},
 		{latest: latestNftNodeVersion, current: latestNftNodeVersion, want: false},
 		{latest: "1.2.5", current: "1.2.5", want: false},
 		{latest: "1.2.5", current: "1.3.0", want: false},

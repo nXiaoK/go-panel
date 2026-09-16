@@ -340,7 +340,7 @@ func (w *cappedWriter) Write(p []byte) (int, error) {
 func (w *cappedWriter) String() string { return w.buffer.String() }
 
 func (r *execNftRuntime) inspectTables(ctx context.Context) ([]GenerationTable, error) {
-	stdout, _, err := r.run(ctx, []string{"-j", "list", "tables"})
+	stdout, stderr, err := r.run(ctx, []string{"-j", "list", "tables"})
 	if err != nil {
 		return nil, fmt.Errorf("list nft tables: %w", err)
 	}
@@ -348,13 +348,20 @@ func (r *execNftRuntime) inspectTables(ctx context.Context) ([]GenerationTable, 
 	if parseErr == nil {
 		return tables, nil
 	}
-	// Debian 12 的 nft 1.0.6 在存在 dormant 表时还可能成功退出但输出空 JSON。
-	// 仅空输出走此兼容路径：先精确核对版本，再从文本清单发现表并逐表验证状态。
-	// 不能把空输出当作无表，否则可能漏掉生效中的规则并错误切换流量。
-	if strings.TrimSpace(stdout) == "" {
-		verified, verifyErr := r.inspectEmptyJSONTables(ctx)
+	// 只记录有限长度的清单输出，区分空输出、截断和 stderr 提示，避免整份清单淹没错误信息。
+	parseErr = fmt.Errorf("%w (stdout_bytes=%d stdout_prefix=%q stderr_prefix=%q)",
+		parseErr, len(stdout), stdout[:min(len(stdout), 256)], stderr[:min(len(stderr), 256)])
+	// Debian 12 nft 1.0.6 的 JSON 输出可能为空，也可能在键或值中间结束并报 EOF。
+	// 仅不完整输出走此兼容路径：精确核对版本，再独立读取文本清单并逐表确认状态。
+	// 完整但结构非法的 JSON 仍拒绝；不能把不完整清单当作无表，避免错误切换流量。
+	if errors.Is(parseErr, io.EOF) || errors.Is(parseErr, io.ErrUnexpectedEOF) {
+		verified, verifyErr := r.inspectIncompleteJSONTables(ctx)
 		if verifyErr != nil {
-			return nil, errors.Join(parseErr, fmt.Errorf("verify empty nft JSON compatibility: %w", verifyErr))
+			operation := "verify truncated nft JSON compatibility"
+			if strings.TrimSpace(stdout) == "" {
+				operation = "verify empty nft JSON compatibility"
+			}
+			return nil, errors.Join(parseErr, fmt.Errorf("%s: %w", operation, verifyErr))
 		}
 		return verified, nil
 	}
@@ -383,13 +390,13 @@ func (r *execNftRuntime) inspectTables(ctx context.Context) ([]GenerationTable, 
 	return verified, nil
 }
 
-func (r *execNftRuntime) inspectEmptyJSONTables(ctx context.Context) ([]GenerationTable, error) {
+func (r *execNftRuntime) inspectIncompleteJSONTables(ctx context.Context) ([]GenerationTable, error) {
 	version, _, err := r.run(ctx, []string{"--version"})
 	if err != nil {
 		return nil, fmt.Errorf("read nft version: %w", err)
 	}
 	if strings.TrimSpace(version) != "nftables v"+debian12NftVersion+" ("+debian12NftReleaseName+")" {
-		return nil, errors.New("empty nft JSON compatibility requires nftables v1.0.6 (Lester Gooch #5)")
+		return nil, errors.New("incomplete nft JSON compatibility requires nftables v1.0.6 (Lester Gooch #5)")
 	}
 	stdout, _, err := r.run(ctx, []string{"list", "tables"})
 	if err != nil {
@@ -787,7 +794,10 @@ func walkUniqueJSONValue(decoder *json.Decoder, depth int) error {
 			}
 		}
 		end, err := decoder.Token()
-		if err != nil || end != json.Delim('}') {
+		if err != nil {
+			return fmt.Errorf("unterminated nft JSON object: %w", err)
+		}
+		if end != json.Delim('}') {
 			return errors.New("unterminated nft JSON object")
 		}
 	case '[':
@@ -797,7 +807,10 @@ func walkUniqueJSONValue(decoder *json.Decoder, depth int) error {
 			}
 		}
 		end, err := decoder.Token()
-		if err != nil || end != json.Delim(']') {
+		if err != nil {
+			return fmt.Errorf("unterminated nft JSON array: %w", err)
+		}
+		if end != json.Delim(']') {
 			return errors.New("unterminated nft JSON array")
 		}
 	default:

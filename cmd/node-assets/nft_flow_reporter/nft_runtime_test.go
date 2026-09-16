@@ -570,8 +570,29 @@ func TestRuntimeCapabilityProbeVerifiesEveryTransitionAndPreservesExistingTables
 	}
 }
 
-func TestRuntimeProbeSupportsDebian12EmptyDormantJSON(t *testing.T) {
+func TestRuntimeProbeSupportsDebian12IncompleteDormantJSON(t *testing.T) {
 	t.Parallel()
+	for name, raw := range map[string]string{
+		"empty":                "",
+		"whitespace":           " \n\t",
+		"missing value":        `{"nftables":`,
+		"missing flag value":   `{"nftables":[{"table":{"family":"inet","name":"flux_panel","flags":`,
+		"truncated string":     `{"nftables":[{"table":{"family":"inet","name":"flux_panel","flags":"dorm`,
+		"missing array close":  `{"nftables":[`,
+		"missing object close": `{"nftables":[]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := parseNftTables([]byte(raw)); !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+				t.Fatalf("fixture must reproduce EOF: %v", err)
+			}
+			testRuntimeProbeWithIncompleteDormantJSON(t, raw)
+		})
+	}
+}
+
+func testRuntimeProbeWithIncompleteDormantJSON(t *testing.T, raw string) {
+	t.Helper()
 	probeName := "flux_panel_g_00000000000000000000000000000000"
 	state, jsonReads, textReads := 0, 0, 0
 	wantTransactions := []string{
@@ -585,7 +606,8 @@ func TestRuntimeProbeSupportsDebian12EmptyDormantJSON(t *testing.T) {
 		case reflect.DeepEqual(args, []string{"-j", "list", "tables"}):
 			jsonReads++
 			if state == 1 || state == 3 {
-				return nil // 复现临时 dormant 表存在时成功退出但无 JSON 输出。
+				_, _ = io.WriteString(stdout, raw)
+				return nil // 模拟临时 dormant 表存在时 JSON 输出为空或截断。
 			}
 			entries := []string{tableJSON("inet", "filter", nil), tableJSON("inet", testGenerationA, nil)}
 			if state == 2 {
@@ -639,7 +661,9 @@ func TestEmptyJSONCompatibilityFailsClosed(t *testing.T) {
 		{name: "empty table", inventory: "table inet " + testGenerationA, wantErr: "empty nft table text"},
 		{name: "wrong table", inventory: "table inet " + testGenerationA, tableText: nftTableTextFixture(testGenerationB, true), wantErr: "unexpected header"},
 		{name: "unknown flag", inventory: "table inet " + testGenerationA, tableText: strings.Replace(nftTableTextFixture(testGenerationA, true), "flags dormant", "flags owner", 1), wantErr: "unexpected top-level statement"},
-		{name: "truncated JSON", json: `{"nftables":`, wantErr: "decode nft table inventory"},
+		{name: "invalid JSON", json: `{"nftables":!}`, wantErr: "decode nft table inventory"},
+		{name: "duplicate JSON key", json: `{"nftables":[],"nftables":[]}`, wantErr: "duplicate nft JSON object key"},
+		{name: "invalid complete structure", json: `{"nftables":null}`, wantErr: "missing or null nftables array"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			runtime := newTestExecRuntime(t, func(_ context.Context, _ string, args []string, stdout, stderr io.Writer) error {
@@ -695,6 +719,43 @@ func TestEmptyJSONCompatibilityPreservesEmptyOwnedInventory(t *testing.T) {
 	// 与正常 JSON 路径保持一致，确保探测前后无自有表时不会因 nil/空切片误报变化。
 	if err := runtime.verifyProbeState(context.Background(), []GenerationTable{}, testGenerationA, false, false); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTruncatedJSONFallbackRetainsBoundedDiagnostics(t *testing.T) {
+	t.Parallel()
+	for _, version := range []string{"nftables v1.0.9 (Old Doc Yak)", "nftables v1.0.6 (Lester Gooch #5)"} {
+		t.Run(version, func(t *testing.T) {
+			raw := `{"nftables":` + strings.Repeat(" ", 1024)
+			runtime := newTestExecRuntime(t, func(_ context.Context, _ string, args []string, stdout, stderr io.Writer) error {
+				switch strings.Join(args, " ") {
+				case "-j list tables":
+					_, _ = io.WriteString(stdout, raw)
+					_, _ = io.WriteString(stderr, strings.Repeat("diagnostic ", 100))
+				case "--version":
+					_, _ = io.WriteString(stdout, version)
+				case "list tables":
+					if version != "nftables v1.0.6 (Lester Gooch #5)" {
+						t.Fatal("unknown version reached text fallback")
+					}
+					_, _ = fmt.Fprintf(stdout, "table inet %s\n", testGenerationA)
+				case "list table inet " + testGenerationA:
+					_, _ = fmt.Fprintf(stdout, "table inet %s {\nflags owner\nchain forward {\n}\n}\n", testGenerationA)
+				default:
+					t.Fatalf("unexpected command: %v", args)
+				}
+				return nil
+			})
+			runtime.maxOutputBytes = 4096
+			_, err := runtime.Discover(context.Background())
+			if !errors.Is(err, io.EOF) || !strings.Contains(err.Error(), "verify truncated nft JSON compatibility") ||
+				!strings.Contains(err.Error(), fmt.Sprintf("stdout_bytes=%d", len(raw))) || !strings.Contains(err.Error(), "stderr_prefix=\"diagnostic") {
+				t.Fatalf("missing failure diagnostics: %v", err)
+			}
+			if len(err.Error()) > 1024 {
+				t.Fatalf("diagnostics not bounded: %d bytes", len(err.Error()))
+			}
+		})
 	}
 }
 

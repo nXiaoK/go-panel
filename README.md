@@ -129,7 +129,7 @@ docker compose -f compose.yml -f compose.update.yml up -d
 
 nftables 模式安装、远程组件升级和规则刷新都会写入 `/etc/sysctl.d/99-flux-nftables-forwarding.conf` 并立即启用 `net.ipv4.ip_forward=1`；否则 DNAT 规则虽然存在，数据包也不会进入 `forward` 链。卸载只删除这份持久配置，不会强制把运行时值改回 `0`，以免中断同机 Docker、VPN 或其他路由服务。
 
-在 Debian 12 的 `nftables v1.0.6 (Lester Gooch #5)` 上，若添加中转报 `verify dormant capability probe: decode nft table inventory: EOF`，表示探测临时 dormant 表时未能读到完整 JSON；探测结束后手动执行 `nft -j list tables` 仍可能正常。节点规则工具对该精确版本的成功命令空输出自动改用 `nft list tables`，再逐表读取文本核实 active/dormant 状态。此兼容无需配置；未知版本、非空损坏 JSON、空文本清单或无法确认的表状态仍会阻止规则切换，避免覆盖现有转发。修复随 `nft_flow_reporter` 发布，更新到包含修复的面板镜像后，还需在节点管理中升级受影响节点的组件至 `nftables-go-1.3.12` 或更高版本。仅更新面板不会替换服务器上的节点二进制；面板最新节点版本和 Agent 上报版本必须随组件修复同步递增，否则同版本升级检查会阻止下发。
+在 Debian 12 的 `nftables v1.0.6 (Lester Gooch #5)` 上，若添加中转报 `verify dormant capability probe: decode nft table inventory: EOF`，表示探测临时 dormant 表时未能读到完整 JSON；探测结束后手动执行 `nft -j list tables` 仍可能正常。节点规则工具对该精确版本成功命令返回的空输出或以 EOF 结束的截断 JSON 自动改用 `nft list tables`，再逐表读取文本核实 active/dormant 状态。此兼容无需配置；未知版本、其他 JSON 语法或结构错误、空文本清单或无法确认的表状态仍会阻止规则切换，避免覆盖现有转发。修复随 `nft_flow_reporter` 发布，更新到包含修复的面板镜像后，还需在节点管理中升级受影响节点的组件至 `nftables-go-1.3.13` 或更高版本。仅更新面板不会替换服务器上的节点二进制；面板最新节点版本和 Agent 上报版本必须随组件修复同步递增，否则同版本升级检查会阻止下发。`1.3.12` 仅处理完全空输出，`1.3.13` 补全非空截断情况；若仍失败，错误会附带 stdout 字节数及 stdout/stderr 各前 256 字节，便于确认实际失败分支。排查时应以本次添加返回的错误和近期日志为准，`systemctl status` 可能仍显示更新前的失败记录。
 
 ## 配置
 
