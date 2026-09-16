@@ -91,6 +91,7 @@ func withResolvedAddress(node model.ProxyNode) renderNode {
 }
 
 func renderSurge(template string, nodes []renderNode) string {
+	nodes = uniqueSubscriptionNodeNames(nodes, sanitizeSurgeName)
 	if strings.TrimSpace(template) == "" {
 		template = fallbackSurgeTemplate
 	}
@@ -241,6 +242,7 @@ func surgeTLSOptions(node renderNode, opts map[string]interface{}) []string {
 }
 
 func renderClash(template string, nodes []renderNode) string {
+	nodes = uniqueSubscriptionNodeNames(nodes, strings.TrimSpace)
 	if strings.TrimSpace(template) == "" || !strings.Contains(template, "proxies:") {
 		template = defaultClashTemplate()
 	}
@@ -834,6 +836,7 @@ func addSingboxTransport(base map[string]interface{}, node renderNode, opts map[
 }
 
 func renderV2rayN(nodes []renderNode) string {
+	nodes = uniqueSubscriptionNodeNames(nodes, strings.TrimSpace)
 	links := make([]string, 0, len(nodes))
 	for _, node := range nodes {
 		if link := v2rayNShareLink(node); link != "" {
@@ -841,6 +844,36 @@ func renderV2rayN(nodes []renderNode) string {
 		}
 	}
 	return base64.StdEncoding.EncodeToString([]byte(strings.Join(links, "\n")))
+}
+
+// uniqueSubscriptionNodeNames 只修改导出副本：重名时附加数据库 ID，避免同服务商节点在客户端互相覆盖。
+// 先按客户端规则规范化并保留所有原名，防止后缀撞上已有名称；ID 后缀不受节点排序影响。
+func uniqueSubscriptionNodeNames(nodes []renderNode, normalize func(string) string) []renderNode {
+	out := append([]renderNode(nil), nodes...)
+	counts := make(map[string]int, len(out))
+	used := make(map[string]bool, len(out))
+	for i := range out {
+		out[i].Name = normalize(out[i].Name)
+		if out[i].Name == "" {
+			out[i].Name = "Proxy"
+		}
+		counts[out[i].Name]++
+		used[out[i].Name] = true
+	}
+	for i := range out {
+		name := out[i].Name
+		if counts[name] < 2 {
+			continue
+		}
+		base := fmt.Sprintf("%s-%d", name, out[i].ID)
+		candidate := base
+		for suffix := 2; used[candidate]; suffix++ {
+			candidate = fmt.Sprintf("%s-%d", base, suffix)
+		}
+		out[i].Name = candidate
+		used[candidate] = true
+	}
+	return out
 }
 
 func v2rayNShareLink(node renderNode) string {

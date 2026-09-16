@@ -203,6 +203,10 @@ func GetProxyNodes() result.R {
 }
 
 func UpdateProxyNode(req dto.ProxyNodeUpdateDto) result.R {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return result.Err("节点名称不能为空")
+	}
 	var node model.ProxyNode
 	if err := model.DB.First(&node, req.ID).Error; err != nil {
 		return result.Err("节点不存在")
@@ -239,7 +243,12 @@ func UpdateProxyNode(req dto.ProxyNodeUpdateDto) result.R {
 		udp := node.UDP != 0
 		report.UDP = &udp
 	}
+	// 管理端名称优先于服务商等自动命名信息；仅实际改名时锁定，普通编辑保留原有自动命名行为。
+	if name != node.Name {
+		node.NameCustomized = true
+	}
 	applyNodeReport(&node, report, time.Now().UnixMilli())
+	node.Name = name
 	node.ID = req.ID
 	node.ExternalID = strings.TrimSpace(req.ExternalID)
 	if node.ExternalID == "" {

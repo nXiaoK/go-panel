@@ -261,9 +261,11 @@ func (ViteConfig) TableName() string { return "vite_config" }
 
 // ProxyNode 订阅协议节点表。
 type ProxyNode struct {
-	ID                int64  `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	ExternalID        string `gorm:"column:external_id;size:200;not null;uniqueIndex" json:"externalId"`
-	Name              string `gorm:"column:name;size:200;not null" json:"name"`
+	ID         int64  `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	ExternalID string `gorm:"column:external_id;size:200;not null;uniqueIndex" json:"externalId"`
+	Name       string `gorm:"column:name;size:200;not null" json:"name"`
+	// 手动改名后禁止上报覆盖名称；旧数据迁移时默认 false，继续使用自动命名，连接参数仍正常更新。
+	NameCustomized    bool   `gorm:"column:name_customized;not null;default:false" json:"-"`
 	Protocol          string `gorm:"column:protocol;size:40;not null;index" json:"protocol"`
 	Server            string `gorm:"column:server;size:255;not null" json:"server"`
 	Port              int    `gorm:"column:port;not null" json:"port"`

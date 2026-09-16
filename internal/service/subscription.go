@@ -760,7 +760,9 @@ func legacyExternalNodeIDs(req dto.ProxyNodeReportDto) []string {
 func applyNodeReport(node *model.ProxyNode, req dto.ProxyNodeReportDto, now int64) {
 	opts := trimJSON(req.Options)
 	node.ExternalID = externalNodeID(req)
-	node.Name = defaultNodeName(req)
+	if !node.NameCustomized {
+		node.Name = defaultNodeName(req)
+	}
 	node.Protocol = normalizeProtocol(req.Protocol)
 	node.Server = strings.TrimSpace(req.Server)
 	node.Port = req.Port
