@@ -116,8 +116,8 @@ require (
 	golang.org/x/exp v0.0.0-20241210194714-1829a127f884 // indirect
 	// Go 模块解析工具；版本由 SSH 安全升级后的依赖图要求，需与 x 模块保持一致。
 	golang.org/x/mod v0.38.0 // indirect
-	// HTTP/2 等网络扩展；采用 x/crypto v0.56.0 所需版本，单独降级可能破坏协议兼容性。
-	golang.org/x/net v0.57.0 // indirect
+	// HTTP/2 等网络扩展；采用 gRPC v1.83.2 所需的 v0.58.0，单独降级可能恢复协议漏洞或破坏兼容性。
+	golang.org/x/net v0.58.0 // indirect
 	// 并发同步原语；跟随安全升级的依赖图，避免主模块与协议扩展选择不同实现。
 	golang.org/x/sync v0.22.0 // indirect
 	// 操作系统调用封装；与新版加密依赖同步，影响节点跨平台编译兼容性。
@@ -131,8 +131,10 @@ require (
 	golang.org/x/tools v0.48.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	golang.zx2c4.com/wireguard v0.0.0-20231211153847-12269c276173 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
-	google.golang.org/grpc v1.82.1 // indirect
+	// RPC 协议类型跟随 gRPC v1.83.2 的依赖要求，与 x 模块保持一致，避免独立构建版本漂移。
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+	// gRPC 安全基线：v1.83.2 覆盖 GO-2026-6443/6348，降级会恢复缺失 Host 导致崩溃及 HTTP/2 内存耗尽风险。
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect

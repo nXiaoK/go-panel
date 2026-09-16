@@ -119,7 +119,8 @@ func main() {
 	log := xlogger.NewLogger()
 	logger.SetDefault(log)
 
-	wsReporter, err := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, "1.2.6")
+	// 面板节点版本与 latestGostNodeVersion 同步；1.2.7 包含 gRPC 崩溃和内存耗尽漏洞修复。
+	wsReporter, err := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, "1.2.7")
 	if err != nil {
 		fmt.Printf("❌ WebSocket 面板地址无效: %v\n", err)
 		os.Exit(1)

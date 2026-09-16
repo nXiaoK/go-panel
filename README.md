@@ -123,6 +123,8 @@ docker compose -f compose.yml -f compose.update.yml up -d
 
 节点仍从自己的面板地址 `/api/v1/node/assets/<filename>` 下载程序，因此可以复用面板的 HTTPS、访问路径和节点认证；实际二进制由 GitHub Actions 构建并随镜像发布，不依赖服务器上的本地文件。
 
+GOST 节点 `1.2.7` 将内置 gRPC 升至 `v1.83.2`，修复 GO-2026-6443（缺失 authority/Host 引发服务端崩溃）和 GO-2026-6348（HTTP/2 DATA 帧碎片导致内存耗尽）。`go-gost/go.mod` 与 `go-gost/x/go.mod` 分别固定依赖基线，必须同步维护并独立扫描；仅更新面板不会替换节点二进制，发布后需在节点管理中升级 GOST 节点至 `1.2.7` 或更高版本。
+
 节点安装和升级默认要求 HTTPS。公网 HTTP 可能泄露节点密钥并允许程序被篡改，`ALLOW_INSECURE_NODE_DOWNLOADS=true` 只应在明确隔离的临时升级窗口使用。
 
 中国大陆节点安装 `gost` 或 nftables Agent 时不会直接访问 GitHub：脚本和节点程序均从面板地址下载。订阅服务器脚本安装 Xray、sing-box 等上游组件时仍需要 GitHub；可在“系统配置 → GitHub 下载代理”填写可信的 HTTPS 全链接代理前缀。该代理不会修改 APT/DNF/APK 软件源，系统包下载仍应使用服务器所在地区可达且可信的发行版镜像。下载代理能够替换可执行文件，禁止使用来源不明的公共服务。

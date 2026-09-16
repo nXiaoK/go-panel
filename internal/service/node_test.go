@@ -807,6 +807,8 @@ func TestNodeVersionComparison(t *testing.T) {
 		want    bool
 	}{
 		{latest: "1.2.5", current: "1.2.4", want: true},
+		{latest: latestGostNodeVersion, current: "1.2.6", want: true},
+		{latest: latestGostNodeVersion, current: latestGostNodeVersion, want: false},
 		{latest: latestNftNodeVersion, current: "nftables-go-1.3.2", want: true},
 		{latest: latestNftNodeVersion, current: "nftables-go-1.3.4", want: true},
 		{latest: latestNftNodeVersion, current: "nftables-go-1.3.5", want: true},
