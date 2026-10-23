@@ -24,6 +24,16 @@
 
 同一锁文件中的 `baseline-browser-mapping`、`caniuse-lite`、`electron-to-chromium`、`node-releases` 和 `update-browserslist-db` 提供浏览器/运行时版本数据及更新工具，随 Browserslist 的依赖要求同步升级。默认构建读取锁定的数据版本；数据变化可能影响浏览器目标选择，因此更新后需使用 Node.js 22 执行 `npm ci`、前端完整检查及生产依赖审计。
 
+## 安全依赖锁定
+
+`package-lock.json` 的安全更新继续使用 `package.json` 已有的兼容版本范围，不增加运行功能或依赖覆盖规则。默认 `npm ci` 严格安装以下锁定版本；删除锁文件或回退版本可能重新引入已修复的问题。更新后必须重新执行完整前端检查和 `npm audit --omit=dev --audit-level=moderate`，不得降低审计门槛。
+
+- 网络请求模块：`axios` 锁定为 `1.20.0`，其 Node.js 重定向依赖 `follow-redirects` 为 `1.16.1`。这些更新修复请求选项、请求头、代理规则和重定向处理中的安全问题；浏览器 API 调用仍使用既有 Axios 配置。后续升级需验证登录凭据、错误处理及下载请求，不能依赖受影响版本的请求继承行为。
+- TanStack 路由和 Start 模块：`@tanstack/react-start` 为 `1.169.4`、`@tanstack/router-plugin` 为 `1.168.48`、`@tanstack/react-router` 为 `1.170.46`，连带锁定匹配的 `start-server-core`、`start-plugin-core`、客户端、存储和路由生成依赖。Start 服务端响应与 `seroval` / `seroval-plugins` 的序列化安全修复分别由 `start-server-core@1.169.45` 和 `1.7.0` 提供；即使正式构建使用静态 SPA，也保留这些遗留依赖的修复版本，避免其他开发入口误用受影响版本。路由生成所需的 Babel、Prettier、Zod、文件匹配与同步存储依赖随依赖树更新，可能改变生成代码和格式检查结果，需完整复验。根路由错误边界采用库导出的 `ErrorComponentProps`，兼容新版把抛出值定义为 `unknown` 的类型约束，不改变错误上报和重试行为。新版 Router 生成器还会重排 `src/routeTree.gen.ts` 中的导入与声明，路由路径、父子关系和可访问页面保持不变，生成结果随锁文件提交以保持构建可复现。
+- 构建与源码映射模块：`vite` 为 `8.3.5`、`source-map-js` 为 `1.2.2`，相应 Rolldown 原生平台包、Lightning CSS、PostCSS 及构建辅助包按 Vite / Start 的依赖要求同步锁定。修复覆盖开发服务文件访问、编辑器集成和源码映射资源消耗问题；开发服务器仍只用于本地调试。更新构建链可能改变静态文件哈希、分块和 CSS 输出，必须重新构建并同步 `web/dist` 后验证 Go 内嵌页面。
+
+本次锁文件由临时 npm `11.21.1` 在 Node.js 22 下定向更新，再用 npm `10.9.9` 的 `npm install --package-lock-only` 校正跨版本锁文件条目，原因是 npm `10.9.9` 的更新解析出现内部异常；没有使用 `--force`、忽略 peer 依赖或新增 npm 配置。日常及 CI 仍可使用原 npm 版本运行 `npm ci`，以锁文件和完整检查结果为准。
+
 ## 其他构建配置
 
 `package-lock.json` 中的 `node_modules/js-yaml` 由 TanStack Start → `xmlbuilder2` 和 ESLint 间接引入，当前锁定为兼容现有 `^4.1.1` 范围的 `4.3.2`。`4.0.0` 至 `4.3.1` 受 GHSA-2883-xcq3-v3hh 影响，空 YAML 合并源可绕过 `maxTotalMergeKeys` 限制并造成 CPU 资源耗尽。默认 `npm ci` 按锁文件安装修复版本；不要回退到受影响版本或降低生产依赖审计门槛，后续更新需重新执行前端完整检查及安全审计。
