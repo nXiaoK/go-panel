@@ -17,6 +17,23 @@ describe("canReorderForwards", () => {
 });
 
 describe("moveForwardByID", () => {
+  it("moves rows to the ends without changing the relative order of other rows", () => {
+    const rows = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+    expect(moveForwardByID(rows, 3, "top")).toEqual([
+      { id: 3, inx: 1 },
+      { id: 1, inx: 2 },
+      { id: 2, inx: 3 },
+      { id: 4, inx: 4 },
+    ]);
+    expect(moveForwardByID(rows, 2, "bottom")).toEqual([
+      { id: 1, inx: 1 },
+      { id: 3, inx: 2 },
+      { id: 4, inx: 3 },
+      { id: 2, inx: 4 },
+    ]);
+    expect(rows).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+  });
+
   it("moves the requested full-list neighbor", () => {
     expect(moveForwardByID([{ id: 1 }, { id: 2 }, { id: 3 }], 2, "down").map((x) => x.id)).toEqual([
       1, 3, 2,

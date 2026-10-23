@@ -9,7 +9,7 @@ export type ForwardOrderRow = {
   inx?: number;
 };
 
-export type MoveDirection = "up" | "down";
+export type MoveDirection = "up" | "down" | "top" | "bottom";
 
 /** Reordering is only safe on the full unfiltered list. */
 export function canReorderForwards(filters: ForwardOrderFilters): boolean {
@@ -22,7 +22,7 @@ export function canReorderForwards(filters: ForwardOrderFilters): boolean {
   return query === "" && status === "all" && tunnel === "all";
 }
 
-/** Move a row one step within the full ordered list and reindex 1-based. */
+/** 在完整列表中移动一行（相邻或首尾），保持其他行相对顺序并从 1 重新编号。 */
 export function moveForwardByID<T extends ForwardOrderRow>(
   rows: T[],
   id: number,
@@ -31,11 +31,19 @@ export function moveForwardByID<T extends ForwardOrderRow>(
   const idx = rows.findIndex((row) => row.id === id);
   if (idx < 0) return rows;
 
-  const target = direction === "up" ? idx - 1 : idx + 1;
+  const target =
+    direction === "top"
+      ? 0
+      : direction === "bottom"
+        ? rows.length - 1
+        : direction === "up"
+          ? idx - 1
+          : idx + 1;
   if (target < 0 || target >= rows.length) return rows;
 
   const next = [...rows];
-  [next[idx], next[target]] = [next[target], next[idx]];
+  const [row] = next.splice(idx, 1);
+  next.splice(target, 0, row);
   return next.map((row, i) => ({ ...row, inx: i + 1 }));
 }
 
