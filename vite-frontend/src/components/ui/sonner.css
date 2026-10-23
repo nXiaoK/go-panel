@@ -1,0 +1,13 @@
+/* Sonner原生样式不在Tailwind层内：显式样式确保richColors旧调用仍使用设计令牌，只有图标承载状态色。 */
+.toaster [data-sonner-toast] [data-icon] {
+  color: var(--mute);
+}
+.toaster [data-sonner-toast][data-type="success"] [data-icon] {
+  color: var(--status-good);
+}
+.toaster [data-sonner-toast][data-type="warning"] [data-icon] {
+  color: var(--status-warning);
+}
+.toaster [data-sonner-toast][data-type="error"] [data-icon] {
+  color: var(--status-critical-text);
+}

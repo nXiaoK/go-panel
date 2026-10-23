@@ -1,3 +1,4 @@
+import { FormField, type FormFieldProps } from "@/components/patterns/form-field";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -94,13 +95,8 @@ function normalizeActiveRemoteAddr(mode: ForwardTargetMode, remoteAddr: string, 
   return targets.length === 1 ? targets[0] : "";
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      {children}
-    </div>
-  );
+function Field(props: FormFieldProps) {
+  return <FormField {...props} />;
 }
 
 export function ForwardFormDialog({
@@ -345,7 +341,18 @@ export function ForwardFormDialog({
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="入口端口（留空自动随机）">
+            <Field
+              label="入口端口（留空自动随机）"
+              hint={
+                !isAdmin &&
+                selectedTunnel &&
+                "inNodePortSta" in selectedTunnel &&
+                selectedTunnel.inNodePortSta != null &&
+                selectedTunnel.inNodePortEnd != null
+                  ? `可用端口 ${selectedTunnel.inNodePortSta}–${selectedTunnel.inNodePortEnd}，留空自动分配`
+                  : undefined
+              }
+            >
               <Input
                 type="number"
                 min={1}
@@ -356,62 +363,58 @@ export function ForwardFormDialog({
                   setForm({ ...form, inPort: e.target.value ? Number(e.target.value) : null })
                 }
               />
-              {!isAdmin &&
-                selectedTunnel &&
-                "inNodePortSta" in selectedTunnel &&
-                selectedTunnel.inNodePortSta != null &&
-                selectedTunnel.inNodePortEnd != null && (
-                  <p className="text-xs text-muted-foreground">
-                    可用端口 {selectedTunnel.inNodePortSta}–{selectedTunnel.inNodePortEnd}
-                    ，留空自动分配
-                  </p>
-                )}
             </Field>
           </div>
           <Field label="目标地址">
-            <div className="space-y-2">
-              {form.targetAddrs.map((target, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <Input
-                    value={target}
-                    onChange={(e) => updateTargetAddr(index, e.target.value)}
-                    onBlur={(e) => normalizeTargetAddrAt(index, e.target.value)}
-                    onPaste={(e) => {
-                      const pasted = e.clipboardData.getData("text");
-                      if (!pasted.includes("://")) return;
-                      e.preventDefault();
-                      normalizeTargetAddrAt(index, pasted);
-                    }}
-                    placeholder={
-                      index === 0
-                        ? "10.211.55.5:1002 或粘贴 http://10.211.55.5:1002/login"
-                        : "添加目标地址"
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-9 w-9 shrink-0"
-                    disabled={form.targetAddrs.length <= 1}
-                    onClick={() =>
-                      updateTargetAddrs(form.targetAddrs.filter((_, i) => i !== index))
-                    }
-                    aria-label="删除目标地址"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => updateTargetAddrs([...form.targetAddrs, ""])}
-              >
-                <Plus className="h-3.5 w-3.5" /> 添加目标地址
-              </Button>
-            </div>
+            {(control) => (
+              <div className="space-y-2">
+                {form.targetAddrs.map((target, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <Input
+                      {...control}
+                      id={index === 0 ? control.id : `${control.id}-${index}`}
+                      aria-labelledby={index === 0 ? control["aria-labelledby"] : undefined}
+                      aria-label={index === 0 ? undefined : `目标地址 ${index + 1}`}
+                      value={target}
+                      onChange={(e) => updateTargetAddr(index, e.target.value)}
+                      onBlur={(e) => normalizeTargetAddrAt(index, e.target.value)}
+                      onPaste={(e) => {
+                        const pasted = e.clipboardData.getData("text");
+                        if (!pasted.includes("://")) return;
+                        e.preventDefault();
+                        normalizeTargetAddrAt(index, pasted);
+                      }}
+                      placeholder={
+                        index === 0
+                          ? "10.211.55.5:1002 或粘贴 http://10.211.55.5:1002/login"
+                          : "添加目标地址"
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      disabled={form.targetAddrs.length <= 1}
+                      onClick={() =>
+                        updateTargetAddrs(form.targetAddrs.filter((_, i) => i !== index))
+                      }
+                      aria-label="删除目标地址"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => updateTargetAddrs([...form.targetAddrs, ""])}
+                >
+                  <Plus className="h-3.5 w-3.5" /> 添加目标地址
+                </Button>
+              </div>
+            )}
           </Field>
           {hasRelay && (
             <p className="text-xs text-muted-foreground">

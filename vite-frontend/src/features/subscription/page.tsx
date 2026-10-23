@@ -1,3 +1,4 @@
+import { runBatch as runSharedBatch } from "@/lib/batch";
 import { useConfirm } from "@/hooks/use-confirm";
 import { errorMessage } from "@/lib/api/client";
 import { notify } from "@/lib/notify";
@@ -403,18 +404,11 @@ export function SubscriptionPage() {
     nameOf: (item: T) => string,
   ) => {
     setBatchAction({ key, done: 0, total: items.length, label });
-    const results: { name: string; success: boolean; reason?: string }[] = [];
     try {
-      for (let i = 0; i < items.length; i++) {
-        const name = nameOf(items[i]) || `#${i + 1}`;
-        try {
-          await fn(items[i]);
-          results.push({ name, success: true });
-        } catch (e) {
-          results.push({ name, success: false, reason: errorMessage(e) });
-        }
-        setBatchAction((a) => (a ? { ...a, done: i + 1 } : a));
-      }
+      const results = await runSharedBatch(items, fn, {
+        nameOf,
+        onProgress: ({ done }) => setBatchAction((a) => (a ? { ...a, done } : a)),
+      });
       await loadSettings();
       setBatchResult({ label, items: results });
     } finally {
