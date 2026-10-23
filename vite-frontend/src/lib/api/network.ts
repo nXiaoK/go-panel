@@ -1,7 +1,7 @@
 import axios, { type AxiosResponse } from "axios";
 import type { ApiResponse } from "@/lib/types";
 import { currentPanelEndpoint } from "@/lib/panel-endpoint";
-import { invalidateSession } from "@/lib/session";
+import { invalidateSession, requirePasswordChange } from "@/lib/session";
 
 /**
  * Base URL resolution (per-request, not global mutation) is delegated to the
@@ -35,30 +35,53 @@ function getToken(): string | null {
   return window.localStorage.getItem("token");
 }
 
-function handleTokenExpired() {
-  // 集中会话失效：并发的多个受保护 401 只清理并跳转一次。
-  invalidateSession("token expired");
+// 登录是公开接口，其失败不能撤销当前会话；其余请求默认受保护。
+function isPublicRequest(path: string): boolean {
+  return path.split("?")[0].replace(/^\//, "").replace(/\/$/, "") === "user/login";
 }
 
-function isTokenExpired(res: ApiResponse) {
-  return (
-    res &&
-    res.code === 401 &&
-    (res.msg === "未登录或token已过期" ||
-      res.msg === "无效的token或token已过期" ||
-      res.msg === "无法获取用户权限信息")
-  );
+function sessionError(res: ApiResponse | undefined, path: string): Error | null {
+  if (isPublicRequest(path)) return null;
+  // 受保护接口的所有业务 401 均表示令牌不可再用，不能依赖可能变化的错误文案。
+  if (res?.code === 401) {
+    invalidateSession("expired");
+    return new Error(res.msg || "登录已失效，请重新登录");
+  }
+  // 稳定业务码优先；兼容尚未升级后端的两条旧 403，权限不足等普通 403 保留会话。
+  if (res?.code === 4031 || (res?.code === 403 && res.msg === "账号已被禁用")) {
+    invalidateSession("disabled");
+    return new Error(res.msg || "账号已被禁用，请联系管理员");
+  }
+  if (res?.code === 4032 || (res?.code === 403 && res.msg === "请先修改默认密码")) {
+    requirePasswordChange();
+    return new Error(res.msg || "请先修改默认密码");
+  }
+  return null;
+}
+
+async function axiosSessionError(err: unknown, path: string): Promise<Error | null> {
+  if (isPublicRequest(path) || !axios.isAxiosError(err)) return null;
+  // HTTP 401 本身已宣告令牌不可用，优先于代理或异常响应体里的业务码。
+  if (err.response?.status === 401) {
+    invalidateSession("expired");
+    return new Error("登录已失效，请重新登录");
+  }
+  let data = err.response?.data;
+  // 下载使用 blob 响应类型，非 2xx 的 JSON 错误体也需要先解析后分类。
+  if (data && typeof data.text === "function") {
+    try {
+      data = JSON.parse(await data.text());
+    } catch {
+      data = undefined;
+    }
+  }
+  return sessionError(data, path);
 }
 
 function baseHeaders() {
   return {
     Authorization: getToken() || "",
   };
-}
-
-function axiosStatus(err: unknown): number | undefined {
-  if (axios.isAxiosError(err)) return err.response?.status;
-  return undefined;
 }
 
 function axiosMessage(err: unknown): string {
@@ -78,17 +101,13 @@ const Network = {
           headers: baseHeaders(),
         })
         .then((r: AxiosResponse<ApiResponse<T>>) => {
-          if (isTokenExpired(r.data)) {
-            handleTokenExpired();
-            return reject(new Error("token expired"));
-          }
+          const failure = sessionError(r.data, path);
+          if (failure) return reject(failure);
           resolve(r.data);
         })
-        .catch((err: unknown) => {
-          if (axiosStatus(err) === 401) {
-            handleTokenExpired();
-            return reject(new Error("unauthorized"));
-          }
+        .catch(async (err: unknown) => {
+          const failure = await axiosSessionError(err, path);
+          if (failure) return reject(failure);
           resolve({ code: -1, msg: axiosMessage(err), data: null as T });
         });
     });
@@ -105,17 +124,13 @@ const Network = {
           },
         })
         .then((r: AxiosResponse<ApiResponse<T>>) => {
-          if (isTokenExpired(r.data)) {
-            handleTokenExpired();
-            return reject(new Error("token expired"));
-          }
+          const failure = sessionError(r.data, path);
+          if (failure) return reject(failure);
           resolve(r.data);
         })
-        .catch((err: unknown) => {
-          if (axiosStatus(err) === 401) {
-            handleTokenExpired();
-            return reject(new Error("unauthorized"));
-          }
+        .catch(async (err: unknown) => {
+          const failure = await axiosSessionError(err, path);
+          if (failure) return reject(failure);
           resolve({ code: -1, msg: axiosMessage(err), data: null as T });
         });
     });
@@ -136,17 +151,13 @@ const Network = {
           },
         })
         .then((r: AxiosResponse<ApiResponse<T>>) => {
-          if (isTokenExpired(r.data)) {
-            handleTokenExpired();
-            return reject(new Error("token expired"));
-          }
+          const failure = sessionError(r.data, path);
+          if (failure) return reject(failure);
           resolve(r.data);
         })
-        .catch((err: unknown) => {
-          if (axiosStatus(err) === 401) {
-            handleTokenExpired();
-            return reject(new Error("unauthorized"));
-          }
+        .catch(async (err: unknown) => {
+          const failure = await axiosSessionError(err, path);
+          if (failure) return reject(failure);
           resolve({ code: -1, msg: axiosMessage(err), data: null as T });
         });
     });
@@ -167,10 +178,8 @@ const Network = {
             const txt = await r.data.text();
             try {
               const json = JSON.parse(txt) as ApiResponse;
-              if (isTokenExpired(json)) {
-                handleTokenExpired();
-                return reject(new Error("token expired"));
-              }
+              const failure = sessionError(json, path);
+              if (failure) return reject(failure);
               reject(new Error(json.msg || "下载失败"));
             } catch {
               reject(new Error("下载失败"));
@@ -179,11 +188,9 @@ const Network = {
           }
           resolve(r.data);
         })
-        .catch((err: unknown) => {
-          if (axiosStatus(err) === 401) {
-            handleTokenExpired();
-            return reject(new Error("unauthorized"));
-          }
+        .catch(async (err: unknown) => {
+          const failure = await axiosSessionError(err, path);
+          if (failure) return reject(failure);
           reject(err instanceof Error ? err : new Error(axiosMessage(err)));
         });
     });
@@ -198,17 +205,13 @@ const Network = {
           headers: baseHeaders(),
         })
         .then((r: AxiosResponse<ApiResponse<T>>) => {
-          if (isTokenExpired(r.data)) {
-            handleTokenExpired();
-            return reject(new Error("token expired"));
-          }
+          const failure = sessionError(r.data, path);
+          if (failure) return reject(failure);
           resolve(r.data);
         })
-        .catch((err: unknown) => {
-          if (axiosStatus(err) === 401) {
-            handleTokenExpired();
-            return reject(new Error("unauthorized"));
-          }
+        .catch(async (err: unknown) => {
+          const failure = await axiosSessionError(err, path);
+          if (failure) return reject(failure);
           resolve({ code: -1, msg: axiosMessage(err), data: null as T });
         });
     });

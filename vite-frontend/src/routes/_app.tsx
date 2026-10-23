@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
+import { passwordChangeRedirect } from "@/lib/session";
 import { canAccessPath } from "@/lib/capabilities";
 
 export const Route = createFileRoute("/_app")({
@@ -10,6 +11,10 @@ export const Route = createFileRoute("/_app")({
     const token = window.localStorage.getItem("token");
     if (!token) {
       throw redirect({ to: "/login" });
+    }
+    // 持久改密要求优先于角色导航；资料页允许访问，刷新或手动输入其他路径也无法绕过。
+    if (passwordChangeRedirect(location.pathname)) {
+      throw redirect({ to: "/profile", search: { forcePassword: 1 } });
     }
     // The backend stays authoritative; this only stops a normal user from
     // opening an administrator route they can never use.

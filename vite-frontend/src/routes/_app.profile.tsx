@@ -13,10 +13,13 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { updatePassword, getUserPackageInfo } from "@/lib/api";
 import { queries, unwrap } from "@/lib/api/query";
-import { clearSession } from "@/lib/session";
+import { clearSession, isPasswordChangeRequired } from "@/lib/session";
 import { PageHeader, QueryErrorNotice } from "@/components/page";
 
 export const Route = createFileRoute("/_app/profile")({
+  // forcePassword=1 仅开启改密引导；默认不强制，真实权限始终由后端与持久会话标记判定。
+  validateSearch: (search: Record<string, unknown>): { forcePassword?: number } =>
+    search.forcePassword === 1 || search.forcePassword === "1" ? { forcePassword: 1 } : {},
   head: () => ({ meta: [{ title: "个人资料 · Flux Panel" }] }),
   component: ProfilePage,
 });
@@ -58,6 +61,8 @@ function normalizePackageInfo(data: any): PackageSummary | null {
 
 function ProfilePage() {
   const navigate = useNavigate();
+  const search = Route.useSearch();
+  const forcePassword = isPasswordChangeRequired() || search.forcePassword === 1;
   const [name, setName] = useState("admin");
   const [newUsername, setNewUsername] = useState("admin");
   const [roleId, setRoleId] = useState<string | null>("1");
@@ -76,8 +81,10 @@ function ProfilePage() {
   const packageQuery = useQuery({
     queryKey: queries.user.package(),
     queryFn: () => getUserPackageInfo().then(unwrap),
+    // 强制改密期间停止套餐请求，避免受保护业务接口反复返回 4032。
+    enabled: !forcePassword,
   });
-  const pkg = normalizePackageInfo(packageQuery.data ?? null);
+  const pkg = forcePassword ? null : normalizePackageInfo(packageQuery.data ?? null);
 
   const passwordMutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) => updatePassword(payload).then(unwrap),
@@ -125,19 +132,28 @@ function ProfilePage() {
         description="账户信息、配额与密码管理"
       />
 
-      <QueryErrorNotice error={packageQuery.error} onRetry={() => void packageQuery.refetch()} />
+      {forcePassword ? (
+        <div
+          role="alert"
+          className="rounded-md border border-warning/50 bg-warning/10 p-4 text-sm text-foreground"
+        >
+          为了账号安全，请先修改初始密码。修改完成前无法使用其他功能。
+        </div>
+      ) : (
+        <QueryErrorNotice error={packageQuery.error} onRetry={() => void packageQuery.refetch()} />
+      )}
 
       <Card>
         <CardContent className="p-6">
-          <div className="flex items-start gap-4">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-4 sm:flex">
             <Avatar className="h-16 w-16 border border-border">
               <AvatarFallback className="bg-gradient-primary text-lg font-semibold text-primary-foreground">
                 {initials}
               </AvatarFallback>
             </Avatar>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <div className="text-lg font-semibold">{name}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="break-all text-lg font-semibold">{name}</div>
                 <Badge variant="outline" className={`text-xs ${role.tone}`}>
                   <ShieldCheck className="mr-1 h-3 w-3" /> {role.label}
                 </Badge>
@@ -146,7 +162,12 @@ function ProfilePage() {
                 role_id: {roleId ?? "-"}
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={logout}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="col-span-2 shrink-0 justify-self-end"
+              onClick={logout}
+            >
               <LogOut className="h-4 w-4" /> 退出登录
             </Button>
           </div>
@@ -188,21 +209,36 @@ function ProfilePage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1.5">
-            <Label>用户名</Label>
-            <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} />
+            <Label htmlFor="profile-username">用户名</Label>
+            <Input
+              id="profile-username"
+              value={newUsername}
+              onChange={(e) => setNewUsername(e.target.value)}
+            />
           </div>
           <div className="space-y-1.5">
-            <Label>原密码</Label>
-            <Input type="password" value={oldPwd} onChange={(e) => setOldPwd(e.target.value)} />
+            <Label htmlFor="profile-current-password">原密码</Label>
+            <Input
+              id="profile-current-password"
+              type="password"
+              value={oldPwd}
+              onChange={(e) => setOldPwd(e.target.value)}
+            />
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>新密码</Label>
-              <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} />
+              <Label htmlFor="profile-new-password">新密码</Label>
+              <Input
+                id="profile-new-password"
+                type="password"
+                value={newPwd}
+                onChange={(e) => setNewPwd(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
-              <Label>确认新密码</Label>
+              <Label htmlFor="profile-confirm-password">确认新密码</Label>
               <Input
+                id="profile-confirm-password"
                 type="password"
                 value={confirmPwd}
                 onChange={(e) => setConfirmPwd(e.target.value)}

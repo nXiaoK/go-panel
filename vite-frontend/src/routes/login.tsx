@@ -8,15 +8,19 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { login } from "@/lib/api";
 import { getPanelAddress, setPanelAddress } from "@/lib/api/network";
-import { markSessionActive } from "@/lib/session";
+import { markSessionActive, setPasswordChangeRequired } from "@/lib/session";
 
 export const Route = createFileRoute("/login")({
+  // 仅接受会话失效和账号禁用两个提示原因；未提供或未知值时沿用普通登录界面。
+  validateSearch: (search: Record<string, unknown>): { reason?: "expired" | "disabled" } =>
+    search.reason === "expired" || search.reason === "disabled" ? { reason: search.reason } : {},
   head: () => ({ meta: [{ title: "登录 · Flux Panel" }] }),
   component: LoginPage,
 });
 
 function LoginPage() {
   const navigate = useNavigate();
+  const { reason } = Route.useSearch();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -54,10 +58,11 @@ function LoginPage() {
         window.localStorage.setItem("token", res.data.token);
         window.localStorage.setItem("role_id", String(res.data.role_id));
         window.localStorage.setItem("name", res.data.name);
+        setPasswordChangeRequired(Boolean(res.data.requirePasswordChange));
         markSessionActive();
         toast.success("登录成功");
         if (res.data.requirePasswordChange) {
-          navigate({ to: "/profile" });
+          navigate({ to: "/profile", search: { forcePassword: 1 } });
         } else {
           navigate({ to: "/" });
         }
@@ -83,6 +88,14 @@ function LoginPage() {
           <CardTitle className="text-2xl">登录控制台</CardTitle>
         </CardHeader>
         <CardContent>
+          {reason && (
+            <p
+              role="status"
+              className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              {reason === "disabled" ? "账号已被禁用，请联系管理员" : "登录已失效，请重新登录"}
+            </p>
+          )}
           <form className="space-y-4" onSubmit={handleLogin}>
             <div className="space-y-2">
               <Label htmlFor="user">用户名</Label>

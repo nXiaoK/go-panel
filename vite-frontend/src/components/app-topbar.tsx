@@ -15,7 +15,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getAllUsers, getForwardList, getNodeList, getTunnelList } from "@/lib/api";
 import { isAdministrator } from "@/lib/capabilities";
-import { clearSession, getRoleID } from "@/lib/session";
+import { clearSession, getRoleID, isPasswordChangeRequired } from "@/lib/session";
 import {
   buildGlobalSearchItems,
   filterGlobalSearchItems,
@@ -36,6 +36,7 @@ function getStoredRole() {
 
 export function AppTopbar() {
   const navigate = useNavigate();
+  const forcePassword = isPasswordChangeRequired();
   const name = getStoredName();
   const role = getStoredRole();
   const initials = name.slice(0, 2).toUpperCase();
@@ -48,7 +49,7 @@ export function AppTopbar() {
 
   const loadSearchItems = useCallback(
     async (force = false) => {
-      if (searchLoading) return;
+      if (forcePassword || searchLoading) return;
       setSearchLoading(true);
       try {
         const admin = isAdministrator(getRoleID());
@@ -79,7 +80,7 @@ export function AppTopbar() {
         setSearchLoading(false);
       }
     },
-    [searchLoading],
+    [forcePassword, searchLoading],
   );
 
   const filteredSearchItems = useMemo(
@@ -95,7 +96,7 @@ export function AppTopbar() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (!forcePassword && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setSearchOpen(true);
         inputRef.current?.focus();
@@ -105,7 +106,7 @@ export function AppTopbar() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [loadSearchItems]);
+  }, [forcePassword, loadSearchItems]);
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -135,71 +136,73 @@ export function AppTopbar() {
       <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
       <Separator orientation="vertical" className="mx-1 h-5" />
 
-      <div className="hidden flex-1 md:block">
-        <div ref={searchRef} className="relative max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onFocus={() => {
-              setSearchOpen(true);
-              void loadSearchItems();
-            }}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setSearchOpen(true);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && filteredSearchItems[0]) {
-                event.preventDefault();
-                openSearchItem(filteredSearchItems[0]);
-              }
-            }}
-            placeholder="搜索隧道、节点、用户…"
-            className="h-9 w-full rounded-md border border-border bg-card/60 pl-9 pr-16 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary/60 focus:shadow-glow"
-          />
-          <kbd className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-            <Command className="h-3 w-3" />K
-          </kbd>
-          {searchOpen && (
-            <div className="absolute left-0 right-0 top-11 z-50 overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-lg">
-              {searchLoading && (
-                <div className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> 正在加载索引
-                </div>
-              )}
-              {!searchLoading && filteredSearchItems.length === 0 && (
-                <div className="px-3 py-3 text-sm text-muted-foreground">
-                  {query.trim() ? "没有找到匹配结果" : "暂无可搜索数据"}
-                </div>
-              )}
-              {!searchLoading &&
-                filteredSearchItems.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-accent focus:bg-accent focus:outline-none"
-                    onClick={() => openSearchItem(item)}
-                  >
-                    <span className="w-12 shrink-0 rounded border border-border bg-muted/50 px-1.5 py-0.5 text-center font-mono text-[10px] uppercase text-muted-foreground">
-                      {item.kind}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{item.title}</span>
-                      <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                        {item.subtitle}
+      {!forcePassword && (
+        <div className="hidden flex-1 md:block">
+          <div ref={searchRef} className="relative max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onFocus={() => {
+                setSearchOpen(true);
+                void loadSearchItems();
+              }}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setSearchOpen(true);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && filteredSearchItems[0]) {
+                  event.preventDefault();
+                  openSearchItem(filteredSearchItems[0]);
+                }
+              }}
+              placeholder="搜索隧道、节点、用户…"
+              className="h-9 w-full rounded-md border border-border bg-card/60 pl-9 pr-16 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary/60 focus:shadow-glow"
+            />
+            <kbd className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              <Command className="h-3 w-3" />K
+            </kbd>
+            {searchOpen && (
+              <div className="absolute left-0 right-0 top-11 z-50 overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-lg">
+                {searchLoading && (
+                  <div className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> 正在加载索引
+                  </div>
+                )}
+                {!searchLoading && filteredSearchItems.length === 0 && (
+                  <div className="px-3 py-3 text-sm text-muted-foreground">
+                    {query.trim() ? "没有找到匹配结果" : "暂无可搜索数据"}
+                  </div>
+                )}
+                {!searchLoading &&
+                  filteredSearchItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-accent focus:bg-accent focus:outline-none"
+                      onClick={() => openSearchItem(item)}
+                    >
+                      <span className="w-12 shrink-0 rounded border border-border bg-muted/50 px-1.5 py-0.5 text-center font-mono text-[10px] uppercase text-muted-foreground">
+                        {item.kind}
                       </span>
-                    </span>
-                  </button>
-                ))}
-            </div>
-          )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{item.title}</span>
+                        <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                          {item.subtitle}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="ml-auto flex items-center gap-1.5">
-        <ThemeToggle />
+        {!forcePassword && <ThemeToggle />}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -221,9 +224,11 @@ export function AppTopbar() {
             <DropdownMenuItem onClick={() => navigate({ to: "/profile" })}>
               个人资料
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate({ to: "/settings" })}>
-              面板设置
-            </DropdownMenuItem>
+            {!forcePassword && (
+              <DropdownMenuItem onClick={() => navigate({ to: "/settings" })}>
+                面板设置
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
               退出登录

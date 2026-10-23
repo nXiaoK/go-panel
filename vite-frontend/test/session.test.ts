@@ -7,6 +7,10 @@ import {
   markSessionActive,
   readSession,
   getRoleID,
+  isPasswordChangeRequired,
+  setPasswordChangeRequired,
+  requirePasswordChange,
+  passwordChangeRedirect,
 } from "../src/lib/session";
 
 function createMemoryStorage(seed: Record<string, string> = {}) {
@@ -24,7 +28,12 @@ describe("session", () => {
   });
 
   it("invalidates once for concurrent protected 401 responses", () => {
-    const storage = createMemoryStorage({ token: "t", role_id: "1", name: "alice" });
+    const storage = createMemoryStorage({
+      token: "t",
+      role_id: "1",
+      name: "alice",
+      must_change_pwd: "1",
+    });
     const navigate = vi.fn();
     configureSessionForTest({ storage, navigate, pathname: "/forward" });
     invalidateSession("expired");
@@ -32,7 +41,7 @@ describe("session", () => {
     expect(storage.getItem("token")).toBeNull();
     expect(storage.getItem("role_id")).toBeNull();
     expect(navigate).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith("/login");
+    expect(navigate).toHaveBeenCalledWith("/login?reason=expired");
   });
 
   it("does not navigate when already on the login page", () => {
@@ -45,13 +54,19 @@ describe("session", () => {
   });
 
   it("clears the complete stored identity during an explicit logout", () => {
-    const storage = createMemoryStorage({ token: "t", role_id: "1", name: "alice" });
+    const storage = createMemoryStorage({
+      token: "t",
+      role_id: "1",
+      name: "alice",
+      must_change_pwd: "1",
+    });
     const navigate = vi.fn();
     configureSessionForTest({ storage, navigate, pathname: "/profile" });
 
     clearSession();
 
     expect(readSession()).toEqual({ token: null, roleID: null, name: null });
+    expect(storage.getItem("must_change_pwd")).toBeNull();
     expect(navigate).not.toHaveBeenCalled();
   });
 
@@ -71,5 +86,25 @@ describe("session", () => {
     configureSessionForTest({ storage, navigate: vi.fn(), pathname: "/" });
     expect(readSession()).toEqual({ token: "t", roleID: 0, name: "root" });
     expect(getRoleID()).toBe(0);
+  });
+});
+
+describe("forced password change", () => {
+  it("persists the requirement and redirects other pages while preserving credentials", () => {
+    const storage = createMemoryStorage({ token: "t", role_id: "1" });
+    const navigate = vi.fn();
+    configureSessionForTest({ storage, navigate, pathname: "/forward" });
+    requirePasswordChange();
+    requirePasswordChange();
+    expect(storage.getItem("must_change_pwd")).toBe("1");
+    expect(storage.getItem("token")).toBe("t");
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/profile?forcePassword=1");
+    // 重建依赖模拟刷新，守卫仍从持久存储读取要求。
+    configureSessionForTest({ storage, navigate, pathname: "/forward" });
+    expect(passwordChangeRedirect("/forward")).toBe("/profile?forcePassword=1");
+    expect(passwordChangeRedirect("/profile")).toBeNull();
+    setPasswordChangeRequired(false);
+    expect(isPasswordChangeRequired()).toBe(false);
+    expect(passwordChangeRedirect("/forward")).toBeNull();
   });
 });

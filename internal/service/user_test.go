@@ -38,8 +38,8 @@ func TestLoginRejectsNonActiveStatus(t *testing.T) {
 	}
 
 	res := Login(dto.LoginDto{Username: "admin_user", Password: userTestAdminPassword}, "192.0.2.201")
-	if res.Code == 0 {
-		t.Fatalf("Login succeeded for non-active status: %#v", res)
+	if res.Code != 4031 {
+		t.Fatalf("code=%d, want account disabled code 4031", res.Code)
 	}
 	if res.Msg != "账号已被禁用" {
 		t.Fatalf("msg=%q, want account disabled", res.Msg)
