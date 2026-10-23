@@ -1,4 +1,4 @@
-import { apiPost, type RequestOptions } from "./client";
+import { apiPost, type RequestOptions } from "@/lib/api/client";
 import type { PasswordUpdate } from "@/lib/types";
 export interface LoginData {
   username: string;
