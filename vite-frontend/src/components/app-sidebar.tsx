@@ -66,8 +66,7 @@ export function AppSidebar() {
     getConfigs()
       .then((res) => {
         if (!alive) return;
-        if (res.code !== 0) return;
-        const next = appNameFromConfigs(res.data);
+        const next = appNameFromConfigs(res);
         setCachedAppName(next);
         setAppName(next);
       })
@@ -83,16 +82,16 @@ export function AppSidebar() {
     let alive = true;
     getSystemVersion()
       .then((response) => {
-        if (alive && response.code === 0) setBuildInfo(response.data);
+        if (alive) setBuildInfo(response);
       })
       .catch(() => undefined);
     const loadUpdate = () => {
       checkPanelUpdate()
         .then((response) => {
-          if (!alive || response.code !== 0 || !response.data) return;
-          setUpdateStatus(response.data);
-          setBuildInfo(response.data.current);
-          if (response.data.updateAvailable && shouldPromptForUpdate(response.data.latestVersion)) {
+          if (!alive) return;
+          setUpdateStatus(response);
+          setBuildInfo(response.current);
+          if (response.updateAvailable && shouldPromptForUpdate(response.latestVersion)) {
             setUpdateDialogOpen(true);
           }
         })
@@ -113,11 +112,10 @@ export function AppSidebar() {
     getSystemStatus()
       .then((res) => {
         if (!alive) return;
-        setSystemOnline(res.code === 0);
-        if (res.code !== 0) return;
-        const startedAt = Number((res.data as any)?.startedAt || 0);
+        setSystemOnline(true);
+        const startedAt = Number(res.startedAt || 0);
         setServerStartedAt(startedAt > 0 ? startedAt : null);
-        setUptimeSeconds(Number((res.data as any)?.uptimeSeconds || 0));
+        setUptimeSeconds(Number(res.uptimeSeconds || 0));
       })
       .catch(() => {
         if (alive) setSystemOnline(false);

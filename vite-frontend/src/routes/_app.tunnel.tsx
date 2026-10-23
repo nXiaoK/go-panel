@@ -1,3 +1,4 @@
+import type { TunnelWrite } from "@/lib/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -57,7 +58,7 @@ import {
   getTunnelList,
   updateTunnel,
 } from "@/lib/api";
-import { listData, queries, unwrap } from "@/lib/api/query";
+import { queries } from "@/lib/api/query";
 import type { DiagnosisResult, Node, Tunnel, TunnelForm } from "@/lib/types";
 import { invalidateGlobalSearch } from "@/lib/search-cache";
 import { FormField as Field, KpiCard, PageHeader, QueryErrorNotice } from "@/components/page";
@@ -106,11 +107,11 @@ function TunnelPage() {
 
   const tunnelsQuery = useQuery({
     queryKey: queries.tunnel.list(),
-    queryFn: () => getTunnelList().then(listData<Tunnel>),
+    queryFn: ({ signal }) => getTunnelList({ signal }),
   });
   const nodesQuery = useQuery({
     queryKey: queries.node.rawList(),
-    queryFn: () => getNodeList().then(listData<Node>),
+    queryFn: ({ signal }) => getNodeList({ signal }),
   });
   const tunnels = useMemo(() => tunnelsQuery.data ?? [], [tunnelsQuery.data]);
   const nodes = useMemo(() => nodesQuery.data ?? [], [nodesQuery.data]);
@@ -141,8 +142,8 @@ function TunnelPage() {
   }, [queryClient]);
 
   const saveMutation = useMutation({
-    mutationFn: ({ payload, isEdit }: { payload: TunnelForm; isEdit: boolean }) =>
-      (isEdit ? updateTunnel(payload) : createTunnel(payload)).then(unwrap),
+    mutationFn: ({ payload, isEdit }: { payload: TunnelWrite; isEdit: boolean }) =>
+      isEdit ? updateTunnel(payload) : createTunnel(payload),
     onSuccess: (_data, { isEdit }) => {
       invalidateGlobalSearch("tunnel");
       toast.success(isEdit ? "隧道已更新" : "隧道已创建");
@@ -155,7 +156,7 @@ function TunnelPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => deleteTunnel(id).then(unwrap),
+    mutationFn: (id: number) => deleteTunnel(id),
     onSuccess: () => {
       invalidateGlobalSearch("tunnel");
       toast.success("已删除");
@@ -246,6 +247,7 @@ function TunnelPage() {
     }
     const payload = {
       ...form,
+      inNodeId: form.inNodeId!,
       // nftables 模式下强制 tcp+udp（原逻辑）
       protocol: isNftForm ? "tcp+udp" : form.protocol,
     };
@@ -263,8 +265,7 @@ function TunnelPage() {
     setDiagResult(null);
     try {
       const res = await diagnoseTunnel(t.id);
-      if (res.code === 0) setDiagResult(res.data as DiagnosisResult);
-      else toast.error(res.msg || "诊断失败");
+      setDiagResult(res);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "诊断失败");
     } finally {

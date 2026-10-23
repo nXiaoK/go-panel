@@ -7,17 +7,20 @@ import {
 } from "@tanstack/react-query";
 import type { ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import Network from "@/lib/api/network";
+import { apiPost } from "@/lib/api/client";
 import { setPreference } from "@/lib/preferences";
 import { Route } from "./_app.node";
 
-vi.mock("@/lib/api/network", () => ({ default: { post: vi.fn() } }));
+vi.mock("@/lib/api/client", () => ({
+  apiPost: vi.fn(),
+  errorMessage: (e: unknown) => (e instanceof Error ? e.message : "请求失败"),
+}));
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-router")>()),
   useNavigate: () => vi.fn(),
 }));
 
-const post = vi.mocked(Network.post);
+const post = vi.mocked(apiPost);
 const NodePage = Route.options.component as ComponentType;
 let client: QueryClient;
 
@@ -40,7 +43,7 @@ async function renderPage() {
 beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
-  post.mockResolvedValue({ code: 0, msg: "", data: [] });
+  post.mockResolvedValue([]);
   focusManager.setFocused(true);
   onlineManager.setOnline(true);
   // 节点页面同时建立状态流，本组只验证真实页面的 react-query 刷新生命周期。
@@ -69,7 +72,11 @@ describe("节点页面的自动刷新", () => {
   it("初次加载后每 30 秒刷新真实节点列表", async () => {
     await renderPage();
     expect(post).toHaveBeenCalledTimes(1);
-    expect(post).toHaveBeenLastCalledWith("/node/list");
+    expect(post).toHaveBeenLastCalledWith(
+      "/node/list",
+      {},
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     await advance(30_000);
     expect(post).toHaveBeenCalledTimes(2);
     await advance(30_000);
@@ -78,7 +85,7 @@ describe("节点页面的自动刷新", () => {
 
   it("慢请求未结束时不会叠加轮询", async () => {
     await renderPage();
-    let resolve!: (value: { code: number; msg: string; data: never[] }) => void;
+    let resolve!: (value: never[]) => void;
     post.mockImplementationOnce(
       () =>
         new Promise((done) => {
@@ -87,7 +94,7 @@ describe("节点页面的自动刷新", () => {
     );
     await advance(90_000);
     expect(post).toHaveBeenCalledTimes(2);
-    await act(async () => resolve({ code: 0, msg: "", data: [] }));
+    await act(async () => resolve([]));
     await advance(30_000);
     expect(post).toHaveBeenCalledTimes(3);
   });

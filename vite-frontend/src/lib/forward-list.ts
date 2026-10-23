@@ -1,5 +1,4 @@
 import { getForwardList } from "@/lib/api";
-import { listData } from "@/lib/api/query";
 import type { Forward } from "@/lib/types";
 
 type ForwardListFetcher = typeof getForwardList;
@@ -11,9 +10,9 @@ type ForwardListFetcher = typeof getForwardList;
  */
 export async function loadSortedForwards(
   fetchForwardList: ForwardListFetcher = getForwardList,
+  signal?: AbortSignal,
 ): Promise<Forward[]> {
-  const res = await fetchForwardList();
-  const list = listData<Forward>(res);
+  const list = await fetchForwardList({ signal });
   const anyInx = list.some((forward) => (forward.inx ?? 0) > 0);
 
   if (!anyInx && typeof window !== "undefined") {

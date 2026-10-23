@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { checkNodeStatus } from "../src/lib/api";
-import Network from "../src/lib/api/network";
+import * as client from "../src/lib/api/client";
 import type { NodeStatusCheck } from "../src/lib/types";
 
 afterEach(() => vi.restoreAllMocks());
@@ -23,9 +23,9 @@ describe("single node status API", () => {
       syncLastAttempt: 123,
       checkedAt: 456,
     };
-    const response = { code: 0, msg: "操作成功", data: status };
-    const post = vi.spyOn(Network, "post").mockResolvedValue(response);
+    const response = status;
+    const post = vi.spyOn(client, "apiPost").mockResolvedValue(response);
     expect(await checkNodeStatus(17)).toEqual(response);
-    expect(post).toHaveBeenCalledWith("/node/check-status", { nodeId: 17 });
+    expect(post).toHaveBeenCalledWith("/node/check-status", { nodeId: 17 }, undefined);
   });
 });

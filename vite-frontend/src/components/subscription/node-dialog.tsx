@@ -1,3 +1,4 @@
+import type { ProxyNodeWrite } from "@/lib/types";
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -20,7 +21,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { updateProxyNode } from "@/lib/api";
-import { unwrap } from "@/lib/api/query";
 import type { ProxyNode } from "@/lib/types";
 import { FormField as Field } from "@/components/page";
 
@@ -57,7 +57,7 @@ export function SubscriptionNodeDialog({
   }, [open, editing]);
 
   const saveMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) => updateProxyNode(payload).then(unwrap),
+    mutationFn: (payload: ProxyNodeWrite) => updateProxyNode(payload),
     onSuccess: () => {
       toast.success("节点已保存");
       onOpenChange(false);

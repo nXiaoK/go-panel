@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/api/client";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -62,7 +63,7 @@ import {
   updateProxyNode,
   updateSubscriptionProfile,
 } from "@/lib/api";
-import { queries, unwrap } from "@/lib/api/query";
+import { queries } from "@/lib/api/query";
 import { currentPanelEndpoint } from "@/lib/panel-endpoint";
 import { SubscriptionProfileDialog } from "@/components/subscription/profile-dialog";
 import { SubscriptionNodeDialog } from "@/components/subscription/node-dialog";
@@ -128,7 +129,7 @@ function SubscriptionPage() {
 
   const settingsQuery = useQuery({
     queryKey: queries.subscription.settings(),
-    queryFn: () => getSubscriptionSettings().then(unwrap) as Promise<SubscriptionSettings>,
+    queryFn: ({ signal }) => getSubscriptionSettings({ signal }),
   });
   const settings = settingsQuery.data;
   const loading = settingsQuery.isPending;
@@ -256,29 +257,38 @@ function SubscriptionPage() {
   };
   const removeProfile = async (p: SubscriptionProfile) => {
     if (!window.confirm(`删除订阅「${p.name}」？`)) return;
-    const res = await deleteSubscriptionProfile(p.id);
-    if (res.code === 0) {
+    try {
+      await deleteSubscriptionProfile(p.id);
+
       toast.success("订阅已删除");
       await loadSettings();
-    } else toast.error(res.msg || "删除失败");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
   const refreshProfileToken = async (p: SubscriptionProfile) => {
-    const res = await regenerateSubscriptionToken(p.id);
-    if (res.code === 0) {
+    try {
+      await regenerateSubscriptionToken(p.id);
+
       toast.success("Token 已重新生成");
       await loadSettings();
-    } else toast.error(res.msg || "Token 更新失败");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
   const toggleProfileStatus = async (p: SubscriptionProfile) => {
-    const res = await updateSubscriptionProfile({
-      ...p,
-      status: p.status === 1 ? 0 : 1,
-      nodeIds: profileNodeIdsOf(p.id),
-    });
-    if (res.code === 0) {
+    try {
+      await updateSubscriptionProfile({
+        ...p,
+        status: p.status === 1 ? 0 : 1,
+        nodeIds: profileNodeIdsOf(p.id),
+      });
+
       toast.success(p.status === 1 ? "已禁用" : "已启用");
       await loadSettings();
-    } else toast.error(res.msg || "更新失败");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
   const showQr = (p: SubscriptionProfile, fmt: SubscriptionFormat) => {
     setQrTitle(`${p.name} · ${subscriptionFormatLabels[fmt]}`);
@@ -303,24 +313,30 @@ function SubscriptionPage() {
     if (n.forwardId || (n.relayChildCount || 0) > 0) {
       del = window.confirm(`节点「${n.name}」有关联中转规则/节点，是否一并删除？`);
     }
-    const res = await deleteProxyNode(n.id, del);
-    if (res.code === 0) {
+    try {
+      await deleteProxyNode(n.id, del);
+
       toast.success("节点已删除");
       await (n.forwardId || (n.relayChildCount || 0) > 0 ? loadRelayData() : loadSettings());
-    } else toast.error(res.msg || "删除失败");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
   const toggleNodeStatus = async (n: ProxyNode) => {
-    const res = await updateProxyNode({
-      ...n,
-      port: Number(n.port),
-      allowInsecure: n.allowInsecure === 1,
-      udp: n.udp === 1,
-      status: n.status === 1 ? 0 : 1,
-    });
-    if (res.code === 0) {
+    try {
+      await updateProxyNode({
+        ...n,
+        port: Number(n.port),
+        allowInsecure: n.allowInsecure === 1,
+        udp: n.udp === 1,
+        status: n.status === 1 ? 0 : 1,
+      });
+
       toast.success(n.status === 1 ? "已禁用" : "已启用");
       await loadSettings();
-    } else toast.error(res.msg || "更新失败");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
   const openAssign = (n: ProxyNode) => {
     setAssignNode(n);
@@ -337,24 +353,30 @@ function SubscriptionPage() {
   };
   const closeRelay = async (n: ProxyNode) => {
     if (!window.confirm(`关闭节点「${n.name}」的中转？`)) return;
-    const res = await closeProxyNodeRelay(n.id);
-    if (res.code === 0) {
-      const d = (res.data || {}) as any;
+    try {
+      const res = await closeProxyNodeRelay(n.id);
+
+      const d = res;
       toast.success(
         `已关闭：删除 ${d.deletedForwards || 0} 中转规则、${d.deletedNodes || 0} 中转节点`,
       );
       await loadRelayData();
-    } else toast.error(res.msg || "关闭失败");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
   const diagRelay = async (n: ProxyNode) => {
     if (!n.forwardId) return toast.error("该节点没有可测试的中转规则");
-    const res = await diagnoseForward(n.forwardId);
-    if (res.code === 0) {
-      const r = (res.data as any)?.results?.[0];
+    try {
+      const res = await diagnoseForward(n.forwardId);
+
+      const r = res.results?.[0];
       toast.success(
         r?.success ? `连通 · ${r.averageTime?.toFixed?.(0) || "?"}ms` : r?.message || "已完成",
       );
-    } else toast.error(res.msg || "测试失败");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
 
   // ---------- API Key ----------
@@ -366,7 +388,7 @@ function SubscriptionPage() {
   const runBatch = async <T,>(
     key: NonNullable<typeof batchAction>["key"],
     items: T[],
-    fn: (item: T) => Promise<any>,
+    fn: (item: T) => Promise<unknown>,
     label: string,
     nameOf: (item: T) => string,
   ) => {
@@ -376,16 +398,10 @@ function SubscriptionPage() {
       for (let i = 0; i < items.length; i++) {
         const name = nameOf(items[i]) || `#${i + 1}`;
         try {
-          const res = await fn(items[i]);
-          if (res && res.code === 0) results.push({ name, success: true });
-          else
-            results.push({
-              name,
-              success: false,
-              reason: res?.msg || `错误码 ${res?.code ?? "未知"}`,
-            });
-        } catch (e: any) {
-          results.push({ name, success: false, reason: e?.message || "请求异常" });
+          await fn(items[i]);
+          results.push({ name, success: true });
+        } catch (e) {
+          results.push({ name, success: false, reason: errorMessage(e) });
         }
         setBatchAction((a) => (a ? { ...a, done: i + 1 } : a));
       }

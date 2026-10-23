@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { checkPanelUpdate, getConfigs, getSystemStatus, getSystemVersion } from "@/lib/api";
 import { configureSessionForTest } from "@/lib/session";
+import { ApiError } from "@/lib/api/client";
 import type { BuildInfo, PanelUpdateStatus } from "@/lib/types";
 import { AppSidebar } from "./app-sidebar";
 
@@ -56,14 +57,13 @@ beforeEach(() => {
   vi.useFakeTimers();
   window.localStorage.clear();
   configureSessionForTest({ storage: window.localStorage, navigate: vi.fn() });
-  vi.mocked(getConfigs).mockResolvedValue({ code: 0, msg: "", data: { app_name: "任务面板" } });
+  vi.mocked(getConfigs).mockResolvedValue({ app_name: "任务面板" });
   vi.mocked(getSystemStatus).mockResolvedValue({
-    code: 0,
-    msg: "",
-    data: { startedAt: Date.now() - 90_000, uptimeSeconds: 90 },
+    startedAt: Date.now() - 90_000,
+    uptimeSeconds: 90,
   });
-  vi.mocked(getSystemVersion).mockResolvedValue({ code: 0, msg: "", data: build });
-  vi.mocked(checkPanelUpdate).mockResolvedValue({ code: 0, msg: "", data: update });
+  vi.mocked(getSystemVersion).mockResolvedValue(build);
+  vi.mocked(checkPanelUpdate).mockResolvedValue(update);
 });
 afterEach(() => {
   cleanup();
@@ -130,7 +130,7 @@ describe("sidebar version and process status", () => {
     async (failure) => {
       if (failure === "rejected")
         vi.mocked(getSystemStatus).mockRejectedValue(new Error("offline"));
-      else vi.mocked(getSystemStatus).mockResolvedValue({ code: -1, msg: "offline", data: null });
+      else vi.mocked(getSystemStatus).mockRejectedValue(new ApiError("offline", -1));
       await showSidebar(1);
       expect(screen.getByText("连接异常")).toBeTruthy();
     },

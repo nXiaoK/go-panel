@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/api/client";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -28,7 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getConfigs, updateConfigs, downloadSiteBackup, restoreSiteBackup } from "@/lib/api";
-import { queries, unwrap } from "@/lib/api/query";
+import { queries } from "@/lib/api/query";
 import { PageHeader, QueryErrorNotice } from "@/components/page";
 import {
   allowInsecureNodeDownloadsEnvOverrideName,
@@ -58,11 +59,7 @@ function ConfigPage() {
 
   const configsQuery = useQuery({
     queryKey: queries.config.list(),
-    queryFn: () =>
-      getConfigs().then((res) => {
-        if (res.code !== 0) throw new Error(res.msg || "加载失败");
-        return normalizeConfigItems(res.data);
-      }),
+    queryFn: ({ signal }) => getConfigs({ signal }).then(normalizeConfigItems),
   });
 
   // 草稿编辑区：每当服务端数据变化时同步一次，编辑不会回写到缓存。
@@ -95,7 +92,7 @@ function ConfigPage() {
       : `${window.location.hostname}:${window.location.port || (window.location.protocol === "https:" ? "443" : "80")}`;
 
   const saveMutation = useMutation({
-    mutationFn: (payload: Record<string, string>) => updateConfigs(payload).then(unwrap),
+    mutationFn: (payload: Record<string, string>) => updateConfigs(payload),
     onSuccess: (_data, payload) => {
       if (payload.app_name !== undefined) setCachedAppName(payload.app_name);
       toast.success("已保存");
@@ -163,16 +160,16 @@ function ConfigPage() {
   const backup = async () => {
     setBusy("backup");
     try {
-      const blob = await downloadSiteBackup();
+      const { blob, filename } = await downloadSiteBackup();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `flux-panel-backup-${new Date().toISOString().slice(0, 10)}.db`;
+      a.download = filename || "backup.db";
       a.click();
       URL.revokeObjectURL(url);
       toast.success("备份已下载");
-    } catch (e: any) {
-      toast.error(e?.message || "备份失败");
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -182,9 +179,8 @@ function ConfigPage() {
     if (!confirm(`确认使用 "${file.name}" 恢复站点？将覆盖当前数据。`)) return;
     setBusy("restore");
     try {
-      const res = await restoreSiteBackup(file);
-      if (res.code === 0) toast.success("已恢复，稍后请重新登录");
-      else toast.error(res.msg || "恢复失败");
+      await restoreSiteBackup(file);
+      toast.success("已恢复，稍后请重新登录");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "恢复失败");
     } finally {

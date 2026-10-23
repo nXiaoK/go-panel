@@ -1,3 +1,5 @@
+import { ApiError, errorMessage } from "@/lib/api/client";
+import type { DiagnosisResult } from "@/lib/types";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
@@ -72,7 +74,7 @@ import type {
   Tunnel,
 } from "@/lib/types";
 import { getRoleID } from "@/lib/session";
-import { listData, queries, unwrap } from "@/lib/api/query";
+import { queries } from "@/lib/api/query";
 import { loadSortedForwards } from "@/lib/forward-list";
 import { usePreferences } from "@/hooks/use-preferences";
 import { canReorderForwards, forwardOrderIDs, moveForwardByID } from "@/lib/forward-order";
@@ -114,7 +116,7 @@ export function ForwardPage() {
 
   const [diagOpen, setDiagOpen] = useState(false);
   const [diagLoading, setDiagLoading] = useState(false);
-  const [diagResult, setDiagResult] = useState<any>(null);
+  const [diagResult, setDiagResult] = useState<DiagnosisResult | null>(null);
 
   const [nftOpen, setNftOpen] = useState(false);
 
@@ -124,20 +126,20 @@ export function ForwardPage() {
 
   const forwardsQuery = useQuery({
     queryKey: queries.forward.list(),
-    queryFn: () => loadSortedForwards(),
+    queryFn: ({ signal }) => loadSortedForwards(undefined, signal),
     refetchInterval: autoRefreshEnabled ? 30_000 : false,
   });
   const tunnelsQuery = useQuery({
     queryKey: isAdmin ? queries.tunnel.list() : queries.tunnel.userOptions(),
-    queryFn: async (): Promise<ForwardTunnelOption[]> => {
-      if (isAdmin) return getTunnelList().then(listData<Tunnel>);
-      const options = unwrap(await userTunnel());
+    queryFn: async ({ signal }): Promise<ForwardTunnelOption[]> => {
+      if (isAdmin) return getTunnelList({ signal });
+      const options = await userTunnel({ signal });
       return options.map(({ ip, protocol: _protocol, ...option }) => ({ ...option, inIp: ip }));
     },
   });
   const nodesQuery = useQuery({
     queryKey: queries.node.rawList(),
-    queryFn: () => getNodeList().then(listData<Node>),
+    queryFn: ({ signal }) => getNodeList({ signal }),
     enabled: isAdmin,
   });
 
@@ -169,9 +171,7 @@ export function ForwardPage() {
 
   const orderMutation = useMutation({
     mutationFn: (reindexed: Forward[]) =>
-      updateForwardOrder({ forwards: reindexed.map((x) => ({ id: x.id, inx: x.inx! })) }).then(
-        unwrap,
-      ),
+      updateForwardOrder({ forwards: reindexed.map((x) => ({ id: x.id, inx: x.inx! })) }),
     onError: (error: Error) => toast.error(error.message || "保存排序失败"),
   });
 
@@ -226,25 +226,29 @@ export function ForwardPage() {
   const remove = async (f: Forward) => {
     if (!confirm(`确认删除转发「${f.name}」？`)) return;
     try {
-      const res = await deleteForward(f.id);
-      if (res.code === 0) {
-        invalidateGlobalSearch("forward");
-        toast.success("已删除");
-        refresh();
+      await deleteForward(f.id);
+      invalidateGlobalSearch("forward");
+      toast.success("已删除");
+      refresh();
+    } catch (error) {
+      if (
+        !(error instanceof ApiError) ||
+        error.httpStatus !== 200 ||
+        [401, 4031, 4032].includes(error.code)
+      ) {
+        toast.error(errorMessage(error));
         return;
       }
-      if (confirm(`删除失败：${res.msg || "未知错误"}。是否强制删除？`)) {
-        const forced = await forceDeleteForward(f.id);
-        if (forced.code === 0) {
+      if (confirm(`删除失败：${errorMessage(error)}。是否强制删除？`)) {
+        try {
+          await forceDeleteForward(f.id);
           invalidateGlobalSearch("forward");
           toast.success("已强制删除");
           refresh();
-        } else {
-          toast.error(forced.msg || "强制删除失败");
+        } catch (forcedError) {
+          toast.error(errorMessage(forcedError));
         }
       }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除失败");
     }
   };
 
@@ -257,15 +261,9 @@ export function ForwardPage() {
       );
     patch(nextStatus);
     try {
-      const res =
-        f.status === 1 ? await pauseForwardService(f.id) : await resumeForwardService(f.id);
-      if (res.code !== 0) {
-        toast.error(res.msg || "操作失败");
-        patch(f.status);
-      } else {
-        toast.success(f.status === 1 ? "已暂停" : "已恢复");
-        void queryClient.invalidateQueries({ queryKey: queries.dashboard.all });
-      }
+      await (f.status === 1 ? pauseForwardService(f.id) : resumeForwardService(f.id));
+      toast.success(f.status === 1 ? "已暂停" : "已恢复");
+      void queryClient.invalidateQueries({ queryKey: queries.dashboard.all });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "操作失败");
       patch(f.status);
@@ -278,8 +276,7 @@ export function ForwardPage() {
     setDiagResult(null);
     try {
       const res = await diagnoseForward(f.id);
-      if (res.code === 0) setDiagResult(res.data);
-      else toast.error(res.msg || "诊断失败");
+      setDiagResult(res);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "诊断失败");
     } finally {
@@ -639,7 +636,7 @@ export function ForwardPage() {
           {!diagLoading && diagResult && (
             <ScrollArea className="max-h-[60vh]">
               <div className="space-y-2">
-                {(diagResult.results || diagResult.checks || []).map((r: any, i: number) => (
+                {(diagResult.results || []).map((r, i: number) => (
                   <div
                     key={i}
                     className={`rounded-md border p-3 text-sm ${
@@ -649,7 +646,7 @@ export function ForwardPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="font-medium">{r.description || r.name}</div>
+                      <div className="font-medium">{r.description}</div>
                       <Badge variant={r.success ? "default" : "destructive"}>
                         {r.success ? "通过" : "失败"}
                       </Badge>
@@ -665,7 +662,7 @@ export function ForwardPage() {
                     )}
                   </div>
                 ))}
-                {!(diagResult.results || diagResult.checks) && (
+                {!diagResult.results && (
                   <pre className="rounded-md border border-border/60 bg-background/60 p-3 text-[11px]">
                     {JSON.stringify(diagResult, null, 2)}
                   </pre>

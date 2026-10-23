@@ -33,11 +33,8 @@ describe("isMissingPanelAddressError", () => {
 
 describe("node upgrade request timeout", () => {
   it("waits longer than the backend WebSocket upgrade command", async () => {
-    const source = await readFile(new URL("../src/lib/api/index.ts", import.meta.url), "utf8");
+    const source = await readFile(new URL("../src/lib/api/node.ts", import.meta.url), "utf8");
     assert.match(source, /const nodeUpgradeRequestTimeoutMs = 100_000/);
-    assert.match(
-      source,
-      /postWithTimeout\("\/node\/upgrade", \{ id \}, nodeUpgradeRequestTimeoutMs\)/,
-    );
+    assert.match(source, /timeoutMs: nodeUpgradeRequestTimeoutMs/);
   });
 });

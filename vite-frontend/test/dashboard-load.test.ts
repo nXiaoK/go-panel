@@ -15,7 +15,6 @@ import {
   fakeSources,
   formatMissingSources,
   healthBadge,
-  listFromResponse,
   loadDashboardSources,
   successSource,
 } from "../src/lib/dashboard-load";
@@ -26,12 +25,15 @@ describe("loadDashboardSources", () => {
   });
 
   it("passes the selected tunnel to the package trend request", async () => {
-    apiMocks.getUserPackageInfo.mockResolvedValue({ code: 0, data: { statisticsFlows: [] } });
+    apiMocks.getUserPackageInfo.mockResolvedValue({ statisticsFlows: [] });
 
     const result = await loadDashboardSources(false, "7d", 42);
 
     expect(result.status).toBe("success");
-    expect(apiMocks.getUserPackageInfo).toHaveBeenCalledWith({ range: "7d", tunnelId: 42 });
+    expect(apiMocks.getUserPackageInfo).toHaveBeenCalledWith(
+      { range: "7d", tunnelId: 42 },
+      { signal: undefined },
+    );
   });
 
   it("marks one failed admin source as partial", async () => {
@@ -63,7 +65,7 @@ describe("loadDashboardSources", () => {
         nodes: successSource([{ id: 1 }]),
         tunnels: successSource([]),
         forwards: successSource([]),
-        users: successSource({ records: [{ id: 9 }] }),
+        users: successSource([{ id: 9 }]),
       }),
     );
     expect(result.status).toBe("success");
@@ -108,8 +110,7 @@ describe("loadDashboardSources", () => {
 });
 
 describe("dashboard health helpers", () => {
-  it("lists records payloads and formats badges", () => {
-    expect(listFromResponse({ records: [1, 2] })).toEqual([1, 2]);
+  it("formats health badges and missing source labels", () => {
     expect(healthBadge("partial").label).toBe("partial sync");
     expect(formatMissingSources(["nodes", "users"])).toContain("节点");
   });

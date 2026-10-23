@@ -1,10 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
+import { ApiError } from "@/lib/api/client";
 import type { ReactNode } from "react";
 import { createForward, updateForward } from "@/lib/api";
 import type { Forward, Tunnel, UserTunnelOption } from "@/lib/types";
 import { ForwardFormDialog } from "./forward-form-dialog";
 
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/api", () => ({ createForward: vi.fn(), updateForward: vi.fn() }));
 vi.mock("@/components/ui/select", () => ({
   Select: ({
@@ -92,7 +95,7 @@ function form(
 }
 describe("regular-user forward form", () => {
   it("disables unusable grants, shows reasons and creates with the tunnel default exit", async () => {
-    vi.mocked(createForward).mockResolvedValue({ code: 0, msg: "", data: null });
+    vi.mocked(createForward).mockResolvedValue("操作成功");
     form("user", null, [
       option,
       {
@@ -122,7 +125,7 @@ describe("regular-user forward form", () => {
     });
   });
   it("omits all exit configuration when editing an administrator-configured forward", async () => {
-    vi.mocked(updateForward).mockResolvedValue({ code: 0, msg: "", data: null });
+    vi.mocked(updateForward).mockResolvedValue("操作成功");
     form("user", editing);
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(updateForward).toHaveBeenCalledOnce());
@@ -131,7 +134,7 @@ describe("regular-user forward form", () => {
       expect(Object.hasOwn(payload, key)).toBe(false);
   });
   it("retains administrator exit controls and payload", async () => {
-    vi.mocked(updateForward).mockResolvedValue({ code: 0, msg: "", data: null });
+    vi.mocked(updateForward).mockResolvedValue("操作成功");
     form("admin", editing, [{ id: 3, name: "admin tunnel", type: 2, inNodeId: 1, outNodeId: 4 }]);
     expect(screen.getByText("出口成员选择")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
@@ -141,5 +144,17 @@ describe("regular-user forward form", () => {
       exitStrategy: "round",
       exitMembers: editing.exitMembers,
     });
+  });
+  it("releases the save button after a rejected request and allows retry", async () => {
+    vi.mocked(updateForward)
+      .mockRejectedValueOnce(new ApiError("系统维护中，请稍后重试", 503, 503))
+      .mockResolvedValueOnce("操作成功");
+    form("user", editing);
+    const save = screen.getByRole("button", { name: "保存" });
+    fireEvent.click(save);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("系统维护中，请稍后重试"));
+    expect(save.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() => expect(updateForward).toHaveBeenCalledTimes(2));
   });
 });

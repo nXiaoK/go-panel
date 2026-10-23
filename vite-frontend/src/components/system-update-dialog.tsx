@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/api/client";
 import { useState } from "react";
 import { Check, Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 
@@ -33,7 +34,7 @@ async function waitForUpdatedPanel(targetVersion: string) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     await delay(3_000);
     const response = await getSystemVersion().catch(() => null);
-    if (response?.code === 0 && response.data?.version === targetVersion) {
+    if (response?.version === targetVersion) {
       window.location.reload();
       return;
     }
@@ -65,15 +66,17 @@ export function SystemUpdateDialog({ open, status, onOpenChange }: SystemUpdateD
   const applyUpdate = async () => {
     if (!status?.latestVersion || applying) return;
     setApplying(true);
-    const response = await applyPanelUpdate().catch(() => null);
-    if (!response || response.code !== 0 || !response.data?.started) {
+    try {
+      const response = await applyPanelUpdate();
+      if (!response.started) throw new Error("更新请求失败，请检查更新侧车日志");
+      notify.success(`已备份数据库并开始更新到 ${response.targetVersion}`);
+      onOpenChange(false);
+      void waitForUpdatedPanel(response.targetVersion);
+    } catch (error) {
+      notify.error(errorMessage(error));
+    } finally {
       setApplying(false);
-      notify.error(response?.msg || "更新请求失败，请检查更新侧车日志");
-      return;
     }
-    notify.success(`已备份数据库并开始更新到 ${response.data.targetVersion}`);
-    onOpenChange(false);
-    void waitForUpdatedPanel(response.data.targetVersion);
   };
 
   return (

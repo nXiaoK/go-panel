@@ -14,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { importProxyNodeLink } from "@/lib/api";
-import { unwrap } from "@/lib/api/query";
 
 export function SubscriptionImportDialog({
   open,
@@ -32,7 +31,7 @@ export function SubscriptionImportDialog({
   }, [open]);
 
   const importMutation = useMutation({
-    mutationFn: (value: string) => importProxyNodeLink(value).then(unwrap),
+    mutationFn: (value: string) => importProxyNodeLink(value),
     onSuccess: () => {
       toast.success("节点已导入");
       onOpenChange(false);

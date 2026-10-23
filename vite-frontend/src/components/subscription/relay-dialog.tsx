@@ -1,3 +1,4 @@
+import type { RelayWrite } from "@/lib/types";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -19,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createProxyNodeRelay, previewProxyNodeRelay } from "@/lib/api";
-import { queries, unwrap } from "@/lib/api/query";
+import { queries } from "@/lib/api/query";
 import type { ProxyNode, RelayMode, SubTunnelOption } from "@/lib/types";
 import { FormField as Field } from "@/components/page";
 
@@ -81,19 +82,22 @@ export function SubscriptionRelayDialog({
   const previewInPort = form.inPort ? Number(form.inPort) : null;
   const previewQuery = useQuery({
     queryKey: queries.subscription.relayPreview(previewNodeId, previewTunnelId, previewInPort),
-    queryFn: () =>
-      previewProxyNodeRelay({
-        nodeId: previewNodeId,
-        tunnelId: previewTunnelId,
-        inPort: previewInPort,
-      }).then(unwrap) as Promise<RelayPreview>,
+    queryFn: ({ signal }) =>
+      previewProxyNodeRelay(
+        {
+          nodeId: previewNodeId,
+          tunnelId: previewTunnelId,
+          inPort: previewInPort,
+        },
+        { signal },
+      ),
     enabled: open && previewNodeId > 0 && previewTunnelId > 0,
     retry: false,
   });
   const preview = previewQuery.data ?? null;
 
   const relayMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) => createProxyNodeRelay(payload).then(unwrap),
+    mutationFn: (payload: RelayWrite) => createProxyNodeRelay(payload),
     onSuccess: () => {
       toast.success("中转已创建");
       onOpenChange(false);

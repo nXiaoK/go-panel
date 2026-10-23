@@ -1,3 +1,4 @@
+import type { UserPackage, PasswordUpdate } from "@/lib/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -12,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { updatePassword, getUserPackageInfo } from "@/lib/api";
-import { queries, unwrap } from "@/lib/api/query";
+import { queries } from "@/lib/api/query";
 import { clearSession, isPasswordChangeRequired } from "@/lib/session";
 import { PageHeader, QueryErrorNotice } from "@/components/page";
 
@@ -43,20 +44,10 @@ function fmtBytes(n: number) {
 
 type PackageSummary = { flow: number; num: number; used: number };
 
-function normalizePackageInfo(data: any): PackageSummary | null {
+function normalizePackageInfo(data: UserPackage | null): PackageSummary | null {
   if (!data) return null;
-  const userInfo = data.userInfo || data;
-  const flow = Number(userInfo.flow ?? data.flow ?? 0);
-  const num = Number(userInfo.num ?? data.num ?? 0);
-  const used =
-    data.used !== undefined
-      ? Number(data.used)
-      : (Number(userInfo.inFlow ?? 0) + Number(userInfo.outFlow ?? 0)) / 1024 ** 3;
-  return {
-    flow: Number.isFinite(flow) ? flow : 0,
-    num: Number.isFinite(num) ? num : 0,
-    used: Number.isFinite(used) ? used : 0,
-  };
+  const { flow, num, inFlow = 0, outFlow = 0 } = data.userInfo;
+  return { flow, num, used: (inFlow + outFlow) / 1024 ** 3 };
 }
 
 function ProfilePage() {
@@ -80,14 +71,14 @@ function ProfilePage() {
 
   const packageQuery = useQuery({
     queryKey: queries.user.package(),
-    queryFn: () => getUserPackageInfo().then(unwrap),
+    queryFn: ({ signal }) => getUserPackageInfo({}, { signal }),
     // 强制改密期间停止套餐请求，避免受保护业务接口反复返回 4032。
     enabled: !forcePassword,
   });
   const pkg = forcePassword ? null : normalizePackageInfo(packageQuery.data ?? null);
 
   const passwordMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) => updatePassword(payload).then(unwrap),
+    mutationFn: (payload: PasswordUpdate) => updatePassword(payload),
     onSuccess: () => {
       toast.success("密码已更新，请重新登录");
       setOldPwd("");

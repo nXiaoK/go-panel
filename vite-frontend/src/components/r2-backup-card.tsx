@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/api/client";
 import { useEffect, useMemo, useState } from "react";
 import { CloudUpload, KeyRound, Play, PlugZap, Save } from "lucide-react";
 import { toast } from "sonner";
@@ -36,18 +37,19 @@ export function R2BackupCard() {
   const load = async () => {
     setLoading(true);
     setLoadError("");
-    const response = await getR2BackupSettings();
-    setLoading(false);
-    if (response.code !== 0) {
-      const message = response.msg || "加载 R2 备份设置失败";
+    try {
+      const response = await getR2BackupSettings();
+      setSettings(response);
+      setForm(r2BackupSettingsToForm(response));
+      setSecretAccessKey("");
+      setClearSecret(false);
+    } catch (error) {
+      const message = errorMessage(error);
       setLoadError(message);
       toast.error(message);
-      return;
+    } finally {
+      setLoading(false);
     }
-    setSettings(response.data);
-    setForm(r2BackupSettingsToForm(response.data));
-    setSecretAccessKey("");
-    setClearSecret(false);
   };
 
   useEffect(() => {
@@ -76,17 +78,18 @@ export function R2BackupCard() {
       return;
     }
     setBusy("save");
-    const response = await updateR2BackupSettings(built.value);
-    setBusy(null);
-    if (response.code !== 0) {
-      toast.error(response.msg || "保存 R2 备份设置失败");
-      return;
+    try {
+      const response = await updateR2BackupSettings(built.value);
+      setSettings(response);
+      setForm(r2BackupSettingsToForm(response));
+      setSecretAccessKey("");
+      setClearSecret(false);
+      toast.success("R2 备份设置已保存");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setBusy(null);
     }
-    setSettings(response.data);
-    setForm(r2BackupSettingsToForm(response.data));
-    setSecretAccessKey("");
-    setClearSecret(false);
-    toast.success("R2 备份设置已保存");
   };
 
   const requireSavedSettings = () => {
@@ -98,24 +101,28 @@ export function R2BackupCard() {
   const testConnection = async () => {
     if (!requireSavedSettings()) return;
     setBusy("test");
-    const response = await testR2BackupConnection();
-    setBusy(null);
-    if (response.code === 0) toast.success(String(response.data || "R2 连接成功"));
-    else toast.error(response.msg || "R2 连接测试失败");
+    try {
+      const response = await testR2BackupConnection();
+      toast.success(response || "R2 连接成功");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setBusy(null);
+    }
   };
 
   const runNow = async () => {
     if (!requireSavedSettings()) return;
     setBusy("run");
-    const response = await runR2BackupNow();
-    setBusy(null);
-    if (response.code !== 0) {
-      toast.error(response.msg || "R2 备份失败");
+    try {
+      const response = await runR2BackupNow();
+      toast.success(`备份已上传：${response.objectKey}`);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
       await load();
-      return;
+      setBusy(null);
     }
-    toast.success(`备份已上传：${response.data.objectKey}`);
-    await load();
   };
 
   return (

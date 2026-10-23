@@ -14,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { assignProxyNodeProfiles } from "@/lib/api";
-import { unwrap } from "@/lib/api/query";
 import type { ProxyNode, SubscriptionProfile } from "@/lib/types";
 import { subscriptionFormatLabels } from "./formats";
 
@@ -43,7 +42,7 @@ export function SubscriptionAssignDialog({
 
   const saveMutation = useMutation({
     mutationFn: ({ nodeId, ids }: { nodeId: number; ids: number[] }) =>
-      assignProxyNodeProfiles(nodeId, ids).then(unwrap),
+      assignProxyNodeProfiles(nodeId, ids),
     onSuccess: () => {
       toast.success("绑定已更新");
       onOpenChange(false);

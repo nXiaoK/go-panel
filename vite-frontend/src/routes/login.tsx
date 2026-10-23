@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/api/client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -7,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { login } from "@/lib/api";
-import { getPanelAddress, setPanelAddress } from "@/lib/api/network";
+import { getPanelAddress, setPanelAddress } from "@/lib/api/client";
 import { markSessionActive, setPasswordChangeRequired } from "@/lib/session";
 
 export const Route = createFileRoute("/login")({
@@ -54,21 +55,23 @@ function LoginPage() {
     setLoading(true);
     try {
       const res = await login({ username, password });
-      if (res.code === 0 && res.data?.token) {
-        window.localStorage.setItem("token", res.data.token);
-        window.localStorage.setItem("role_id", String(res.data.role_id));
-        window.localStorage.setItem("name", res.data.name);
-        setPasswordChangeRequired(Boolean(res.data.requirePasswordChange));
+      if (res.token) {
+        window.localStorage.setItem("token", res.token);
+        window.localStorage.setItem("role_id", String(res.role_id));
+        window.localStorage.setItem("name", res.name);
+        setPasswordChangeRequired(Boolean(res.requirePasswordChange));
         markSessionActive();
         toast.success("登录成功");
-        if (res.data.requirePasswordChange) {
+        if (res.requirePasswordChange) {
           navigate({ to: "/profile", search: { forcePassword: 1 } });
         } else {
           navigate({ to: "/" });
         }
       } else {
-        toast.error(res.msg || "登录失败");
+        toast.error("登录响应缺少令牌");
       }
+    } catch (error) {
+      toast.error(errorMessage(error));
     } finally {
       setLoading(false);
     }

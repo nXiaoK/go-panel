@@ -13,12 +13,12 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-const ok = (data: Row[]) => ({ code: 0, msg: "", data });
+const ok = (data: Row[]) => data;
 
 describe("useUserTunnels", () => {
   it("discards user A when user B becomes active before A resolves", async () => {
-    const a = deferred<{ code: number; msg: string; data: Row[] }>();
-    const b = deferred<{ code: number; msg: string; data: Row[] }>();
+    const a = deferred<Row[]>();
+    const b = deferred<Row[]>();
     const loader = vi.fn((userID: number) => (userID === 1 ? a.promise : b.promise));
 
     const { result } = renderHook(() => useUserTunnels<Row, { id: number; user: string }>(loader));
@@ -57,7 +57,7 @@ describe("useUserTunnels", () => {
   });
 
   it("surfaces a failed load without applying rows", async () => {
-    const loader = vi.fn(() => Promise.resolve({ code: 1, msg: "denied", data: [] as Row[] }));
+    const loader = vi.fn(() => Promise.reject(new Error("denied")));
     const { result } = renderHook(() => useUserTunnels<Row, { id: number; user: string }>(loader));
     await act(async () => {
       result.current.open({ id: 3, user: "c" });
