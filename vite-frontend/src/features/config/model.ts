@@ -143,3 +143,43 @@ export function shouldShowKeyConfig(meta: KeyConfigMeta, values: Record<string, 
   if (!meta.dependsOn || meta.dependsValue === undefined) return true;
   return values[meta.dependsOn] === meta.dependsValue;
 }
+
+// URL 标签只接受公开的五个分区；未知书签回到站点，不把任意字符串带入界面。
+export const configTabs = ["site", "security", "backup", "r2", "advanced"] as const;
+export type ConfigTab = (typeof configTabs)[number];
+export function configSearch(search: Record<string, unknown>): { tab: ConfigTab } {
+  return { tab: configTabs.includes(search.tab as ConfigTab) ? (search.tab as ConfigTab) : "site" };
+}
+
+// 与后端 isInternalConfigName/DeleteConfig 保持一致：凭据、迁移标记、只读环境状态及关键站点策略不能删除。
+// 外网诊断目标由专用分区维护；后端允许删除以回退默认探测目标，不将其误列为受保护键。
+export function isProtectedConfigName(name: string): boolean {
+  return (
+    [
+      "ip",
+      "app_name",
+      "github_download_proxy",
+      "allow_insecure_node_downloads",
+      allowInsecureNodeDownloadsEnvOverrideName,
+      "subscription_api_key",
+    ].includes(name) ||
+    name.startsWith("backup_r2_") ||
+    (name.startsWith("subscription_") && name.endsWith("_backfilled"))
+  );
+}
+
+// 上传限制与后端保持一致：仅接收面板导出的 SQLite 文件，256 MiB 以内；文件内容仍由后端完整校验。
+export const maxRestoreBytes = 256 * 1024 * 1024;
+export function restoreFileError(file: Pick<File, "name" | "size">): string | undefined {
+  if (!/\.(db|sqlite|sqlite3)$/i.test(file.name))
+    return "只支持 .db、.sqlite 或 .sqlite3 格式的 SQLite 备份";
+  if (file.size > maxRestoreBytes) return "备份文件不能超过 256 MB";
+  return undefined;
+}
+
+export function customConfigNameError(name: string, existing: string[]): string | undefined {
+  if (!/^[a-z0-9_]+$/.test(name)) return "键名只允许小写字母、数字和下划线";
+  if (existing.includes(name)) return "键名已存在";
+  if (isProtectedConfigName(name)) return "该键名由系统内部维护，请使用对应的专用设置";
+  return undefined;
+}

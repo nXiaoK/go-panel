@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormField } from "@/components/patterns/form-field";
 import { Switch } from "@/components/ui/switch";
 import {
   buildR2BackupUpdate,
@@ -25,6 +26,7 @@ import type { R2BackupSettings } from "@/lib/types";
 import { CloudUpload, KeyRound, Play, PlugZap, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+// R2 使用独立接口和自己的保存状态；密钥默认留空保留，自动备份与保留清理逻辑不变。
 export function R2BackupCard() {
   const [settings, setSettings] = useState<R2BackupSettings | null>(null);
   const [form, setForm] = useState<R2BackupForm>(defaultR2BackupForm);
@@ -129,15 +131,15 @@ export function R2BackupCard() {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <CloudUpload className="h-4 w-4 text-primary" />
-          <CardTitle className="text-base">Cloudflare R2 自动备份</CardTitle>
+          <CloudUpload aria-hidden="true" className="h-4 w-4 text-mute" />
+          <CardTitle className="text-card-title">Cloudflare R2 自动备份</CardTitle>
         </div>
         <CardDescription>
           每天按服务器本地时间上传经过完整性校验的 SQLite 快照，并自动删除超出保留数量的面板备份。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+        <div className="rounded-md border border-status-warning bg-status-warning-bg p-3 text-caption leading-relaxed text-status-warning">
           备份包含用户、节点密钥和全部面板数据。请保持 R2
           存储桶私有，并使用仅限目标存储桶“对象读取和写入”的 API
           令牌；保留清理需要删除对象权限。Secret Access Key 会使用持久 JWT_SECRET 进行 AES-GCM
@@ -147,7 +149,7 @@ export function R2BackupCard() {
         {loadError && (
           <div
             role="alert"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-status-critical-text"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-status-critical bg-status-critical-bg p-3 text-sm text-status-critical-text"
           >
             <span>R2 备份设置加载失败：{loadError}</span>
             <Button
@@ -163,21 +165,22 @@ export function R2BackupCard() {
         )}
 
         {!loading && settings && !settings.credentialEncryptionAvailable && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-status-critical-text">
+          <div className="rounded-md border border-status-critical bg-status-critical-bg p-3 text-sm text-status-critical-text">
             当前没有持久 JWT_SECRET，不能安全保存 R2 Secret Access Key。请在部署环境配置至少 32
             字节的 JWT_SECRET 并重启面板。
           </div>
         )}
 
-        <div className="flex items-center justify-between rounded-md border p-3">
+        <div className="flex items-center justify-between gap-4 rounded-md border border-hairline p-4">
           <div>
             <Label htmlFor="r2-enabled">启用每日自动备份</Label>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p id="r2-enabled-description" className="mt-1 text-caption text-mute">
               默认关闭；开启后到达计划时间会补跑，失败每 15 分钟重试一次。
             </p>
           </div>
           <Switch
             id="r2-enabled"
+            aria-describedby="r2-enabled-description"
             checked={form.enabled}
             disabled={formDisabled}
             onCheckedChange={(checked) => updateForm("enabled", checked)}
@@ -199,7 +202,7 @@ export function R2BackupCard() {
             label="R2 存储桶"
             description="必须是私有存储桶；名称只允许小写字母、数字和连字符。"
             value={form.bucket}
-            placeholder="flux-panel-backups"
+            placeholder="go-panel-backups"
             disabled={formDisabled}
             onChange={(value) => updateForm("bucket", value)}
           />
@@ -212,9 +215,9 @@ export function R2BackupCard() {
             disabled={formDisabled}
             onChange={(value) => updateForm("accessKeyId", value)}
           />
-          <div className="rounded-md border p-3">
+          <div className="rounded-md border border-hairline p-4">
             <Label htmlFor="r2-secret-access-key">Secret Access Key</Label>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            <p id="r2-secret-description" className="mt-1 text-caption leading-relaxed text-mute">
               {settings?.secretConfigured
                 ? "已保存加密密钥；留空将保留，输入新值会安全轮换。"
                 : "只在保存时提交，后端加密后不会再返回明文。"}
@@ -222,6 +225,7 @@ export function R2BackupCard() {
             <div className="mt-2 flex gap-2">
               <Input
                 id="r2-secret-access-key"
+                aria-describedby="r2-secret-description"
                 type="password"
                 autoComplete="new-password"
                 value={secretAccessKey}
@@ -243,7 +247,9 @@ export function R2BackupCard() {
               )}
             </div>
             {settings?.credentialMessage && !settings.secretUsable && (
-              <p className="mt-2 text-xs text-status-critical-text">{settings.credentialMessage}</p>
+              <p className="mt-2 text-caption text-status-critical-text">
+                {settings.credentialMessage}
+              </p>
             )}
           </div>
           <R2Field
@@ -280,13 +286,19 @@ export function R2BackupCard() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={save} disabled={loading || busy !== null || !dirty}>
-            <Save className="h-4 w-4" /> {busy === "save" ? "保存中…" : "保存 R2 设置"}
+          <Button
+            type="button"
+            onClick={save}
+            loading={busy === "save"}
+            disabled={loading || busy !== null || !dirty}
+          >
+            <Save aria-hidden="true" className="h-4 w-4" /> 保存 R2 设置
           </Button>
           <Button
             type="button"
             variant="outline"
             onClick={testConnection}
+            loading={busy === "test"}
             disabled={loading || busy !== null || !settings?.secretUsable}
           >
             <PlugZap className="h-4 w-4" /> {busy === "test" ? "测试中…" : "测试连接"}
@@ -295,6 +307,7 @@ export function R2BackupCard() {
             type="button"
             variant="outline"
             onClick={runNow}
+            loading={busy === "run"}
             disabled={loading || busy !== null || !settings?.secretUsable}
           >
             <Play className="h-4 w-4" /> {busy === "run" ? "上传中…" : "立即备份到 R2"}
@@ -302,31 +315,31 @@ export function R2BackupCard() {
         </div>
 
         {settings && (
-          <div className="grid gap-3 rounded-md border p-3 text-xs sm:grid-cols-2">
+          <div className="grid gap-3 rounded-md border border-hairline p-4 text-caption text-body sm:grid-cols-2">
             <div>
-              <span className="text-muted-foreground">最近尝试：</span>
+              <span className="text-mute">最近尝试：</span>
               {formatR2BackupTimestamp(settings.lastAttemptAt)}
             </div>
             <div>
-              <span className="text-muted-foreground">最近成功：</span>
+              <span className="text-mute">最近成功：</span>
               {formatR2BackupTimestamp(settings.lastSuccessAt)}
             </div>
             <div>
-              <span className="text-muted-foreground">对象大小：</span>
+              <span className="text-mute">对象大小：</span>
               {formatR2BackupBytes(settings.lastSize)}
             </div>
             <div className="min-w-0">
-              <span className="text-muted-foreground">对象键：</span>
+              <span className="text-mute">对象键：</span>
               <span className="break-all font-mono">{settings.lastObjectKey || "尚无记录"}</span>
             </div>
             {settings.lastSha256 && (
               <div className="min-w-0 sm:col-span-2">
-                <span className="text-muted-foreground">SHA-256：</span>
+                <span className="text-mute">SHA-256：</span>
                 <span className="break-all font-mono">{settings.lastSha256}</span>
               </div>
             )}
             {settings.lastError && (
-              <div className="rounded border border-destructive/30 bg-destructive/5 p-2 text-status-critical-text sm:col-span-2">
+              <div className="rounded border border-status-critical bg-status-critical-bg p-2 text-status-critical-text sm:col-span-2">
                 最近错误：{settings.lastError}
               </div>
             )}
@@ -361,12 +374,10 @@ function R2Field({
   max?: string;
 }) {
   return (
-    <div className="rounded-md border p-3">
-      <Label htmlFor={id}>{label}</Label>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
+    <FormField label={label} htmlFor={id} hint={description}>
       <Input
         id={id}
-        className="mt-2"
+        className="font-mono"
         type={type}
         value={value}
         placeholder={placeholder}
@@ -375,6 +386,6 @@ function R2Field({
         max={max}
         onChange={(event) => onChange(event.target.value)}
       />
-    </div>
+    </FormField>
   );
 }
