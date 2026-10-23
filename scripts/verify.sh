@@ -55,7 +55,8 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 # web/dist is gitignored and only needed for go:embed packaging / local binary runs.
 if [[ "${SYNC_WEB_DIST:-0}" == "1" || "${RUN_PACKAGING:-0}" == "1" ]]; then
   bash "$root/scripts/sync-web-dist.sh"
-  go test ./web -count=1
+  # 同步后强制校验真实入口及默认 CSP 的响应范围；缺少构建产物会失败。
+  go test -tags webdist ./web -count=1
 fi
 
 if [[ "${RUN_PACKAGING:-0}" == "1" ]]; then

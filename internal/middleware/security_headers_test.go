@@ -49,7 +49,8 @@ func newSecurityHeadersRouter(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	handler.Register(router, "https://panel.example.com", false)
-	web.Register(router)
+	// 阶段一在关闭可选 CSP 时仍独立验证原四头，阶段二的各模式由 web 包覆盖。
+	web.Register(router, "off")
 	t.Cleanup(func() { ws.SetAllowedOrigins("") })
 	return router
 }
@@ -81,7 +82,7 @@ func TestSecurityHeadersCoverRegisteredResponses(t *testing.T) {
 	t.Run("SPA fallback retains its response", func(t *testing.T) {
 		// 使用真实静态服务作对照：没有构建产物时也验证安全头，有产物时同时覆盖 HTML 回退。
 		baseline := gin.New()
-		web.Register(baseline)
+		web.Register(baseline, "off")
 		want, got := httptest.NewRecorder(), httptest.NewRecorder()
 		baseline.ServeHTTP(want, httptest.NewRequest(http.MethodGet, "/settings/profile", nil))
 		router.ServeHTTP(got, httptest.NewRequest(http.MethodGet, "/settings/profile", nil))

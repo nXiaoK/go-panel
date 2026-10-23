@@ -72,7 +72,7 @@ func main() {
 	}), gin.Recovery())
 
 	handler.Register(r, cfg.CorsAllowOrigin, cfg.AllowLegacyNftReports)
-	web.Register(r)
+	web.Register(r, cfg.CSPMode)
 
 	build := buildinfo.Current()
 	log.Printf("go-panel %s (%s) 启动，监听 %s，数据库 %s", build.Version, build.Commit, cfg.ListenAddr, cfg.DBPath)
@@ -105,6 +105,9 @@ func main() {
 }
 
 func initializeRuntimeSecurity(cfg *config.Config, random io.Reader, initJWT func(string)) error {
+	if err := cfg.ValidateCSPMode(); err != nil {
+		return err
+	}
 	if err := cfg.ValidateJWTLifetime(); err != nil {
 		return err
 	}

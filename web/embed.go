@@ -18,15 +18,15 @@ var distFS embed.FS
 
 // Register 注册 SPA 静态资源服务。
 // 非 /api、/flow、/system-info 的路径优先匹配静态文件，否则回退到 index.html。
-func Register(r *gin.Engine) {
+func Register(r *gin.Engine, cspMode string) {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
 		return
 	}
-	registerFS(r, sub)
+	registerFS(r, sub, cspMode)
 }
 
-func registerFS(r *gin.Engine, sub fs.FS) {
+func registerFS(r *gin.Engine, sub fs.FS, cspMode string) {
 	fileServer := http.FileServer(http.FS(sub))
 
 	r.NoRoute(func(c *gin.Context) {
@@ -43,7 +43,8 @@ func registerFS(r *gin.Engine, sub fs.FS) {
 			if f, err := sub.Open(trimmed); err == nil {
 				f.Close()
 				if trimmed == "index.html" {
-					c.Header("Cache-Control", "no-store")
+					serveIndex(c, sub, cspMode)
+					return
 				}
 				if strings.HasPrefix(path, "/assets/") {
 					// Vite 哈希资源可缓存一年；HTML 入口仍不缓存，发布后会引用新的哈希。
@@ -73,14 +74,32 @@ func registerFS(r *gin.Engine, sub fs.FS) {
 		}
 
 		// SPA 回退到 index.html
-		index, err := fs.ReadFile(sub, "index.html")
-		if err != nil {
-			c.String(http.StatusNotFound, "前端资源未构建：请先执行 vite-frontend 构建并将产物拷贝到 go-panel/web/dist")
-			return
-		}
-		c.Header("Cache-Control", "no-store")
-		c.Data(http.StatusOK, "text/html; charset=utf-8", index)
+		serveIndex(c, sub, cspMode)
 	})
+}
+
+// panelContentSecurityPolicy 只信任同源脚本、字体和网络连接；脚本禁止内联。
+// Radix/sonner 仍需内联样式，二维码允许 data:/blob: 图片；备份通过同源 API 获取后用 blob 链接下载。
+// connect-src 的 self 同时约束正式部署的 HTTP API 与同源 WebSocket，禁止生产面板跨域连接。
+const panelContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+
+func serveIndex(c *gin.Context, sub fs.FS, cspMode string) {
+	index, err := fs.ReadFile(sub, "index.html")
+	if err != nil {
+		c.String(http.StatusNotFound, "前端资源未构建：请先执行 vite-frontend 构建并将产物拷贝到 go-panel/web/dist")
+		return
+	}
+	// 首版默认仅报告，运维观察一个版本无违规后显式切换 enforce；off 失去 CSP 防护。
+	// 此处只处理实际 HTML 文档，不能把策略附到 API、订阅、JS/CSS 或缺失资源响应上。
+	switch cspMode {
+	case "off":
+	case "enforce":
+		c.Header("Content-Security-Policy", panelContentSecurityPolicy)
+	default:
+		c.Header("Content-Security-Policy-Report-Only", panelContentSecurityPolicy)
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", index)
 }
 
 // appendVary 不覆盖 CORS 等上游已有的 Vary 字段。
