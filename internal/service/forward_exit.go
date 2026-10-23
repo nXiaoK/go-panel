@@ -48,6 +48,85 @@ func normalizeExitStrategy(strategy string) string {
 	}
 }
 
+// forwardExitConfig 汇总请求的出口配置；空模式/策略和 nil 成员表示未提供配置。
+type forwardExitConfig struct {
+	mode     string                     // 出口模式默认 single；manual 和 balance 仅允许管理员设置。
+	strategy string                     // 出口调度默认 fifo，也支持 round/rand/hash；普通用户不能修改已有策略。
+	members  []dto.ForwardExitMemberDto // 候选节点、激活状态和权重；普通用户新建时仅可引用隧道默认出口。
+}
+
+// enforceExitConfigPolicy 限制普通用户的出口权限，管理员仍可设置任意合法出口。
+// 新建或更换隧道时固定使用隧道默认出口；原隧道只允许保留或原样回传已有配置，
+// 避免普通用户借旧前端回传修改管理员配置的节点、激活状态或权重。
+func enforceExitConfigPolicy(cu CurrentUser, tunnel *model.Tunnel, existing *model.Forward, req *forwardExitConfig) string {
+	if cu.RoleID == adminRoleID || tunnel == nil || tunnel.Type != tunnelTypeTunnelForward {
+		return ""
+	}
+	const denied = "普通用户不能自定义出口节点"
+	if existing == nil || existing.TunnelID != tunnel.ID {
+		for _, member := range req.members {
+			if member.OutNodeID != tunnel.OutNodeID {
+				return denied
+			}
+		}
+		// 普通用户的默认模式为 single/fifo，成员留空交由规范化逻辑使用隧道出口。
+		*req = forwardExitConfig{mode: exitModeSingle, strategy: exitStrategyFIFO}
+		return ""
+	}
+	if strings.TrimSpace(req.mode) == "" && strings.TrimSpace(req.strategy) == "" && req.members == nil {
+		return ""
+	}
+	if normalizeExitMode(req.mode) != normalizeExitMode(existing.ExitMode) ||
+		normalizeExitStrategy(req.strategy) != normalizeExitStrategy(existing.ExitStrategy) {
+		return denied
+	}
+	rows, err := loadPersistedForwardExitMembersDB(model.DB, existing.ID)
+	if err != nil {
+		return "读取出口成员失败"
+	}
+	expected := make([]dto.ForwardExitMemberDto, 0, len(rows))
+	for _, row := range rows {
+		expected = append(expected, dto.ForwardExitMemberDto{OutNodeID: row.OutNodeID, Active: row.Active == 1, Weight: row.Weight})
+	}
+	if len(expected) == 0 {
+		// 旧数据没有成员表记录时，默认出口仍由隧道提供，不允许借兼容路径指定其他节点。
+		expected = []dto.ForwardExitMemberDto{{OutNodeID: tunnel.OutNodeID, Active: true, Weight: 1}}
+	}
+	members := req.members
+	if len(members) == 0 {
+		members = []dto.ForwardExitMemberDto{{OutNodeID: tunnel.OutNodeID, Active: true, Weight: 1}}
+	}
+	if !sameForwardExitMembers(members, expected) {
+		return denied
+	}
+	// 使用持久化配置继续更新，成员顺序不影响集合比较，也不能改变已有的激活状态。
+	*req = forwardExitConfig{mode: existing.ExitMode, strategy: existing.ExitStrategy, members: expected}
+	return ""
+}
+
+func sameForwardExitMembers(requested, existing []dto.ForwardExitMemberDto) bool {
+	if len(requested) != len(existing) {
+		return false
+	}
+	byNode := make(map[int64]dto.ForwardExitMemberDto, len(existing))
+	for _, member := range existing {
+		if member.Weight <= 0 {
+			member.Weight = 1
+		}
+		byNode[member.OutNodeID] = member
+	}
+	for _, member := range requested {
+		if member.Weight <= 0 {
+			member.Weight = 1
+		}
+		if old, ok := byNode[member.OutNodeID]; !ok || old != member {
+			return false
+		}
+		delete(byNode, member.OutNodeID)
+	}
+	return len(byNode) == 0
+}
+
 func normalizeForwardExitMembers(tunnel *model.Tunnel, mode string, members []dto.ForwardExitMemberDto) ([]dto.ForwardExitMemberDto, string) {
 	if tunnel == nil || tunnel.Type != tunnelTypeTunnelForward {
 		return nil, ""

@@ -63,6 +63,11 @@ func createForwardInternal(cu CurrentUser, req dto.ForwardDto) (*model.Forward, 
 	if perm.hasError() {
 		return nil, result.Err(perm.errMsg)
 	}
+	exitConfig := forwardExitConfig{mode: req.ExitMode, strategy: req.ExitStrategy, members: req.ExitMembers}
+	if msg := enforceExitConfigPolicy(cu, &tunnel, nil, &exitConfig); msg != "" {
+		return nil, result.Err(msg)
+	}
+	req.ExitMode, req.ExitStrategy, req.ExitMembers = exitConfig.mode, exitConfig.strategy, exitConfig.members
 
 	inNode, outNode, errMsg := getRequiredNodes(&tunnel)
 	if errMsg != "" {
@@ -347,6 +352,11 @@ func updateForwardInternalWithFreshCurrent(req dto.ForwardUpdateDto, opUserID in
 	}
 	syncRuntime := wantsRuntime && runtimePermissionAllowed
 
+	exitConfig := forwardExitConfig{mode: req.ExitMode, strategy: req.ExitStrategy, members: req.ExitMembers}
+	if msg := enforceExitConfigPolicy(CurrentUser{UserID: opUserID, RoleID: opRoleID, UserName: opUserName}, &tunnel, existForward, &exitConfig); msg != "" {
+		return result.Err(msg)
+	}
+	req.ExitMode, req.ExitStrategy, req.ExitMembers = exitConfig.mode, exitConfig.strategy, exitConfig.members
 	exitMode := normalizeExitMode(req.ExitMode)
 	exitStrategy := normalizeExitStrategy(req.ExitStrategy)
 	requestHasExitConfig := strings.TrimSpace(req.ExitMode) != "" || req.ExitMembers != nil

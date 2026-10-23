@@ -326,7 +326,7 @@ func inferPortTunnel(tunnels []model.Tunnel) (int64, string) {
 	return tunnels[0].ID, tunnels[0].Name + " (建议)"
 }
 
-// CompleteFromNft 从识别的规则批量创建转发
+// CompleteFromNft 从识别的规则批量创建转发，仅管理员可用，不接受普通用户的出口配置。
 func CompleteFromNft(cu CurrentUser, nodeID int64, rules []CompleteForwardRule) result.R {
 	// 权限检查：只有管理员
 	if cu.RoleID != adminRoleID {
