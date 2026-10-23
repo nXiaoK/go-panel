@@ -1,3 +1,4 @@
+import { diagnosisStatus, diagnosisSummary, internetProbeNotice } from "@/lib/diagnosis";
 import { ApiError, errorMessage } from "@/lib/api/client";
 import type { DiagnosisResult } from "@/lib/types";
 import { createFileRoute } from "@tanstack/react-router";
@@ -636,19 +637,29 @@ export function ForwardPage() {
           {!diagLoading && diagResult && (
             <ScrollArea className="max-h-[60vh]">
               <div className="space-y-2">
+                <p role="status" className="text-sm">
+                  {diagnosisSummary(diagResult.results ?? [])}
+                </p>
                 {(diagResult.results || []).map((r, i: number) => (
                   <div
                     key={i}
                     className={`rounded-md border p-3 text-sm ${
                       r.success
                         ? "border-emerald-500/30 bg-emerald-500/5"
-                        : "border-destructive/40 bg-destructive/5"
+                        : r.advisory
+                          ? "border-warning/40 bg-warning/5"
+                          : "border-destructive/40 bg-destructive/5"
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="font-medium">{r.description}</div>
-                      <Badge variant={r.success ? "default" : "destructive"}>
-                        {r.success ? "通过" : "失败"}
+                      <Badge
+                        variant={r.success ? "default" : r.advisory ? "outline" : "destructive"}
+                        className={
+                          !r.success && r.advisory ? "border-warning/40 text-warning" : undefined
+                        }
+                      >
+                        {diagnosisStatus(r)}
                       </Badge>
                     </div>
                     <div className="mt-1 font-mono text-[11px] text-muted-foreground">
@@ -657,6 +668,11 @@ export function ForwardPage() {
                       {r.targetPort ? `:${r.targetPort}` : ""}
                       {typeof r.averageTime === "number" && ` · ${r.averageTime}ms`}
                     </div>
+                    {r.advisory && (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {internetProbeNotice}
+                      </div>
+                    )}
                     {r.message && (
                       <div className="mt-1 text-[12px] text-muted-foreground">{r.message}</div>
                     )}

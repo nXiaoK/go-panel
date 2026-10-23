@@ -2,12 +2,14 @@ package service
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"path"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -22,10 +24,19 @@ const (
 	allowInsecureNodeDownloadsEnvOverrideName = "allow_insecure_node_downloads_env_override"
 	// GitHub 下载代理仅传给订阅服务器脚本；空值保持直连，非空值必须是可信的 HTTPS 全链接代理前缀。
 	githubDownloadProxyConfigName = "github_download_proxy"
+	// 外网诊断目标为空时兼容 www.google.com:443；只影响参考探测，不改变隧道链路。
+	diagnoseInternetProbeConfigName = "diagnose_internet_probe"
 )
 
 var publicConfigNames = map[string]struct{}{
 	"app_name": {},
+}
+
+// isInternalConfigName 保护凭据和一次性迁移标记，通用配置读写不能绕过专用接口。
+func isInternalConfigName(name string) bool {
+	name = strings.TrimSpace(name)
+	return isR2BackupConfigName(name) || name == subAPIKeyConfigName ||
+		(strings.HasPrefix(name, "subscription_") && strings.HasSuffix(name, "_backfilled"))
 }
 
 func isPublicConfigName(name string) bool {
@@ -48,9 +59,8 @@ func getConfigs(includeSensitive bool) result.R {
 	model.DB.Find(&list)
 	m := make(map[string]string, len(list)+1)
 	for _, c := range list {
-		// Cloudflare R2 配置含加密凭据和内部运行状态，只能通过专用脱敏接口读取，
-		// 即使管理员也不能从通用键值接口取得密文或把内部字段展示为高级配置。
-		if isR2BackupConfigName(c.Name) {
+		// 内部凭据和迁移标记只能通过专用接口维护，即使管理员也不能在高级配置中读取。
+		if isInternalConfigName(c.Name) {
 			continue
 		}
 		if !includeSensitive && !isPublicConfigName(c.Name) {
@@ -119,6 +129,15 @@ func normalizeConfigValue(name, value string) (string, error) {
 		return normalized, nil
 	case githubDownloadProxyConfigName:
 		return normalizeGitHubDownloadProxy(value)
+	case diagnoseInternetProbeConfigName:
+		normalized := strings.TrimSpace(value)
+		if normalized == "" {
+			return "", nil
+		}
+		if _, _, err := parseInternetProbe(normalized); err != nil {
+			return "", err
+		}
+		return normalized, nil
 	default:
 		return value, nil
 	}
@@ -161,8 +180,8 @@ func UpdateConfigs(configMap map[string]string) result.R {
 		if name == "" {
 			continue
 		}
-		if isR2BackupConfigName(name) {
-			return result.Err("Cloudflare R2 备份配置只能通过站点备份中的专用设置修改")
+		if isInternalConfigName(name) {
+			return result.Err("该配置项由系统内部维护，不能通过通用配置修改")
 		}
 		if name == allowInsecureNodeDownloadsEnvOverrideName {
 			return result.Err("环境变量覆盖状态为只读字段，不能直接更新")
@@ -197,11 +216,11 @@ func UpdateConfig(name, value string) result.R {
 	if name == "" {
 		return result.Err("配置名称不能为空")
 	}
-	if value == "" {
+	if value == "" && name != diagnoseInternetProbeConfigName {
 		return result.Err("配置值不能为空")
 	}
-	if isR2BackupConfigName(name) {
-		return result.Err("Cloudflare R2 备份配置只能通过站点备份中的专用设置修改")
+	if isInternalConfigName(name) {
+		return result.Err("该配置项由系统内部维护，不能通过通用配置修改")
 	}
 	if name == allowInsecureNodeDownloadsEnvOverrideName {
 		return result.Err("环境变量覆盖状态为只读字段，不能直接更新")
@@ -223,4 +242,41 @@ func GetConfigValue(name string) string {
 		return ""
 	}
 	return cfg.Value
+}
+
+// DeleteConfig 只允许删除自定义配置；关键下载策略、站点地址和内部状态必须保留。
+func DeleteConfig(name string) result.R {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return result.Err("配置名称不能为空")
+	}
+	if isInternalConfigName(name) || name == allowInsecureNodeDownloadsEnvOverrideName {
+		return result.Err("该配置项由系统内部维护，不能删除")
+	}
+	switch name {
+	case "ip", "app_name", githubDownloadProxyConfigName, allowInsecureNodeDownloadsConfigName:
+		return result.Err("关键配置项不能删除")
+	}
+	if err := model.DB.Where("name = ?", name).Delete(&model.ViteConfig{}).Error; err != nil {
+		return result.Err("配置删除失败")
+	}
+	return result.OkMsg("配置删除成功")
+}
+
+// parseInternetProbe 接受 host:port（IPv6 需方括号），限制端口并拒绝主机空白，避免下发无效诊断目标。
+func parseInternetProbe(value string) (string, int, error) {
+	host, rawPort, err := net.SplitHostPort(value)
+	port, portErr := strconv.Atoi(rawPort)
+	if err != nil || host == "" || strings.ContainsFunc(host, unicode.IsSpace) || portErr != nil || port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("外网探测目标必须为 host:port，host 不能为空或包含空白，端口范围为 1–65535")
+	}
+	return host, port, nil
+}
+
+func diagnosisInternetProbe() (string, int) {
+	// 空值保持原来的目标；外部备份或旧库中的非法值也安全回退，不向节点下发非法地址。
+	if host, port, err := parseInternetProbe(strings.TrimSpace(GetConfigValue(diagnoseInternetProbeConfigName))); err == nil {
+		return host, port
+	}
+	return "www.google.com", 443
 }

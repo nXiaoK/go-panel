@@ -1,7 +1,9 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -98,5 +100,57 @@ func TestDiagnoseTunnelPreservesRelayOrder(t *testing.T) {
 		if rows[index].NodeID != expected.nodeID || rows[index].Description != expected.description {
 			t.Fatalf("result %d=%+v", index, rows[index])
 		}
+	}
+}
+
+func TestTunnelInternetProbeUsesConfiguredTargetAndIsAdvisory(t *testing.T) {
+	_, _, portTunnel, tunnel := setupPortDetectDB(t)
+	ping := func(node *model.Node, ip string, port int, description string, _, _ int) DiagnosisResult {
+		return DiagnosisResult{NodeID: node.ID, TargetIP: ip, TargetPort: port, Description: description, Success: false}
+	}
+	for _, tc := range []struct {
+		value, host string
+		port        int
+	}{
+		{"", "www.google.com", 443}, {"probe.example:8443", "probe.example", 8443}, {"[2001:db8::1]:9443", "2001:db8::1", 9443},
+	} {
+		if res := UpdateConfigs(map[string]string{diagnoseInternetProbeConfigName: tc.value}); res.Code != 0 {
+			t.Fatal(res.Msg)
+		}
+		for _, current := range []*model.Tunnel{portTunnel, tunnel} {
+			res := diagnoseTunnelWithPing(current.ID, ping)
+			if res.Code != 0 {
+				t.Fatal(res.Msg)
+			}
+			rows := res.Data.(map[string]interface{})["results"].([]DiagnosisResult)
+			internet := rows[len(rows)-1]
+			if internet.TargetIP != tc.host || internet.TargetPort != tc.port || !internet.Advisory {
+				t.Fatalf("internet probe=%+v", internet)
+			}
+			for _, row := range rows[:len(rows)-1] {
+				if row.Advisory {
+					t.Fatalf("core probe marked advisory: %+v", row)
+				}
+			}
+			encoded, err := json.Marshal(internet)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(encoded), `"advisory":true`) {
+				t.Fatalf("missing advisory JSON: %s", encoded)
+			}
+		}
+	}
+}
+
+func TestRelayInternetProbeIsOnlyAdvisoryStep(t *testing.T) {
+	fx := setupNftRelayFixture(t)
+	res := diagnoseTunnelWithPing(fx.tunnel.ID, func(_ *model.Node, _ string, _ int, _ string, _, _ int) DiagnosisResult { return DiagnosisResult{} })
+	if res.Code != 0 {
+		t.Fatal(res.Msg)
+	}
+	rows := res.Data.(map[string]interface{})["results"].([]DiagnosisResult)
+	if len(rows) != 3 || rows[0].Advisory || rows[1].Advisory || !rows[2].Advisory {
+		t.Fatalf("rows=%+v", rows)
 	}
 }

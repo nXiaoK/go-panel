@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -13,6 +14,9 @@ type Config struct {
 	ListenAddr string
 	// JWT 签名密钥
 	JwtSecret string
+	// JWT 新令牌有效期，默认 2160h（90 天）；只接受 1h–2160h，已签发令牌仍按其 exp 失效。
+	JwtTTL      time.Duration
+	jwtTTLError error
 	// JWT_SECRET 是否来自持久环境配置；仅持久密钥可用于加密需要跨重启读取的 R2 凭据
 	JwtSecretPersistent bool
 	// 启动时创建管理员所使用的用户名
@@ -97,9 +101,12 @@ func getenvList(key string) []string {
 // Load 从环境变量读取配置
 func Load() *Config {
 	jwtSecret := os.Getenv("JWT_SECRET")
+	jwtTTL, jwtTTLError := parseJWTLifetime(os.Getenv("JWT_TTL"))
 	return &Config{
 		ListenAddr:                 getenv("LISTEN_ADDR", "127.0.0.1:6365"),
 		JwtSecret:                  jwtSecret,
+		JwtTTL:                     jwtTTL,
+		jwtTTLError:                jwtTTLError,
 		JwtSecretPersistent:        strings.TrimSpace(jwtSecret) != "",
 		AdminUsername:              getenv("ADMIN_USERNAME", "admin_user"),
 		AdminPassword:              os.Getenv("ADMIN_PASSWORD"),
@@ -115,4 +122,31 @@ func Load() *Config {
 		UpdateTriggerToken:         strings.TrimSpace(os.Getenv("UPDATE_TRIGGER_TOKEN")),
 		UpdateImageTag:             getenv("UPDATE_IMAGE_TAG", "latest"),
 	}
+}
+
+// parseJWTLifetime 严格验证 JWT_TTL，空值兼容原来的 90 天；非法值禁止启动，不能静默截断。
+func parseJWTLifetime(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 2160 * time.Hour, nil
+	}
+	ttl, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("JWT_TTL 必须使用 Go duration 格式，例如 24h，允许范围为 1h–2160h")
+	}
+	if ttl < time.Hour || ttl > 2160*time.Hour {
+		return 0, fmt.Errorf("JWT_TTL 必须在 1h–2160h 之间")
+	}
+	return ttl, nil
+}
+
+// ValidateJWTLifetime 在启动时报告环境变量解析错误；零值仅用于兼容手动构造的默认配置。
+func (c Config) ValidateJWTLifetime() error {
+	if c.jwtTTLError != nil {
+		return c.jwtTTLError
+	}
+	if c.JwtTTL != 0 && (c.JwtTTL < time.Hour || c.JwtTTL > 2160*time.Hour) {
+		return fmt.Errorf("JWT_TTL 必须在 1h–2160h 之间")
+	}
+	return nil
 }

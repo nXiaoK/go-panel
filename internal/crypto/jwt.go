@@ -18,12 +18,24 @@ import (
 
 var jwtSecret []byte
 
-// token 有效期 90 天（与 Java 版 EXPIRE_TIME 一致）
-const jwtExpire = 90 * 24 * time.Hour
+// 默认有效期 90 天，启动时可按已验证的 JWT_TTL 覆盖；仅影响新签发令牌。
+const defaultJWTExpire = 90 * 24 * time.Hour
+
+var jwtExpire = defaultJWTExpire
 
 // InitJwt 设置签名密钥
 func InitJwt(secret string) {
+	InitJwtWithTTL(secret, defaultJWTExpire)
+}
+
+// InitJwtWithTTL 在服务开始接受请求前配置密钥和有效期；零值沿用默认 90 天。
+// 轮换密钥会立即使全部旧令牌失效，并影响用该密钥加密的 R2 凭据。
+func InitJwtWithTTL(secret string, ttl time.Duration) {
 	jwtSecret = []byte(secret)
+	jwtExpire = ttl
+	if ttl == 0 {
+		jwtExpire = defaultJWTExpire
+	}
 }
 
 func b64url(b []byte) string {

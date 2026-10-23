@@ -131,6 +131,7 @@ func Register(r *gin.Engine, corsAllowOrigin string, allowLegacyNftReports bool)
 	// config（list 按角色过滤，update 需管理员，get 仅公开白名单）
 	authChecked.POST("/config/list", listConfigs)
 	admin.POST("/config/update", updateConfigs)
+	admin.POST("/config/delete", deleteConfig)
 	admin.POST("/config/update-single", updateSingleConfig)
 
 	// system：运行状态向已完成改密的登录用户开放，精确版本与升级信息仅管理员可读。

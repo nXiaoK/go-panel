@@ -1,11 +1,15 @@
 package web
 
 import (
+	"bytes"
+	"compress/gzip"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/gin-gonic/gin"
 )
@@ -72,5 +76,99 @@ func TestEmbeddedSPAMissingIndexMessage(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "前端资源未构建") {
 		t.Fatalf("body=%q, want missing-build guidance", w.Body.String())
+	}
+}
+
+func TestStaticAssetNegotiationAndCaching(t *testing.T) {
+	original := []byte("console.log('hashed asset')")
+	var gz bytes.Buffer
+	writer := gzip.NewWriter(&gz)
+	if _, err := writer.Write(original); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Brotli 文件内容使用固定字节，测试协商返回的确切文件；Node 测试额外验证 Brotli 解码。
+	br := []byte{1, 2, 3, 4}
+	files := fstest.MapFS{
+		"index.html":           {Data: []byte("<!doctype html>")},
+		"assets/app-123.js":    {Data: original},
+		"assets/app-123.js.gz": {Data: gz.Bytes()},
+		"assets/app-123.js.br": {Data: br},
+		"assets/style-123.css": {Data: []byte("body {}")},
+	}
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Header("Vary", "Origin"); c.Next() })
+	registerFS(router, files)
+	for _, tc := range []struct {
+		accept, encoding string
+		body             []byte
+	}{
+		{"br", "br", br}, {"gzip", "gzip", gz.Bytes()}, {"", "", original},
+		{"gzip, br", "br", br}, {"br;q=0, gzip;q=1", "gzip", gz.Bytes()},
+		{"br;q=0.5, gzip;q=0.9", "gzip", gz.Bytes()}, {"br;q=0, gzip;q=0", "", original},
+		{"*;q=1, br;q=0", "gzip", gz.Bytes()}, {"br;q=NaN", "", original},
+	} {
+		t.Run(tc.accept, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/assets/app-123.js", nil)
+			req.Header.Set("Accept-Encoding", tc.accept)
+			out := httptest.NewRecorder()
+			router.ServeHTTP(out, req)
+			if out.Code != http.StatusOK || !bytes.Equal(out.Body.Bytes(), tc.body) {
+				t.Fatalf("response=%d %q", out.Code, out.Body.Bytes())
+			}
+			if got := out.Header().Get("Content-Encoding"); got != tc.encoding {
+				t.Fatalf("encoding=%q want %q", got, tc.encoding)
+			}
+			if !strings.HasPrefix(out.Header().Get("Content-Type"), "text/javascript") {
+				t.Fatalf("mime=%q", out.Header().Get("Content-Type"))
+			}
+			if out.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
+				t.Fatal(out.Header())
+			}
+			vary := strings.Join(out.Header().Values("Vary"), ",")
+			if !strings.Contains(vary, "Origin") || !strings.Contains(vary, "Accept-Encoding") {
+				t.Fatalf("Vary=%q", vary)
+			}
+			if tc.encoding == "gzip" {
+				decoded, err := gzip.NewReader(bytes.NewReader(out.Body.Bytes()))
+				if err != nil {
+					t.Fatal(err)
+				}
+				body, err := io.ReadAll(decoded)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_ = decoded.Close()
+				if !bytes.Equal(body, original) {
+					t.Fatal("gzip body differs")
+				}
+			}
+		})
+	}
+	for _, path := range []string{"/", "/settings/profile", "/index.html"} {
+		out := httptest.NewRecorder()
+		router.ServeHTTP(out, httptest.NewRequest(http.MethodGet, path, nil))
+		if out.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s cache=%q", path, out.Header().Get("Cache-Control"))
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/assets/style-123.css", nil)
+	req.Header.Set("Accept-Encoding", "br,gzip")
+	out := httptest.NewRecorder()
+	router.ServeHTTP(out, req)
+	if out.Code != 200 || out.Header().Get("Content-Encoding") != "" || out.Body.String() != "body {}" || !strings.HasPrefix(out.Header().Get("Content-Type"), "text/css") {
+		t.Fatalf("fallback=%d %s %s", out.Code, out.Header(), out.Body.String())
+	}
+	for _, path := range []string{"/assets/missing.js", "/assets/missing.js.gz"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Accept-Encoding", "br,gzip")
+		out := httptest.NewRecorder()
+		router.ServeHTTP(out, req)
+		if out.Code != 404 || strings.Contains(out.Body.String(), "<!doctype") {
+			t.Fatalf("missing fallback: %d %q", out.Code, out.Body.String())
+		}
 	}
 }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { InternalAxiosRequestConfig } from "axios";
 import {
+  deleteConfig,
   getAllUsers,
   getForwardList,
   getNodeList,
@@ -59,4 +60,25 @@ describe("typed resource lists", () => {
       );
     }
   });
+});
+
+it("deletes config by name through the shared authenticated client", async () => {
+  const controller = new AbortController();
+  adapter.mockImplementation(async (config: InternalAxiosRequestConfig) => ({
+    data: { code: 0, data: "配置删除成功" },
+    headers: {},
+    status: 200,
+    statusText: "OK",
+    config,
+  }));
+  await expect(deleteConfig("custom_test", { signal: controller.signal })).resolves.toBe(
+    "配置删除成功",
+  );
+  expect(adapter).toHaveBeenCalledWith(
+    expect.objectContaining({
+      url: "/config/delete",
+      data: JSON.stringify({ name: "custom_test" }),
+      signal: controller.signal,
+    }),
+  );
 });

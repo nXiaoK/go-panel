@@ -69,3 +69,7 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 受保护接口的 HTTP 401 优先于响应体业务码，清除会话并回到登录页。业务 401、账号禁用 4031、强制改密 4032 及旧版两条明确的 403 中文消息沿用兼容行为；普通权限 403 保留会话。登录等公开请求失败不会撤销已有登录状态。
 
 资源接口位于 `src/lib/api/{auth,user,node,tunnel,forward,limit,config,system,backup,subscription}.ts`，请求字段按后端 DTO、响应按 JSON tag 定义；数组或 `{ records }` 列表在资源边界转换，页面只消费数组。`/user/list` 返回全部非管理员用户，不再发送无效分页参数。表单、诊断、测速与批量操作在失败后恢复操作状态，且保留普通用户转发编辑时省略出口配置的权限语义。
+
+### 构建预压缩（package.json 的 scripts.build）
+
+`npm run build` 先运行 Vite，再执行 `scripts/precompress.mjs`。脚本递归为 `dist/assets/` 中的 JS、CSS、SVG 生成 gzip level 9 的 `.gz` 和 Brotli quality 11 的 `.br` 文件，不添加依赖；原始文件始终保留，供不支持压缩的客户端回退。高压缩级别只增加构建时间，不增加服务时的压缩开销。`scripts/sync-web-dist.sh` 会一起复制这些旁路文件；带哈希资源缓存一年，页面入口保持 `no-store`，因此发布时必须同步完整构建目录。
