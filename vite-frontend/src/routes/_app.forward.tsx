@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Activity,
@@ -61,8 +61,17 @@ import {
   pauseForwardService,
   resumeForwardService,
   updateForwardOrder,
+  userTunnel,
 } from "@/lib/api";
-import type { Forward, ForwardExitMember, ForwardExitMode, Node, Tunnel } from "@/lib/types";
+import type {
+  Forward,
+  ForwardExitMember,
+  ForwardExitMode,
+  ForwardTunnelOption,
+  Node,
+  Tunnel,
+} from "@/lib/types";
+import { getRoleID } from "@/lib/session";
 import { listData, queries, unwrap } from "@/lib/api/query";
 import { loadSortedForwards } from "@/lib/forward-list";
 import { usePreferences } from "@/hooks/use-preferences";
@@ -94,7 +103,7 @@ function formatFlow(bytes?: number): string {
   return `${v.toFixed(v >= 10 ? 0 : 1)} ${units[i]}`;
 }
 
-function ForwardPage() {
+export function ForwardPage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [tunnelFilter, setTunnelFilter] = useState("all");
@@ -109,11 +118,7 @@ function ForwardPage() {
 
   const [nftOpen, setNftOpen] = useState(false);
 
-  const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => {
-    const r = window.localStorage.getItem("role_id");
-    setIsAdmin(r === "0");
-  }, []);
+  const [isAdmin] = useState(() => getRoleID() === 0);
 
   const { autoRefresh: autoRefreshEnabled } = usePreferences();
 
@@ -123,12 +128,17 @@ function ForwardPage() {
     refetchInterval: autoRefreshEnabled ? 30_000 : false,
   });
   const tunnelsQuery = useQuery({
-    queryKey: queries.tunnel.list(),
-    queryFn: () => getTunnelList().then(listData<Tunnel>),
+    queryKey: isAdmin ? queries.tunnel.list() : queries.tunnel.userOptions(),
+    queryFn: async (): Promise<ForwardTunnelOption[]> => {
+      if (isAdmin) return getTunnelList().then(listData<Tunnel>);
+      const options = unwrap(await userTunnel());
+      return options.map(({ ip, protocol: _protocol, ...option }) => ({ ...option, inIp: ip }));
+    },
   });
   const nodesQuery = useQuery({
     queryKey: queries.node.rawList(),
     queryFn: () => getNodeList().then(listData<Node>),
+    enabled: isAdmin,
   });
 
   const forwards = useMemo(() => forwardsQuery.data ?? [], [forwardsQuery.data]);
@@ -138,13 +148,15 @@ function ForwardPage() {
 
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queries.forward.list() });
-    void queryClient.invalidateQueries({ queryKey: queries.tunnel.list() });
-    void queryClient.invalidateQueries({ queryKey: queries.node.list() });
+    void queryClient.invalidateQueries({
+      queryKey: isAdmin ? queries.tunnel.list() : queries.tunnel.userOptions(),
+    });
+    if (isAdmin) void queryClient.invalidateQueries({ queryKey: queries.node.list() });
     void queryClient.invalidateQueries({ queryKey: queries.dashboard.all });
-  }, [queryClient]);
+  }, [queryClient, isAdmin]);
 
   const tunnelMap = useMemo(() => {
-    const m = new Map<number, Tunnel>();
+    const m = new Map<number, ForwardTunnelOption>();
     tunnels.forEach((t) => m.set(t.id, t));
     return m;
   }, [tunnels]);
@@ -354,11 +366,11 @@ function ForwardPage() {
       />
 
       <QueryErrorNotice
-        error={forwardsQuery.error ?? tunnelsQuery.error ?? nodesQuery.error}
+        error={forwardsQuery.error ?? tunnelsQuery.error ?? (isAdmin ? nodesQuery.error : null)}
         onRetry={() => {
           void forwardsQuery.refetch();
           void tunnelsQuery.refetch();
-          void nodesQuery.refetch();
+          if (isAdmin) void nodesQuery.refetch();
         }}
       />
 
@@ -485,7 +497,7 @@ function ForwardPage() {
                       {f.tunnelName || tunnel?.name || `#${f.tunnelId}`}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
-                      {(tunnel?.inIp || "—") + ":" + f.inPort}
+                      {(f.inIp ?? tunnel?.inIp ?? "—") + ":" + f.inPort}
                     </TableCell>
                     <TableCell className="text-xs">
                       {renderForwardExit(f, tunnel, nodeMap)}
@@ -576,7 +588,9 @@ function ForwardPage() {
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
-                            onClick={() => copy(`${tunnel?.inIp || ""}:${f.inPort}`, "入口地址")}
+                            onClick={() =>
+                              copy(`${f.inIp ?? tunnel?.inIp ?? ""}:${f.inPort}`, "入口地址")
+                            }
                           >
                             <Copy className="mr-2 h-3.5 w-3.5" /> 复制入口
                           </DropdownMenuItem>
@@ -602,6 +616,7 @@ function ForwardPage() {
       </Card>
 
       <ForwardFormDialog
+        mode={isAdmin ? "admin" : "user"}
         open={formOpen}
         onOpenChange={setFormOpen}
         editing={editingForward}
@@ -697,7 +712,11 @@ function renderStatus(status: number) {
   );
 }
 
-function renderForwardExit(f: Forward, tunnel: Tunnel | undefined, nodeMap: Map<number, Node>) {
+function renderForwardExit(
+  f: Forward,
+  tunnel: ForwardTunnelOption | undefined,
+  nodeMap: Map<number, Node>,
+) {
   if (!isTunnelForward(tunnel)) return <span className="text-muted-foreground">-</span>;
   const mode = (f.exitMode as ForwardExitMode) || "single";
   const members = f.exitMembers?.length
@@ -705,7 +724,7 @@ function renderForwardExit(f: Forward, tunnel: Tunnel | undefined, nodeMap: Map<
     : defaultExitMembers(tunnel).map((m) => ({ ...m, outPort: f.outPort || undefined }));
   const visible = mode === "balance" ? members : members.filter((m) => m.active);
   const renderedMembers = visible.length ? visible : members;
-  if (tunnel?.relayNodeId) {
+  if (tunnel && "relayNodeId" in tunnel && tunnel.relayNodeId) {
     const relayName = nodeMap.get(tunnel.relayNodeId)?.name || `#${tunnel.relayNodeId}`;
     const paths = renderedMembers.map((member) => {
       const exitName =

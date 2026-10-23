@@ -10,6 +10,7 @@ import type {
   SpeedLimit,
   SubscriptionProfile,
   TunnelForm,
+  TunnelListItem,
   UserForm,
   UserTunnel,
   UserTunnelForm,
@@ -91,7 +92,7 @@ export const removeUserTunnel = (params: Record<string, unknown>) =>
   Network.post("/tunnel/user/remove", params);
 export const updateUserTunnel = (data: UserTunnelForm | Record<string, unknown>) =>
   Network.post("/tunnel/user/update", data);
-export const userTunnel = () => Network.post("/tunnel/user/tunnel");
+export const userTunnel = () => Network.post<TunnelListItem[]>("/tunnel/user/tunnel");
 
 // ---------- Forwards ----------
 export const createForward = (data: Partial<Forward> | Record<string, unknown>) =>

@@ -33,8 +33,8 @@ import type {
   ForwardExitMember,
   ForwardExitMode,
   ForwardTargetMode,
+  ForwardTunnelOption,
   Node,
-  Tunnel,
 } from "@/lib/types";
 import { ExitMemberPicker } from "./exit-member-picker";
 import { defaultExitMembers, isTunnelForward, normalizeExitMembersForMode } from "./exit-members";
@@ -100,6 +100,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export function ForwardFormDialog({
+  mode,
   open,
   onOpenChange,
   editing,
@@ -107,18 +108,20 @@ export function ForwardFormDialog({
   nodes,
   onSaved,
 }: {
+  mode: "admin" | "user";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing: Forward | null;
-  tunnels: Tunnel[];
+  tunnels: ForwardTunnelOption[];
   nodes: Node[];
   onSaved: () => void;
 }) {
+  const isAdmin = mode === "admin";
   const [form, setForm] = useState<ForwardFormState>(emptyForm());
   const [saving, setSaving] = useState(false);
 
   const tunnelMap = useMemo(() => {
-    const m = new Map<number, Tunnel>();
+    const m = new Map<number, ForwardTunnelOption>();
     tunnels.forEach((t) => m.set(t.id, t));
     return m;
   }, [tunnels]);
@@ -130,17 +133,26 @@ export function ForwardFormDialog({
   }, [nodes]);
 
   const selectedTunnel = form.tunnelId ? tunnelMap.get(form.tunnelId) : null;
-  const selectedEntryNode = selectedTunnel ? nodeMap.get(selectedTunnel.inNodeId) : null;
+  const adminTunnel = selectedTunnel && "inNodeId" in selectedTunnel ? selectedTunnel : null;
+  const selectedEntryNode = adminTunnel ? nodeMap.get(adminTunnel.inNodeId) : null;
+  const hasRelay =
+    selectedTunnel && "hasRelay" in selectedTunnel
+      ? selectedTunnel.hasRelay
+      : !!adminTunnel?.relayNodeId;
+  const entryMode =
+    selectedTunnel && "inNodeForwardMode" in selectedTunnel
+      ? selectedTunnel.inNodeForwardMode
+      : selectedEntryNode?.forwardMode;
   const exitCandidates = useMemo(() => {
-    if (!selectedTunnel || !isTunnelForward(selectedTunnel)) return [];
+    if (!isAdmin || !adminTunnel || !isTunnelForward(adminTunnel)) return [];
     const entryMode = selectedEntryNode?.forwardMode;
     return nodes.filter((n) => {
-      if (n.id === selectedTunnel.inNodeId) return false;
-      if (n.id === selectedTunnel.relayNodeId) return false;
+      if (n.id === adminTunnel.inNodeId) return false;
+      if (n.id === adminTunnel.relayNodeId) return false;
       if (entryMode && n.forwardMode && n.forwardMode !== entryMode) return false;
       return true;
     });
-  }, [nodes, selectedEntryNode?.forwardMode, selectedTunnel]);
+  }, [nodes, selectedEntryNode?.forwardMode, adminTunnel, isAdmin]);
 
   useEffect(() => {
     if (!open) return;
@@ -207,9 +219,10 @@ export function ForwardFormDialog({
   const submit = async () => {
     const tunnel = form.tunnelId ? tunnelMap.get(form.tunnelId) : null;
     const remoteAddr = joinTargetAddresses(form.targetAddrs);
-    const exitMembers = isTunnelForward(tunnel)
-      ? normalizeExitMembersForMode(form.exitMode, form.exitMembers, tunnel)
-      : [];
+    const exitMembers =
+      isAdmin && isTunnelForward(tunnel)
+        ? normalizeExitMembersForMode(form.exitMode, form.exitMembers, tunnel)
+        : [];
     const activeRemoteAddr = normalizeActiveRemoteAddr(
       form.targetMode,
       remoteAddr,
@@ -219,36 +232,50 @@ export function ForwardFormDialog({
       ...form,
       remoteAddr,
       activeRemoteAddr,
-      tunnelType: tunnel?.type,
+      tunnelType: isAdmin ? tunnel?.type : undefined,
       exitMembers,
     });
     if (validationError) return toast.error(validationError);
     if (
-      tunnel?.relayNodeId &&
+      hasRelay &&
       form.targetMode !== "manual" &&
       form.targetAddrs.filter((item) => item.trim()).length > 1
     ) {
       return toast.error("三节点 nftables 串联暂不支持多目标自动负载，请使用手动目标");
     }
-    const entryNode = tunnel ? nodeMap.get(tunnel.inNodeId) : null;
     if (
+      isAdmin &&
       isTunnelForward(tunnel) &&
-      entryNode?.forwardMode === "nftables" &&
+      entryMode === "nftables" &&
       form.exitMode === "balance"
     ) {
       return toast.error("nftables 隧道暂不支持自动出口负载均衡，请使用手动负载");
     }
     setSaving(true);
+    // 普通用户只能使用隧道默认出口；编辑时必须省略全部出口键，保留管理员已有配置。
+    const {
+      exitMode: _exitMode,
+      exitStrategy: _exitStrategy,
+      exitMembers: _exitMembers,
+      ...baseForm
+    } = form;
+    const exitConfig = isAdmin
+      ? {
+          exitMode: isTunnelForward(tunnel) ? form.exitMode : "single",
+          exitStrategy: isTunnelForward(tunnel) ? form.exitStrategy : "fifo",
+          exitMembers,
+        }
+      : editing
+        ? {}
+        : { exitMode: "single", exitMembers: [] };
     const payload = {
-      ...form,
+      ...baseForm,
       remoteAddr,
       strategy: autoStrategy(remoteAddr, form.strategy),
       targetMode: form.targetMode,
       activeRemoteAddr,
       forceSwitchTarget: editing ? form.forceSwitchTarget : false,
-      exitMode: isTunnelForward(tunnel) ? form.exitMode : "single",
-      exitStrategy: isTunnelForward(tunnel) ? form.exitStrategy : "fifo",
-      exitMembers,
+      ...exitConfig,
     };
     const res = editing ? await updateForward(payload) : await createForward(payload);
     setSaving(false);
@@ -270,7 +297,11 @@ export function ForwardFormDialog({
         </DialogHeader>
         <div className="grid gap-3">
           <Field label="名称">
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <Input
+              aria-label="名称"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="隧道">
@@ -291,8 +322,19 @@ export function ForwardFormDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {tunnels.map((t) => (
-                    <SelectItem key={t.id} value={String(t.id)}>
-                      {t.name}
+                    <SelectItem
+                      key={t.id}
+                      value={String(t.id)}
+                      disabled={"available" in t && !t.available}
+                    >
+                      <span className="flex flex-col items-start">
+                        <span>{t.name}</span>
+                        {"unavailableReason" in t && t.unavailableReason && (
+                          <span className="text-xs text-muted-foreground">
+                            {t.unavailableReason}
+                          </span>
+                        )}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -309,6 +351,16 @@ export function ForwardFormDialog({
                   setForm({ ...form, inPort: e.target.value ? Number(e.target.value) : null })
                 }
               />
+              {!isAdmin &&
+                selectedTunnel &&
+                "inNodePortSta" in selectedTunnel &&
+                selectedTunnel.inNodePortSta != null &&
+                selectedTunnel.inNodePortEnd != null && (
+                  <p className="text-xs text-muted-foreground">
+                    可用端口 {selectedTunnel.inNodePortSta}–{selectedTunnel.inNodePortEnd}
+                    ，留空自动分配
+                  </p>
+                )}
             </Field>
           </div>
           <Field label="目标地址">
@@ -356,6 +408,16 @@ export function ForwardFormDialog({
               </Button>
             </div>
           </Field>
+          {hasRelay && (
+            <p className="text-xs text-muted-foreground">
+              三节点 nftables 串联暂不支持多目标自动负载，请使用手动目标
+            </p>
+          )}
+          {entryMode === "nftables" && !hasRelay && (
+            <p className="text-xs text-muted-foreground">
+              nftables 入口的多目标转发由目标模式决定，手动目标仅使用当前选中的地址
+            </p>
+          )}
           <div className="rounded-md border border-border/60 bg-background/50 p-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="目标模式">
@@ -444,7 +506,7 @@ export function ForwardFormDialog({
               </div>
             )}
           </div>
-          {isTunnelForward(selectedTunnel) && (
+          {isAdmin && isTunnelForward(adminTunnel) && (
             <div className="rounded-md border border-border/60 bg-background/50 p-3">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="出口模式">
@@ -498,7 +560,7 @@ export function ForwardFormDialog({
                 members={form.exitMembers}
                 candidates={exitCandidates}
                 nodeMap={nodeMap}
-                tunnel={selectedTunnel}
+                tunnel={adminTunnel}
                 onChange={(exitMembers) => setForm({ ...form, exitMembers })}
               />
             </div>

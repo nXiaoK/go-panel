@@ -157,33 +157,47 @@ func checkUserPermissionsDB(db *gorm.DB, cu CurrentUser, tunnel *model.Tunnel, e
 	if err := db.First(&userInfo, cu.UserID).Error; err != nil {
 		return permissionResult{errMsg: "用户不存在"}
 	}
-	if !isActiveUserStatus(userInfo.Status) {
-		return permissionResult{errMsg: "用户已到期或被禁用"}
-	}
-	if userInfo.ExpTime != nil && *userInfo.ExpTime <= time.Now().UnixMilli() {
-		return permissionResult{errMsg: "当前账号已到期"}
-	}
-
 	var ut model.UserTunnel
 	if err := db.Where("user_id = ? AND tunnel_id = ?", cu.UserID, tunnel.ID).First(&ut).Error; err != nil {
-		return permissionResult{errMsg: "你没有该隧道权限"}
+		return permissionResult{errMsg: userTunnelUnavailableReason(&userInfo, nil, time.Now().UnixMilli())}
 	}
-	if ut.Status != 1 {
-		return permissionResult{errMsg: "隧道被禁用"}
-	}
-	if ut.ExpTime != nil && *ut.ExpTime <= time.Now().UnixMilli() {
-		return permissionResult{errMsg: "该隧道权限已到期"}
-	}
-	if totalFlowBytes(userInfo.InFlow, userInfo.OutFlow) >= flowLimitBytes(userInfo.Flow) {
-		return permissionResult{errMsg: "用户总流量已用完"}
-	}
-	if totalFlowBytes(ut.InFlow, ut.OutFlow) >= flowLimitBytes(ut.Flow) {
-		return permissionResult{errMsg: "该隧道流量已用完"}
+	if msg := userTunnelUnavailableReason(&userInfo, &ut, time.Now().UnixMilli()); msg != "" {
+		return permissionResult{errMsg: msg}
 	}
 	if msg := checkForwardQuotaDB(db, cu.UserID, tunnel.ID, &ut, &userInfo, excludeForwardID); msg != "" {
 		return permissionResult{errMsg: msg}
 	}
 	return permissionResult{limiter: ut.SpeedID, userTunnel: &ut}
+}
+
+// userTunnelUnavailableReason 只判断账号和隧道授权的状态、有效期及流量，
+// 不访问数据库，也不包含转发数量配额；列表提示与提交校验共用同一规则。
+func userTunnelUnavailableReason(user *model.User, grant *model.UserTunnel, now int64) string {
+	if user == nil {
+		return "用户不存在"
+	}
+	if !isActiveUserStatus(user.Status) {
+		return "用户已到期或被禁用"
+	}
+	if user.ExpTime != nil && *user.ExpTime <= now {
+		return "当前账号已到期"
+	}
+	if grant == nil {
+		return "你没有该隧道权限"
+	}
+	if grant.Status != 1 {
+		return "隧道被禁用"
+	}
+	if grant.ExpTime != nil && *grant.ExpTime <= now {
+		return "该隧道权限已到期"
+	}
+	if totalFlowBytes(user.InFlow, user.OutFlow) >= flowLimitBytes(user.Flow) {
+		return "用户总流量已用完"
+	}
+	if totalFlowBytes(grant.InFlow, grant.OutFlow) >= flowLimitBytes(grant.Flow) {
+		return "该隧道流量已用完"
+	}
+	return ""
 }
 
 // checkForwardQuota 转发数量配额检查
