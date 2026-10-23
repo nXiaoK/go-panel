@@ -91,7 +91,7 @@ export function RootComponent() {
       <ConfirmProvider>
         <Outlet />
       </ConfirmProvider>
-      <Toaster richColors theme="dark" position="top-right" />
+      <Toaster richColors position="top-right" />
     </QueryClientProvider>
   );
 }

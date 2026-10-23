@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- 固定暗色主题；不读取本地 theme，避免首屏闪烁与内联脚本。 -->
+<!-- 未保存外观时默认深色；Vite 注入同源初始化脚本，在首屏前恢复 pref_theme，详见 README.md。 -->
 <html lang="zh-CN" class="dark" style="color-scheme: dark">
   <head>
     <meta charset="UTF-8" />
@@ -13,7 +13,7 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/favicon.ico" type="image/x-icon" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
     <title>go-panel · 转发管理控制台</title>
   </head>
   <body>

@@ -2,12 +2,35 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { defineConfig } from "vite";
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 // 仅开发服务器读取此目标，生产构建仍同源请求 Go 后端；多实例开发时分别指定对应端口。
 const devApiTarget = process.env.VITE_DEV_API_TARGET ?? "http://127.0.0.1:6365";
 
+// 外观初始化必须在首屏绘制前同步执行；独立同源脚本兼容严格 CSP，不添加 unsafe-inline。
+// 生产使用内容哈希以兼容 /assets 的一年缓存；更改脚本会自动生成新 URL，避免旧偏好逻辑残留。
+const themeBootstrap = readFileSync(new URL("./src/theme-init.js", import.meta.url), "utf8");
+const themeAsset = `assets/theme-init-${createHash("sha256").update(themeBootstrap).digest("hex").slice(0, 12)}.js`;
+
 export default defineConfig({
   plugins: [
+    {
+      name: "theme-bootstrap",
+      transformIndexHtml: {
+        order: "post",
+        handler: (_html, context) => [
+          {
+            tag: "script",
+            attrs: { src: context.server ? "/src/theme-init.js" : `/${themeAsset}` },
+            injectTo: "head-prepend",
+          },
+        ],
+      },
+      generateBundle() {
+        this.emitFile({ type: "asset", fileName: themeAsset, source: themeBootstrap });
+      },
+    },
     tanstackRouter({
       target: "react",
       autoCodeSplitting: true,

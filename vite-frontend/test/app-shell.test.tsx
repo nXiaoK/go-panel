@@ -171,6 +171,47 @@ describe("应用外壳与命令面板", () => {
     fireEvent.click(screen.getByText("新建转发"));
     expect(navigate).toHaveBeenCalledWith({ to: "/forward", search: { create: 1 } });
   });
+  it("大量单类资源不会挤掉其他类型，分类可查看更多且清空后保留分类", async () => {
+    vi.mocked(apiPost).mockImplementation(async (path) =>
+      path === "/tunnel/list"
+        ? Array.from({ length: 120 }, (_, index) => ({
+            id: index + 1,
+            name: `隧道资源 ${index + 1}`,
+            status: 1,
+          }))
+        : path === "/node/list"
+          ? [{ id: 501, name: "末尾节点", status: 1 }]
+          : path === "/forward/list"
+            ? [{ id: 502, name: "末尾转发", status: 1 }]
+            : [],
+    );
+    show(<CommandPalette open onOpenChange={vi.fn()} />);
+    expect(await screen.findByText("末尾节点")).toBeTruthy();
+    expect(screen.getByText("末尾转发")).toBeTruthy();
+    expect(screen.queryByText("隧道资源 4")).toBeNull();
+    fireEvent.click(screen.getByText("查看全部 120 条隧道"));
+    expect(await screen.findByText("隧道资源 100")).toBeTruthy();
+    expect(screen.getByText("仅显示前 100 条，请输入更具体的关键词")).toBeTruthy();
+    expect(screen.queryByText("末尾节点")).toBeNull();
+    const input = screen.getByRole("combobox", { name: "搜索资源" });
+    expect(document.activeElement).toBe(input);
+    fireEvent.change(input, { target: { value: "隧道资源 120" } });
+    expect(await screen.findByText("隧道资源 120")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "清空搜索" }));
+    expect(
+      screen.getByRole("button", { name: "隧道", exact: true }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(screen.getByText("隧道资源 1")).toBeTruthy();
+  });
+  it("资源请求失败可重试，已有页面操作继续可用", async () => {
+    vi.mocked(apiPost).mockRejectedValue(new Error("搜索加载失败"));
+    show(<CommandPalette open onOpenChange={vi.fn()} />);
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "搜索加载失败重试");
+    expect(screen.getByText("新建转发")).toBeTruthy();
+    vi.mocked(apiPost).mockResolvedValue([]);
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
   it("强制改密禁用命令面板，外壳不触发搜索请求", async () => {
     setSession({ token: "u", name: "viewer", roleId: 1, mustChangePassword: true });
     show(

@@ -10,6 +10,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { AlertCircle, Eye, EyeOff, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { loginReasons } from "./login-search";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -66,6 +67,9 @@ export function LoginPage() {
   };
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-canvas p-4 text-ink">
+      <div className="absolute right-4 top-4">
+        <ThemeSwitcher />
+      </div>
       <div className="flex max-w-full items-center gap-2 text-section-title">
         <Zap className="size-6 shrink-0 text-primary" aria-hidden="true" />
         <span className="truncate">{appName}</span>

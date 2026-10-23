@@ -4,7 +4,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* 设计配置以根 DESIGN.md 为准：只提供暗色值，语义名与 shadcn 兼容名共享同一套颜色。 */
+/* 设计配置以根 DESIGN.md 为准：深浅主题共用语义名，shadcn 兼容名随当前主题切换。 */
 @theme inline {
   /* 圆角按设计直接映射；旧组件的 lg/xl 兼容名统一为卡片圆角，不扩大轮廓。 */
   --radius-xs: 4px;
@@ -41,6 +41,8 @@
   --color-status-critical-bg: var(--status-critical-bg);
   --color-status-neutral: var(--status-neutral);
   --color-destructive-solid: var(--destructive-solid);
+  --color-on-destructive: var(--on-destructive);
+  --color-overlay: var(--overlay);
   --color-chart-series-1: var(--chart-series-1);
   --color-chart-series-2: var(--chart-series-2);
   --color-chart-grid: var(--chart-grid);
@@ -80,9 +82,9 @@
   --color-sidebar-ring: var(--sidebar-ring);
 
   /* 仅浮层/可点击卡片悬停使用阴影；普通卡片只使用细线。 */
-  --shadow-level-2: 0 0 15px rgba(92, 88, 85, 0.2);
-  --shadow-level-3: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(148, 163, 184, 0.1) inset;
-  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-level-2: var(--elevation-level-2);
+  --shadow-level-3: var(--elevation-level-3);
+  --shadow-popover: var(--elevation-popover);
 
   /* latin 字体由本地 fonts.css 提供；中文按以下顺序回退系统字体，无外部字体请求。 */
   --font-sans:
@@ -188,6 +190,12 @@
   --status-critical-bg: #2a1414;
   --status-neutral: #8b949e;
   --destructive-solid: #b91c1c;
+  --on-destructive: #f2f2f2;
+  /* 浮层遮罩和阴影随主题变化，避免浅色模式继续使用过重的黑色阴影。 */
+  --overlay: rgba(16, 16, 16, 0.65);
+  --elevation-level-2: 0 0 15px rgba(92, 88, 85, 0.2);
+  --elevation-level-3: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(148, 163, 184, 0.1) inset;
+  --elevation-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
   /* 流量下行/上行分别用 series-1/2；网格与坐标轴不承载交互边界。 */
   --chart-series-1: #199e70;
   --chart-series-2: #3987e5;
@@ -209,7 +217,7 @@
   --accent: var(--surface-hover);
   --accent-foreground: var(--ink);
   --destructive: var(--status-critical);
-  --destructive-foreground: var(--ink);
+  --destructive-foreground: var(--on-destructive);
   --success: var(--status-good);
   --success-foreground: var(--on-primary);
   --warning: var(--status-warning);
@@ -236,6 +244,54 @@
   --content-max-width: 1440px;
   --content-padding-desktop: 24px;
   --content-padding-mobile: 16px;
+}
+
+/* 浅色值与 DESIGN.md 的 light-colors 一一对应；仅覆盖视觉令牌，不影响数据或访问权限。 */
+:root.light {
+  color-scheme: light;
+  /* 白色画布搭配低饱和灰绿输入区；三级文字在悬停/选中底色上仍至少 4.5:1。 */
+  --canvas: #ffffff;
+  --canvas-soft: #f5f7f6;
+  --canvas-text-soft: #1c2923;
+  --ink: #1c2923;
+  --ink-strong: #101c16;
+  --body: #405047;
+  --mute: #5c6b62;
+  /* 浅色强调绿加深以保证对比；实心主按钮必须使用白色 on-primary 文字。 */
+  --primary: #087653;
+  --primary-soft: #087653;
+  --primary-deep: #096c50;
+  --on-primary: #ffffff;
+  /* 装饰线不承担控件识别；控件边界在全部交互底色上至少 3:1。 */
+  --hairline: #d4ddd7;
+  --border-control: #7c8880;
+  --hairline-subtle: #e5ebe7;
+  --surface-hover: #edf2ef;
+  --surface-selected: #e5f3ec;
+  /* 状态底色仅辅助识别，始终保留图标和中文文字；文字均至少 4.5:1。 */
+  --status-good: #08734f;
+  --status-good-bg: #e5f3eb;
+  --status-warning: #805b08;
+  --status-warning-bg: #fff4d6;
+  --status-serious: #a04720;
+  --status-serious-bg: #fff0e8;
+  --status-critical: #c03636;
+  --status-critical-text: #b52d2d;
+  --status-critical-bg: #fff0f0;
+  --status-neutral: #5c6b62;
+  /* 危险按钮使用专用白字，不复用浅色 ink，防止深字配红底。 */
+  --destructive-solid: #b91c1c;
+  --on-destructive: #ffffff;
+  /* 图表序列在白色/浅灰画布上至少 3:1；轴线与网格仅作装饰。 */
+  --chart-series-1: #137e59;
+  --chart-series-2: #286bc4;
+  --chart-grid: #e5ebe7;
+  --chart-axis: #d4ddd7;
+  /* 减轻浅色浮层的遮罩和阴影，保持前景清晰、背景页面仍可辨认。 */
+  --overlay: rgba(23, 38, 31, 0.3);
+  --elevation-level-2: 0 2px 12px rgba(23, 38, 31, 0.08);
+  --elevation-level-3: 0 20px 60px rgba(23, 38, 31, 0.18), 0 0 0 1px rgba(23, 38, 31, 0.04) inset;
+  --elevation-popover: 0 8px 24px rgba(23, 38, 31, 0.12);
 }
 
 @layer base {
@@ -294,4 +350,12 @@
     transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* 搜索输入使用整行底部焦点线，避免全局轮廓被浮层裁切或包住关闭按钮。 */
+[cmdk-input-wrapper]:has([cmdk-input]:focus-visible) {
+  box-shadow: inset 0 -2px 0 var(--ring);
+}
+[cmdk-input]:focus-visible {
+  outline: none;
 }

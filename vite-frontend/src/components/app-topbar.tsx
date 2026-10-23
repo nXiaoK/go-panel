@@ -18,6 +18,7 @@ import { usePanelStatus } from "@/features/system/panel-status-context";
 import { useSession } from "@/hooks/use-session";
 import { roleLabel } from "@/lib/capabilities";
 import { clearSession } from "@/lib/session";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 
 export function AppTopbar() {
   const navigate = useNavigate();
@@ -82,6 +83,7 @@ export function AppTopbar() {
           )}
         </>
       )}
+      <ThemeSwitcher />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button

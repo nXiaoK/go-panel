@@ -199,8 +199,23 @@ test("所有 TSX 必须零违规，不再接受遗留额度", async () => {
 
 const css = await readFile(join(sourceRoot, "styles.css"), "utf8");
 const design = await readFile(join(root, "..", "DESIGN.md"), "utf8");
-const tokens = Object.fromEntries(
-  [...css.matchAll(/--([a-z0-9-]+):\s*(#[a-f0-9]{6});/g)].map((match) => [match[1], match[2]]),
+// 深浅颜色分别校验，不能让浅色覆盖掩盖暗色的回归。
+const themes = Object.fromEntries(
+  ["dark", "light"].map((theme) => {
+    const block =
+      theme === "dark"
+        ? css.split(".dark {")[1].split("\n}")[0]
+        : css.split(":root.light {")[1].split("\n}")[0];
+    return [
+      theme,
+      Object.fromEntries(
+        [...block.matchAll(/--([a-z0-9-]+):\s*(#[a-f0-9]{6});/g)].map((match) => [
+          match[1],
+          match[2],
+        ]),
+      ),
+    ];
+  }),
 );
 function luminance(hex) {
   const channels = hex
@@ -210,16 +225,23 @@ function luminance(hex) {
     .map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
   return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
 }
-function contrast(foreground, background) {
+function contrast(tokens, foreground, background) {
   const a = luminance(tokens[foreground]);
   const b = luminance(tokens[background]);
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
 test("颜色逐项匹配 DESIGN.md，控件圆角保持 6px/8px", () => {
-  const colors = design.split("colors:\n")[1].split("\ntypography:")[0];
-  for (const [, name, value] of colors.matchAll(/^  ([a-z0-9-]+):\s*"(#[a-f0-9]{6})"/gm))
-    assert.equal(tokens[name], value, name);
+  for (const theme of ["dark", "light"]) {
+    const marker = theme === "dark" ? "colors:\n" : "light-colors:\n";
+    const colors = design.split(marker)[1].split(/\n[a-z-]+:/)[0];
+    for (const [, name, value] of colors.matchAll(/^  ([a-z0-9-]+):\s*"(#[a-f0-9]{6})"/gm))
+      assert.equal(themes[theme][name], value, `${theme}/${name}`);
+    assert.deepEqual(
+      Object.keys(themes[theme]).sort(),
+      [...colors.matchAll(/^  ([a-z0-9-]+):\s*"(#[a-f0-9]{6})"/gm)].map((match) => match[1]).sort(),
+    );
+  }
   assert.match(css, /--radius-sm: 6px;/);
   assert.match(css, /--radius-md: 8px;/);
   assert.doesNotMatch(
@@ -229,27 +251,31 @@ test("颜色逐项匹配 DESIGN.md，控件圆角保持 6px/8px", () => {
   );
 });
 
-test("设计文字与图形组合满足 WCAG 对比度", () => {
-  for (const background of ["canvas", "canvas-soft", "surface-hover", "surface-selected"]) {
-    for (const text of ["ink", "body", "mute", "status-critical-text"])
-      assert.ok(contrast(text, background) >= 4.5, `${text}/${background}`);
-  }
-  for (const state of ["good", "warning", "serious"])
-    assert.ok(contrast(`status-${state}`, `status-${state}-bg`) >= 4.5, state);
-  assert.ok(contrast("status-critical-text", "status-critical-bg") >= 4.5);
-  assert.ok(contrast("on-primary", "primary") >= 4.5);
-  assert.ok(contrast("ink", "destructive-solid") >= 4.5);
-  for (const background of ["canvas", "canvas-soft"]) {
-    for (const graphic of [
-      "border-control",
-      "primary-soft",
-      "status-critical",
-      "chart-series-1",
-      "chart-series-2",
-    ])
-      assert.ok(contrast(graphic, background) >= 3, `${graphic}/${background}`);
-  }
-});
+for (const [theme, tokens] of Object.entries(themes)) {
+  test(`${theme} 设计文字与图形组合满足 WCAG 对比度`, () => {
+    for (const background of ["canvas", "canvas-soft", "surface-hover", "surface-selected"]) {
+      for (const text of ["ink", "body", "mute", "status-critical-text", "primary-deep"])
+        assert.ok(contrast(tokens, text, background) >= 4.5, `${text}/${background}`);
+    }
+    for (const state of ["good", "warning", "serious"])
+      assert.ok(contrast(tokens, `status-${state}`, `status-${state}-bg`) >= 4.5, state);
+    assert.ok(contrast(tokens, "status-critical-text", "status-critical-bg") >= 4.5);
+    assert.ok(contrast(tokens, "on-primary", "primary") >= 4.5);
+    assert.ok(contrast(tokens, "on-destructive", "destructive-solid") >= 4.5);
+    for (const background of ["canvas", "canvas-soft"]) {
+      for (const graphic of [
+        "border-control",
+        "primary",
+        "primary-soft",
+        "status-critical",
+        "chart-series-1",
+        "chart-series-2",
+      ])
+        assert.ok(contrast(tokens, graphic, background) >= 3, `${graphic}/${background}`);
+    }
+    assert.ok(contrast(tokens, "primary", "surface-selected") >= 3);
+  });
+}
 
 test("字体只声明本地 latin 文件，主题无需内联脚本", async () => {
   const fonts = await readFile(join(sourceRoot, "fonts.css"), "utf8");
@@ -265,7 +291,7 @@ test("字体只声明本地 latin 文件，主题无需内联脚本", async () =
   );
   assert.doesNotMatch(html, /fonts\.googleapis|fonts\.gstatic|<script(?![^>]*\bsrc=)[^>]*>/);
   assert.match(html, /class="dark" style="color-scheme: dark"/);
-  assert.match(html, /<meta name="color-scheme" content="dark"/);
+  assert.match(html, /<meta name="color-scheme" content="dark light"/);
   assert.doesNotMatch(
     await readFile(join(sourceRoot, "app/root.tsx"), "utf8"),
     /themechange|initTheme|themeMode/,

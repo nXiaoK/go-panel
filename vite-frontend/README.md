@@ -92,7 +92,9 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 
 `package.json` / `package-lock.json` 新增的 `@fontsource-variable/inter` 和 `@fontsource-variable/jetbrains-mono` 用于自托管字体，不访问 Google Fonts 或字体 CDN。锁定版本的 `wght.css` 含所有语种，且未提供 latin 专用 CSS 入口，因此 `src/main.tsx` 导入本地 `src/fonts.css`，只声明两包 `files/*-latin-wght-normal.woff2`，保留上游的字重范围、`unicode-range` 与 `font-display: swap`；不导入 cyrillic、greek、latin-ext 等子集，中文回退系统字体。实际分发的 Inter latin 子集已移除 `cv02/cv03/cv04/cv11/ss01`，正文只配置实际保留的 `calt`，等宽字体不继承这些字形配置。字体许可均为 SIL OFL 1.1，版权和完整许可见根 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) 以及随页面分发的 `public/font-licenses/`，升级字体时必须同步这些声明。
 
-`index.html` 固定 `class="dark"`、`color-scheme: dark` 和暗色元数据；主题无脚本、无切换或持久化读写，旧浏览器 `theme` 值不影响结果。`src/styles.css` 按根设计规范提供语义颜色与 shadcn 兼容映射，圆角 `sm=6px`、`md=8px`，命名间距使用 `space-` 前缀（例如 `p-space-sm`），避免与 `max-w-sm` / `max-w-xl` 等容器尺寸冲突；普通卡片只使用边线，只有浮层和交互卡片悬停使用阴影。`destructive` 仅用于图形/边界，危险确认实心按钮使用 `destructive-solid` 与 `ink`，避免文字对比不足。焦点轮廓始终显示；减弱动态偏好关闭动画与过渡但保留布局定位。
+`index.html` 默认深色，`src/theme-init.js` 在首屏前读取浏览器 `pref_theme`（`dark` / `light` / `system`），无值或非法值回退深色；旧 `theme` 键仍不读取。`vite.spa.config.ts` 注入同步的同源脚本，生产自动生成内容哈希并参与预压缩，兼容 `/assets` 长缓存与严格 CSP，不增加内联脚本许可。顶栏和登录页可切换外观；跟随系统模式实时响应系统变化，同源标签页同步偏好。存储不可用时只在当前页面记住选择，不写服务端、不影响权限，也不随登出清除。
+
+`src/styles.css` 按根 `DESIGN.md` 提供深浅语义颜色与 shadcn 映射，状态、图表、遮罩、通知与浮层阴影同步切换。圆角 `sm=6px`、`md=8px`，命名间距使用 `space-` 前缀；普通卡片只使用边线。实心主按钮使用 `on-primary`，危险按钮使用 `on-destructive`，避免浅色下误用深色文字。焦点轮廓始终显示，搜索输入改用整行底部焦点线；减弱动态偏好关闭动画与过渡但保留布局定位。
 
 `test/design-tokens.test.mjs` 对所有 TSX 字符串、模板和词法常量拼接执行零违规门禁，覆盖完整 Tailwind 色板、渐变/光晕/网格特效、小于12px的px/rem字号。历史额度收紧回归仍保留，不能新增任何允许项。全部业务目录统一执行 no-explicit-any，不再豁免路由边界。
 
@@ -124,7 +126,7 @@ Node 22 下运行 `npm run dev` 后访问 `/_dev/components`，可检查基础�
 
 侧栏 `sidebar_state` cookie 只保存展开布尔值，有效期 7 天、路径 `/`、`SameSite=Lax`，不包含身份信息。无历史偏好时，桌面默认展开，平板默认折叠，手机使用导航抽屉。管理员系统状态每 60 秒轮询，页面隐藏时暂停；连续两次失败才显示连接异常。普通用户与强制改密模式不读取系统状态、版本或升级接口。
 
-旧 `/profile`、`/settings` 书签分别转至 `/account?tab=security` 与 `/account?tab=preferences`；`forcePassword=1` 会继续保留，真实改密要求仍来自持久会话。账户默认资料与安全分区。命令面板只在打开时加载有权查询的资源，共用资源缓存；资源深链写入使用数字 ID，生成 `focus=<id>`，路由与列表的 `useUrlState` 读取仍为数字，页面在 DataTable 的 `focusRowId` 边界显式转换为字符串，新建操作使用 `create=1`。列表页接收这些参数并在定位时清空筛选；隧道原 `action=create` 与其他页面参数继续保留。已提供但非法的筛选/定位键被规范为空值，页面读取可选参数时使用 `??` 回退自己的默认值；缺省键不会覆盖页面默认值。
+旧 `/profile`、`/settings` 书签分别转至 `/account?tab=security` 与 `/account?tab=preferences`；`forcePassword=1` 会继续保留，真实改密要求仍来自持久会话。账户默认资料与安全分区。命令面板只在打开时加载有权查询的资源，共用资源缓存；提供按类型筛选、清空和失败重试，全部分类每类预览 3 条，分类最多展示 100 条并提示缩小关键词。匹配和计数在截取前进行，避免其他分类因大量结果被截掉；资源深链写入使用数字 ID，生成 `focus=<id>`，路由与列表的 `useUrlState` 读取仍为数字，页面在 DataTable 的 `focusRowId` 边界显式转换为字符串，新建操作使用 `create=1`。列表页接收这些参数并在定位时清空筛选；隧道原 `action=create` 与其他页面参数继续保留。已提供但非法的筛选/定位键被规范为空值，页面读取可选参数时使用 `??` 回退自己的默认值；缺省键不会覆盖页面默认值。
 
 ### 系统配置分区
 
@@ -157,6 +159,8 @@ npm run test:e2e
 `playwright.config.ts` 串行运行，固定中文、上海时区、暗色与减弱动态，只访问回环6401端口。`e2e/start-backend.mjs` 用 `GOTOOLCHAIN=go1.26.10 go run .`、固定本地测试密码及每次随机的 JWT_SECRET 启动临时后端，仅操作 `/tmp/go-panel-U12.db`。已有该路径或夹具标记时立即失败；操作者应确认是自己的临时库后完整保留移开。脚本不会删库或覆盖现有数据。它只给新库设置强制改密夹具。冒烟在该标记存在时读取临时节点密钥，以本机 WebSocket 模拟节点命令回执，再通过真实 API 创建隧道和限速，并断言收到 AddLimiters；测试结束关闭连接，不运行真实代理或转发数据平面，不改正式在线门槛。
 
 截图基线位于 `e2e/smoke.spec.mjs-snapshots/`，由 macOS26 arm64 和锁定的 Playwright Chromium 实际生成。时间使用固定测试时钟，动态 `<time>` 文本明确遮蔽，不增加像素差容忍。`npm run test:e2e -- --update-snapshots` 后必须人工审图。不同系统、字体或浏览器版本需单独审查基线，不能宣称跨平台逐像素一致。`test-results/` 与 `playwright-report/` 是忽略的临时证据，trace 可能含测试凭据。`.github/workflows/ui-smoke.yml` 仅手动触发、只读权限、匹配 macOS26 runner，失败证据保留一天，不改变 PR 门槛或发布流程。
+
+双主题与搜索专项：先运行 `npm run build`，再以 `npm run preview -- --host 127.0.0.1 --port 5205 --strictPort` 启动生产预览，执行 `node e2e/theme-search.mjs`。脚本只访问本机 5205，并拦截全部业务接口和 WebSocket，验证深浅主题、系统/跨标签页同步、刷新保留、搜索键盘跳转与类型筛选、320/390px 布局，以及控制台图表和登录页。截图及 axe 结果保存在忽略目录 `test-results/theme-search/`；夹具不连接真实面板、不替代真实后端冒烟。
 
 ## 性能采集工具
 

@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const primary = "bg-primary text-on-primary hover:brightness-105";
-const solid = "bg-destructive-solid text-ink hover:brightness-105";
+const solid = "bg-destructive-solid text-on-destructive hover:brightness-105";
 const buttonVariants = cva(
   "relative inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-sm text-button cursor-pointer transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-primary-soft disabled:pointer-events-none disabled:opacity-40 disabled:cursor-not-allowed [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 max-md:min-h-10 max-md:min-w-10",
   {

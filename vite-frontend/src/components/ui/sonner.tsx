@@ -1,8 +1,10 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { Toaster as Sonner } from "sonner";
 import "./sonner.css";
+import { useTheme } from "@/hooks/use-theme";
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 const Toaster = ({ toastOptions, style, ...props }: ToasterProps) => {
+  const { resolved } = useTheme();
   const [mobile, setMobile] = useState(false);
   useEffect(() => {
     const media = window.matchMedia?.("(max-width: 767px)");
@@ -15,7 +17,7 @@ const Toaster = ({ toastOptions, style, ...props }: ToasterProps) => {
   return (
     <Sonner
       {...props}
-      theme="dark"
+      theme={resolved}
       richColors={false}
       position={mobile ? "top-center" : "top-right"}
       className="toaster group"

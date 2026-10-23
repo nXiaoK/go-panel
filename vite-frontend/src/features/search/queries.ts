@@ -28,5 +28,7 @@ export function useSearchItems(open: boolean) {
     items,
     isFetching: open && active.some((query) => query.isFetching),
     error: open ? active.find((query) => query.error)?.error : undefined,
+    retry: () =>
+      Promise.all(active.filter((query) => query.isError).map((query) => query.refetch())),
   };
 }

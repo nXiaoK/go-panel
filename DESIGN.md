@@ -1,5 +1,5 @@
 ---
-version: 1.0
+version: 1.1
 name: go-panel-console
 description: go-panel 运维控制台设计规范。继承工作区 DESIGN.md（Voltagent 风格：近黑画布、单一电光绿强调色、细线卡片、Inter + 等宽字体），并针对中文、数据密集的管理后台补充状态色、图表色、表格、表单和移动端规范。
 extends: "Voltagent-Inspired-design-analysis（工作区默认 DESIGN.md，暗色画布 + 单一电光绿强调色）"
@@ -33,11 +33,56 @@ colors:
   status-critical-text: "#f87171" # 错误文字（6.88:1）
   status-critical-bg: "#2a1414"
   status-neutral: "#8b949e"   # 已暂停、已禁用、未知
-  destructive-solid: "#b91c1c" # 危险操作的实心确认按钮底色（配 ink 文字 5.78:1）
+  destructive-solid: "#b91c1c" # 危险操作的实心确认按钮底色（配 on-destructive 文字 5.78:1）
+  on-destructive: "#f2f2f2"   # 危险实心按钮专用文字，避免随浅色 ink 变深
+  overlay: "rgba(16,16,16,0.65)" # 深色浮层遮罩，保留背景页面轮廓
   chart-series-1: "#199e70"   # 下行（已用 dataviz 校验器在 #101010 上验证）
   chart-series-2: "#3987e5"   # 上行
   chart-grid: "#262626"
   chart-axis: "#3d3a39"
+
+# 浅色主题覆盖以下语义颜色，组件继续使用同名令牌；未设置外观时默认深色。
+light-colors:
+  # 白色画布搭配低饱和灰绿输入区；三级文字在悬停/选中底色上仍至少 4.5:1。
+  canvas: "#ffffff"
+  canvas-soft: "#f5f7f6"
+  canvas-text-soft: "#1c2923"
+  ink: "#1c2923"
+  ink-strong: "#101c16"
+  body: "#405047"
+  mute: "#5c6b62"
+  # 浅色强调绿加深以保证对比；实心主按钮必须使用白色 on-primary 文字。
+  primary: "#087653"
+  primary-soft: "#087653"
+  primary-deep: "#096c50"
+  on-primary: "#ffffff"
+  # 装饰线不承担控件识别；控件边界在全部交互底色上至少 3:1。
+  hairline: "#d4ddd7"
+  border-control: "#7c8880"
+  hairline-subtle: "#e5ebe7"
+  surface-hover: "#edf2ef"
+  surface-selected: "#e5f3ec"
+  # 状态底色仅辅助识别，始终保留图标和中文文字；文字均至少 4.5:1。
+  status-good: "#08734f"
+  status-good-bg: "#e5f3eb"
+  status-warning: "#805b08"
+  status-warning-bg: "#fff4d6"
+  status-serious: "#a04720"
+  status-serious-bg: "#fff0e8"
+  status-critical: "#c03636"
+  status-critical-text: "#b52d2d"
+  status-critical-bg: "#fff0f0"
+  status-neutral: "#5c6b62"
+  # 危险按钮使用专用白字，不复用浅色 ink，防止深字配红底。
+  destructive-solid: "#b91c1c"
+  on-destructive: "#ffffff"
+  # 图表序列在白色/浅灰画布上至少 3:1；轴线与网格仅作装饰。
+  chart-series-1: "#137e59"
+  chart-series-2: "#286bc4"
+  chart-grid: "#e5ebe7"
+  chart-axis: "#d4ddd7"
+  # 减轻浅色浮层的遮罩和阴影，保持前景清晰、背景页面仍可辨认。
+  overlay: "rgba(23, 38, 31, 0.3)"
 
 typography:
   fontSans: '"Inter Variable", Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif'
@@ -87,14 +132,14 @@ elevation:
 
 本规范继承工作区 `DESIGN.md`（Voltagent 风格），用于一个**中文、数据密集、长时间使用**的转发运维控制台。
 
-- **原样继承：** 品牌色值；近黑单一画布；细线即层级（卡片不用阴影）；单一电光绿强调色；Inter 与等宽字体的搭配；6px 按钮和 8px 卡片圆角；状态标签使用胶囊形状。
+- **原样继承：** 品牌色值；深色下的近黑单一画布；细线即层级（卡片不用阴影）；单一电光绿强调色；Inter 与等宽字体的搭配；6px 按钮和 8px 卡片圆角；状态标签使用胶囊形状。
 - **针对控制台调整：** 字号整体下移一档（正文 14px，页面标题 24px）。营销站的 60px 主标题、48px 分区留白、大号眉标签都不使用。
 - **本项目扩展：**
   - 状态色（工作区规范说明语义色“保留给产品内场景”，这里补齐）；
   - 经过 dataviz 校验器验证的图表色；
   - 满足 3:1 非文本对比度的控件边框；
   - 表格、表单、抽屉、移动端卡片列表等后台组件规范。
-- **只有暗色主题**（决策 D1）。不提供浅色主题，也不提供主题切换按钮。所有令牌按语义命名，以后需要时可以补一套浅色值，组件不需要改动。
+- **支持深色、浅色和跟随系统**（替代原决策 D1）。保留深色为默认；顶栏及登录页提供外观切换，偏好只保存于当前浏览器 `pref_theme`。浅色使用白色画布与深绿色强调色，所有组件共享语义令牌。系统变化和同源其他标签页的偏好变化即时同步。
 
 ## 2. 颜色使用规则
 
@@ -147,7 +192,14 @@ elevation:
 - 高 22px，水平内边距 8px，`rounded.pill`；
 - 背景用 `status-*-bg`，可选 1px 边框（状态色 30% 透明度）；
 - 圆点 6px，用状态色；
-- 文字用 `caption-strong`。good、warning、serious 的文字可以用状态色本身（对比度均 ≥ 6:1）；critical 的文字用 `status-critical-text`。
+- 文字用 `caption-strong`。good、warning、serious 的文字可以用状态色本身（两种主题对比度均 ≥ 4.5:1）；critical 的文字用 `status-critical-text`。
+
+### 2.4 双主题与对比度
+
+- 上方 `colors` 定义默认深色，`light-colors` 定义浅色覆盖；`on-primary` 在深色为近黑字、浅色为白字，不允许在组件中写死文字颜色。
+- 危险实心按钮统一使用 `on-destructive`；阴影随主题切换。浅色 `level-2` 为 `0 2px 12px rgba(23,38,31,0.08)`，`level-3` 为 `0 20px 60px rgba(23,38,31,0.18), 0 0 0 1px rgba(23,38,31,0.04) inset`，`popover` 为 `0 8px 24px rgba(23,38,31,0.12)`。
+- 新增浅色组合经 WCAG 相对亮度计算：最弱文字 `mute / surface-selected` 为 **4.92:1**，控件边界 `border-control / surface-selected` 为 **3.23:1**，状态文字与各自背景至少 **5.13:1**（critical 使用 critical-text）。图表序列与基础画布至少 **4.5:1**。`test/design-tokens.test.mjs` 同时验证两套主题。
+- 外观不会修改服务器配置或账号权限；无效值回退深色。禁用浏览器存储时允许本页切换，刷新后不保证保留。初始化脚本在首屏前执行，使用同源内容哈希资源兼容严格 CSP，无内联脚本。
 
 ## 3. 字体
 
@@ -190,6 +242,7 @@ elevation:
   - 页面标题（`section-title`），在嵌套页面上改为面包屑；
   - 搜索触发器（不是输入框，是一个按钮，点击打开命令面板）；
   - 系统状态胶囊（仅管理员可见）；
+  - 外观菜单（浅色、深色、跟随系统）；
   - 用户菜单（个人资料、偏好、退出登录）。
 - 普通用户的菜单只有：控制台、我的转发、账户。
 
@@ -220,7 +273,7 @@ elevation:
 
 | 组件 | 规格 |
 |---|---|
-| Button | 尺寸：sm 32px、md 36px、lg 40px（登录页）；圆角 `sm`；文字 `button`。主按钮：`primary` 底、`on-primary` 字，悬停时亮度 +4%。描边按钮：透明底、1px `hairline` 边框、`ink` 字，悬停背景 `surface-hover`。幽灵按钮：无边框，`body` 字，悬停 `surface-hover`。危险按钮：描边 `status-critical`、`status-critical-text` 字；确认对话框中的最终按钮用 `destructive-solid` 底、`ink` 字。加载中：左侧 14px 转圈，宽度不变，禁止重复点击。禁用：40% 透明度 |
+| Button | 尺寸：sm 32px、md 36px、lg 40px（登录页）；圆角 `sm`；文字 `button`。主按钮：`primary` 底、`on-primary` 字，悬停时亮度 +4%。描边按钮：透明底、1px `hairline` 边框、`ink` 字，悬停背景 `surface-hover`。幽灵按钮：无边框，`body` 字，悬停 `surface-hover`。危险按钮：描边 `status-critical`、`status-critical-text` 字；确认对话框中的最终按钮用 `destructive-solid` 底、`on-destructive` 字。加载中：左侧 14px 转圈，宽度不变，禁止重复点击。禁用：40% 透明度 |
 | Input / Select / Textarea | 高 36px；`canvas-soft` 底；1px `border-control` 边框；圆角 `sm`；文字 `body` 14px，颜色 `ink`；占位符 `mute`。聚焦：边框 `primary-soft`，外加 2px 焦点环（`primary-soft` 35% 透明度）。错误：边框 `status-critical`，下方显示 12px 的 `status-critical-text` 错误文字，并设置 `aria-invalid` 和 `aria-describedby`。前后缀（单位、复制按钮）放在框内 |
 | FormField | label（`caption-strong`，颜色 `body`）位于控件上方，必须通过 `htmlFor` 或 `aria-labelledby` 关联控件；必填项加 `*`（屏幕阅读器读作“必填”）；说明文字 12px `mute`；错误文字替换说明文字 |
 | Switch / Checkbox / Radio | 关闭时边框为 `border-control`；开启时为 `primary` 底、`on-primary` 勾或滑块；点击区域 ≥ 32px |
@@ -239,7 +292,7 @@ elevation:
 | EmptyState | 居中显示 20px 图标（`mute`）、一句话标题（`body-strong`）、一句话说明，以及一个下一步操作按钮（例如“新建转发”）。筛选结果为空时，显示“没有匹配的结果”和“清除筛选”按钮 |
 | ErrorState | 在区域内显示（不用 toast）：`status-critical-bg` 底，左侧图标，加中文错误和“重试”按钮 |
 | Skeleton | `hairline-subtle` 底色加 1.2 秒的微弱呼吸动画（`prefers-reduced-motion` 时为静态） |
-| CommandPalette（⌘K） | 用 cmdk 实现，居中显示，宽 560px，阴影 `level-3`。结果按类型分组（节点、隧道、转发、用户、页面），支持方向键选择、回车打开。选中后跳转到对应页面，并用 URL 参数定位到该条目（高亮 2 秒） |
+| CommandPalette（⌘K） | 用 cmdk 实现，居中显示，宽 640px、高不超过 680px，移动端全屏，阴影 `level-3`。头部说明搜索范围，输入区用整行底部焦点线，关闭按钮独立于输入框。提供全部、节点、隧道、转发、用户、页面与操作分类；全部视图每类预览 3 条并提供查看全部，分类最多 100 条且提示缩小关键词。结果分组显示总数，选中行使用 `surface-selected` 与 `primary` 左边线，底部固定结果计数和键盘提示。支持方向键循环选择、回车打开、清空、错误重试。选中后跳转到对应页面，并用 URL 参数定位到该条目（高亮 2 秒） |
 
 ## 6. 数据可视化
 
