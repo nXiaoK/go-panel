@@ -358,34 +358,66 @@ func lockTunnelSagaSnapshot(id int64) (model.Tunnel, func(), error) {
 	}
 }
 
-// UserTunnelList 当前用户可用隧道（创建转发时选择）
+// UserTunnelList 当前用户已授权的启用隧道；不可用授权仍展示原因，便于创建转发时选择。
 func UserTunnelList(userID int64, roleID int) result.R {
 	var tunnels []model.Tunnel
+	var user model.User
+	grants := make(map[int64]*model.UserTunnel)
 	if roleID == adminRoleID {
-		model.DB.Where("status = 1").Find(&tunnels)
+		if err := model.DB.Where("status = 1").Find(&tunnels).Error; err != nil {
+			return result.Err("隧道列表查询失败")
+		}
 	} else {
+		if err := model.DB.First(&user, userID).Error; err != nil {
+			return result.Err("用户不存在")
+		}
 		var uts []model.UserTunnel
-		model.DB.Where("user_id = ?", userID).Find(&uts)
+		if err := model.DB.Where("user_id = ?", userID).Find(&uts).Error; err != nil {
+			return result.Err("隧道权限查询失败")
+		}
 		if len(uts) == 0 {
 			return result.Ok([]dto.TunnelListItem{})
 		}
 		ids := make([]int64, 0, len(uts))
-		for _, ut := range uts {
-			ids = append(ids, ut.TunnelID)
+		for i := range uts {
+			ids = append(ids, uts[i].TunnelID)
+			grants[uts[i].TunnelID] = &uts[i]
 		}
-		model.DB.Where("id IN ? AND status = 1", ids).Find(&tunnels)
+		if err := model.DB.Where("id IN ? AND status = 1", ids).Find(&tunnels).Error; err != nil {
+			return result.Err("隧道列表查询失败")
+		}
 	}
 
-	items := make([]dto.TunnelListItem, 0, len(tunnels))
-	for _, t := range tunnels {
-		item := dto.TunnelListItem{
-			ID: t.ID, Name: t.Name, IP: t.InIP,
-			Type: t.Type, Protocol: t.Protocol,
+	// 批量仅读入口的端口范围和转发模式，避免逐隧道查询及向普通用户暴露节点详情。
+	nodeIDs := make([]int64, 0, len(tunnels))
+	for _, tunnel := range tunnels {
+		nodeIDs = append(nodeIDs, tunnel.InNodeID)
+	}
+	var nodes []model.Node
+	if len(nodeIDs) > 0 {
+		if err := model.DB.Select("id", "port_sta", "port_end", "forward_mode").Where("id IN ?", nodeIDs).Find(&nodes).Error; err != nil {
+			return result.Err("入口能力查询失败")
 		}
-		var inNode model.Node
-		if err := model.DB.First(&inNode, t.InNodeID).Error; err == nil {
-			item.InNodePortSta = &inNode.PortSta
-			item.InNodePortEnd = &inNode.PortEnd
+	}
+	nodeMap := make(map[int64]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+	now := time.Now().UnixMilli()
+	items := make([]dto.TunnelListItem, 0, len(tunnels))
+	for _, tunnel := range tunnels {
+		item := dto.TunnelListItem{
+			ID: tunnel.ID, Name: tunnel.Name, IP: tunnel.InIP, Type: tunnel.Type, Protocol: tunnel.Protocol,
+			HasRelay: tunnelRelayNodeID(&tunnel) > 0, Available: true,
+		}
+		if roleID != adminRoleID {
+			item.UnavailableReason = userTunnelUnavailableReason(&user, grants[tunnel.ID], now)
+			item.Available = item.UnavailableReason == ""
+		}
+		if node := nodeMap[tunnel.InNodeID]; node != nil {
+			item.InNodePortSta = &node.PortSta
+			item.InNodePortEnd = &node.PortEnd
+			item.InNodeForwardMode = normalizeForwardMode(node.ForwardMode)
 		}
 		items = append(items, item)
 	}

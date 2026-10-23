@@ -1,11 +1,12 @@
-import type { ForwardExitMember, ForwardExitMode, Tunnel } from "@/lib/types";
+import type { ForwardExitMember, ForwardExitMode, ForwardTunnelOption, Tunnel } from "@/lib/types";
 
-export function isTunnelForward(tunnel?: Tunnel | null) {
+export function isTunnelForward(tunnel?: Pick<Tunnel, "type"> | null) {
   return tunnel?.type === 2;
 }
 
-export function defaultExitMembers(tunnel?: Tunnel | null): ForwardExitMember[] {
-  const outNodeId = tunnel?.outNodeId || tunnel?.exitNodeId;
+export function defaultExitMembers(tunnel?: ForwardTunnelOption | null): ForwardExitMember[] {
+  const outNodeId =
+    tunnel && "inNodeId" in tunnel ? tunnel.outNodeId || tunnel.exitNodeId : undefined;
   return outNodeId ? [{ outNodeId, active: true, weight: 1 }] : [];
 }
 
@@ -25,7 +26,7 @@ export function ensureOneActive(members: ForwardExitMember[]) {
 export function normalizeExitMembersForMode(
   mode: ForwardExitMode,
   members: ForwardExitMember[],
-  tunnel?: Tunnel | null,
+  tunnel?: ForwardTunnelOption | null,
 ) {
   const selected = members.filter((m) => !!m.outNodeId);
   const base = selected.length ? selected : defaultExitMembers(tunnel);

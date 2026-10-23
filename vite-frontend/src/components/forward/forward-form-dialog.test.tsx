@@ -1,0 +1,145 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+import { createForward, updateForward } from "@/lib/api";
+import type { Forward, Tunnel, UserTunnelOption } from "@/lib/types";
+import { ForwardFormDialog } from "./forward-form-dialog";
+
+vi.mock("@/lib/api", () => ({ createForward: vi.fn(), updateForward: vi.fn() }));
+vi.mock("@/components/ui/select", () => ({
+  Select: ({
+    value,
+    onValueChange,
+    children,
+    disabled,
+  }: {
+    value: string;
+    onValueChange: (value: string) => void;
+    children: ReactNode;
+    disabled?: boolean;
+  }) => (
+    <select
+      value={value}
+      onChange={(event) => onValueChange(event.target.value)}
+      disabled={disabled}
+    >
+      {children}
+    </select>
+  ),
+  SelectTrigger: () => null,
+  SelectValue: () => null,
+  SelectContent: ({ children }: { children: ReactNode }) => <>{children}</>,
+  SelectItem: ({
+    value,
+    disabled,
+    children,
+  }: {
+    value: string;
+    disabled?: boolean;
+    children: ReactNode;
+  }) => (
+    <option value={value} disabled={disabled}>
+      {children}
+    </option>
+  ),
+}));
+vi.mock("./exit-member-picker", () => ({ ExitMemberPicker: () => <div>出口成员选择</div> }));
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+const option: UserTunnelOption = {
+  id: 3,
+  name: "可用隧道",
+  type: 2,
+  inIp: "entry.example.com",
+  inNodePortSta: 10000,
+  inNodePortEnd: 20000,
+  hasRelay: false,
+  inNodeForwardMode: "gost",
+  available: true,
+};
+const editing: Forward = {
+  id: 8,
+  name: "web",
+  tunnelId: 3,
+  inPort: 12345,
+  remoteAddr: "example.com:443",
+  status: 1,
+  exitMode: "balance",
+  exitStrategy: "round",
+  exitMembers: [
+    { outNodeId: 4, active: true },
+    { outNodeId: 5, active: true },
+  ],
+};
+function form(
+  mode: "admin" | "user",
+  current: Forward | null = null,
+  tunnels: (Tunnel | UserTunnelOption)[] = [option],
+) {
+  render(
+    <ForwardFormDialog
+      mode={mode}
+      open
+      onOpenChange={vi.fn()}
+      editing={current}
+      tunnels={tunnels}
+      nodes={[]}
+      onSaved={vi.fn()}
+    />,
+  );
+}
+describe("regular-user forward form", () => {
+  it("disables unusable grants, shows reasons and creates with the tunnel default exit", async () => {
+    vi.mocked(createForward).mockResolvedValue({ code: 0, msg: "", data: null });
+    form("user", null, [
+      option,
+      {
+        ...option,
+        id: 4,
+        name: "已到期隧道",
+        available: false,
+        unavailableReason: "该隧道权限已到期",
+      },
+    ]);
+    expect(screen.queryByText("出口成员选择")).toBeNull();
+    expect(screen.queryByText("出口模式")).toBeNull();
+    expect(screen.getByRole("option", { name: /已到期隧道/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/该隧道权限已到期/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "new web" } });
+    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "3" } });
+    expect(screen.getByText("可用端口 10000–20000，留空自动分配")).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText(/10.211.55.5/), {
+      target: { value: "example.com:443" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(createForward).toHaveBeenCalledOnce());
+    expect(vi.mocked(createForward).mock.calls[0][0]).toMatchObject({
+      exitMode: "single",
+      exitMembers: [],
+      tunnelId: 3,
+    });
+  });
+  it("omits all exit configuration when editing an administrator-configured forward", async () => {
+    vi.mocked(updateForward).mockResolvedValue({ code: 0, msg: "", data: null });
+    form("user", editing);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(updateForward).toHaveBeenCalledOnce());
+    const payload = vi.mocked(updateForward).mock.calls[0][0];
+    for (const key of ["exitMode", "exitStrategy", "exitMembers"])
+      expect(Object.hasOwn(payload, key)).toBe(false);
+  });
+  it("retains administrator exit controls and payload", async () => {
+    vi.mocked(updateForward).mockResolvedValue({ code: 0, msg: "", data: null });
+    form("admin", editing, [{ id: 3, name: "admin tunnel", type: 2, inNodeId: 1, outNodeId: 4 }]);
+    expect(screen.getByText("出口成员选择")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(updateForward).toHaveBeenCalledOnce());
+    expect(vi.mocked(updateForward).mock.calls[0][0]).toMatchObject({
+      exitMode: "balance",
+      exitStrategy: "round",
+      exitMembers: editing.exitMembers,
+    });
+  });
+});

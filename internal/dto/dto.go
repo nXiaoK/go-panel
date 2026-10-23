@@ -524,4 +524,13 @@ type TunnelListItem struct {
 	InNodePortEnd *int    `json:"inNodePortEnd"`
 	Type          int     `json:"type"`
 	Protocol      *string `json:"protocol"`
+	// 仅公开表单所需的链路能力，不返回节点标识、地址或凭据。
+	// HasRelay 表示配置了中继；为 true 时不允许多目标自动负载。
+	HasRelay bool `json:"hasRelay"`
+	// InNodeForwardMode 为 gost 或 nftables，用于提示入口协议限制。
+	InNodeForwardMode string `json:"inNodeForwardMode"`
+	// Available 仅判断授权、账号有效期与流量，不包含提交时校验的数量配额。
+	Available bool `json:"available"`
+	// UnavailableReason 在不可用时给出中文原因，可用时省略。
+	UnavailableReason string `json:"unavailableReason,omitempty"`
 }

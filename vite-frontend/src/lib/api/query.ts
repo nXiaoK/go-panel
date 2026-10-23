@@ -25,6 +25,7 @@ export const queries = {
     all: ["tunnel"] as const,
     list: () => ["tunnel", "list"] as const,
     byId: (id: number) => ["tunnel", "byId", { id }] as const,
+    userOptions: () => ["tunnel", "userOptions"] as const,
     userList: (params: Record<string, unknown>) => ["tunnel", "userList", params] as const,
   },
   forward: {

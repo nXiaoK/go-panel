@@ -154,6 +154,27 @@ export interface Tunnel {
   createdTime?: string;
 }
 
+// 普通用户选项仅包含授权与表单能力，不包含节点标识、出口地址或凭据。
+export interface TunnelListItem {
+  id: number;
+  name: string;
+  type: number;
+  ip: string;
+  protocol?: string | null;
+  inNodePortSta: number | null;
+  inNodePortEnd: number | null;
+  hasRelay: boolean;
+  inNodeForwardMode: string;
+  available: boolean;
+  unavailableReason?: string;
+}
+
+export interface UserTunnelOption extends Omit<TunnelListItem, "ip" | "protocol"> {
+  inIp: string;
+}
+
+export type ForwardTunnelOption = Tunnel | UserTunnelOption;
+
 export interface TunnelForm {
   id?: number;
   name: string;
@@ -252,6 +273,7 @@ export interface Forward {
   tunnelId: number;
   tunnelName?: string;
   name: string;
+  inIp?: string | null;
   inPort: number;
   outPort?: number | null;
   remoteAddr: string;
