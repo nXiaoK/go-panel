@@ -1,8 +1,17 @@
-import { PageHeader, QueryErrorNotice } from "@/components/page";
+import { PageHeader } from "@/components/patterns/page-header";
+import { EmptyState, ErrorState, LoadingRows } from "@/components/patterns/feedback";
+import { FormField } from "@/components/patterns/form-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -10,445 +19,636 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/hooks/use-confirm";
+import { deleteConfig, downloadSiteBackup, restoreSiteBackup, updateConfigs } from "@/lib/api";
+import { errorMessage } from "@/lib/api/client";
+import { formatBytes, formatDateTime } from "@/lib/format";
+import { notify } from "@/lib/notify";
+import { clearSession } from "@/lib/session";
+import { setCachedAppName } from "@/lib/site-config";
+import { useQueryClient } from "@tanstack/react-query";
+import { useBlocker, useNavigate, useSearch } from "@tanstack/react-router";
+import { AlertTriangle, Download, Plus, RefreshCcw, Save, Trash2, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   allowInsecureNodeDownloadsEnvOverrideName,
   configItemsToMap,
+  customConfigNameError,
+  isProtectedConfigName,
   keyConfigMeta,
   keyConfigNames,
   normalizeConfigItems,
   readOnlyConfigNames,
   resolveInsecureDownloadNoticeState,
-  shouldShowKeyConfig,
-  type ConfigKV,
+  restoreFileError,
+  type ConfigTab,
   type KeyConfigMeta,
-} from "@/features/config/model";
-import { R2BackupCard } from "@/features/system/components/r2-backup-card";
-import { useConfirm, usePrompt } from "@/hooks/use-confirm";
-import { downloadSiteBackup, restoreSiteBackup, updateConfigs } from "@/lib/api";
-import { errorMessage } from "@/lib/api/client";
-import { notify } from "@/lib/notify";
-import { resourceKeys as queries } from "@/lib/query-keys";
-import { setCachedAppName } from "@/lib/site-config";
-import { useQueryClient } from "@tanstack/react-query";
-import {
-  Download,
-  Globe2,
-  Plus,
-  RefreshCcw,
-  Save,
-  SlidersHorizontal,
-  Trash2,
-  Upload,
-} from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useConfigMutation, useConfigs } from "./queries";
+} from "./model";
+import { configKeys, useConfigMutation, useConfigs } from "./queries";
+import { R2BackupCard } from "./components/r2-backup-card";
+
+type RestoreSummary = Awaited<ReturnType<typeof restoreSiteBackup>>;
+const tabLabels: { value: ConfigTab; label: string }[] = [
+  { value: "site", label: "站点" },
+  { value: "security", label: "节点与安全" },
+  { value: "backup", label: "备份与恢复" },
+  { value: "r2", label: "云端备份 R2" },
+  { value: "advanced", label: "高级" },
+];
 
 export function ConfigPage() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
-  const prompt = usePrompt();
-  const [draftItems, setDraftItems] = useState<ConfigKV[]>([]);
-  const [dirty, setDirty] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState<"backup" | "restore" | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-
+  const navigate = useNavigate();
+  const tab = useSearch({ strict: false, select: (search) => search.tab }) as ConfigTab | undefined;
   const configsQuery = useConfigs();
-
-  // 草稿编辑区：每当服务端数据变化时同步一次，编辑不会回写到缓存。
-  const [syncedFrom, setSyncedFrom] = useState<ConfigKV[] | null>(null);
+  const [verticalTabs, setVerticalTabs] = useState(false);
   useEffect(() => {
-    if (configsQuery.data && configsQuery.data !== syncedFrom) {
-      setDraftItems(configsQuery.data);
-      setSyncedFrom(configsQuery.data);
-      setDirty({});
-    }
-  }, [configsQuery.data, syncedFrom]);
+    const media = window.matchMedia("(min-width: 1024px)");
+    const updateOrientation = () => setVerticalTabs(media.matches);
+    updateOrientation();
+    media.addEventListener("change", updateOrientation);
+    return () => media.removeEventListener("change", updateOrientation);
+  }, []);
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [addOpen, setAddOpen] = useState(false);
+  const [busy, setBusy] = useState<"backup" | "restore" | "restored" | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string>();
+  const [restoreError, setRestoreError] = useState("");
+  const [summary, setSummary] = useState<RestoreSummary | null>(null);
+  const [addressError, setAddressError] = useState<string>();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const restoredRef = useRef(false);
+  const signOutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (signOutTimer.current) clearTimeout(signOutTimer.current);
+    },
+    [],
+  );
 
-  const items = draftItems;
+  // 草稿仅保存与当前服务端值不同的键；跨标签共用，不因标签切换或后台重取而丢失。
   const persistedValues = useMemo(
     () => configItemsToMap(configsQuery.data ?? []),
     [configsQuery.data],
   );
-  const loading = configsQuery.isPending;
-  const values = useMemo(() => configItemsToMap(items), [items]);
-  const advancedItems = useMemo(
+  const dirty = useMemo(
     () =>
-      items.filter(
-        (item) => !keyConfigNames.includes(item.name) && !readOnlyConfigNames.includes(item.name),
+      Object.fromEntries(
+        Object.entries(edits).filter(
+          ([name, value]) => !(name in persistedValues) || value !== persistedValues[name],
+        ),
       ),
-    [items],
+    [edits, persistedValues],
   );
-  const suggestedPanelAddress =
-    typeof window === "undefined"
-      ? ""
-      : `${window.location.hostname}:${window.location.port || (window.location.protocol === "https:" ? "443" : "80")}`;
+  const dirtyCount = Object.keys(dirty).length;
+  const values = { ...persistedValues, ...dirty };
+  const advancedItems = Object.entries(values).filter(
+    ([name]) => !keyConfigNames.includes(name) && !readOnlyConfigNames.includes(name),
+  );
 
   const saveMutation = useConfigMutation("config.update", {
     mutationFn: (payload: Record<string, string>) => updateConfigs(payload),
     onSuccess: (_data, payload) => {
+      queryClient.setQueryData(
+        configKeys.list(),
+        normalizeConfigItems({ ...persistedValues, ...payload }),
+      );
       if (payload.app_name !== undefined) setCachedAppName(payload.app_name);
-      notify.success("已保存");
-      setDirty({});
+      setEdits({});
+      notify.success("系统配置已保存");
     },
-    onError: (error: Error) => notify.error(error.message || "保存失败"),
+    onError: (error) => notify.error(error.message || "保存失败"),
   });
-  const saving = saveMutation.isPending;
+  const deleteMutation = useConfigMutation("config.update", {
+    mutationFn: (name: string) => deleteConfig(name),
+    onSuccess: (_data, name) => {
+      queryClient.setQueryData(configKeys.list(), (current: typeof configsQuery.data) =>
+        current?.filter((item) => item.name !== name),
+      );
+      setEdits((current) =>
+        Object.fromEntries(Object.entries(current).filter(([key]) => key !== name)),
+      );
+      notify.success("配置项已删除");
+    },
+    onError: (error) => notify.error(error.message || "删除失败"),
+  });
+  const restoring = busy === "restore" || busy === "restored";
+  const controlsDisabled =
+    configsQuery.isPending ||
+    Boolean(configsQuery.error) ||
+    saveMutation.isPending ||
+    deleteMutation.isPending ||
+    restoring;
+  useBlocker({
+    disabled: dirtyCount === 0 && !restoring,
+    enableBeforeUnload: dirtyCount > 0 || restoring,
+    shouldBlockFn: async ({ current, next }) => {
+      if (restoredRef.current) return false;
+      if (restoring) {
+        notify.info("恢复过程中请保持页面打开，完成后会自动退出登录");
+        return true;
+      }
+      if (current.pathname === next.pathname || dirtyCount === 0) return false;
+      return !(await confirm({
+        title: "放弃未保存的修改？",
+        description: `还有 ${dirtyCount} 项系统配置尚未保存，离开将丢失这些修改`,
+        confirmText: "放弃修改并离开",
+        tone: "danger",
+      }));
+    },
+  });
 
-  const reload = () => {
-    void queryClient.invalidateQueries({ queryKey: queries.config.list() });
+  const setValue = (name: string, value: string) => {
+    setEdits((current) => ({ ...current, [name]: value }));
+    if (name === "ip") setAddressError(undefined);
   };
-
-  const applyValues = (updates: Record<string, string>) => {
-    setDraftItems((current) => {
-      const next = new Map(current.map((item) => [item.name, item.value]));
-      Object.entries(updates).forEach(([name, value]) => next.set(name, value));
-      return normalizeConfigItems(Object.fromEntries(next));
-    });
-    setDirty((d) => ({ ...d, ...updates }));
-  };
-
-  const setValue = (name: string, value: string) => applyValues({ [name]: value });
-
-  const addKey = async () => {
-    const name = await prompt({
-      title: "新增配置项",
-      description: "填写配置项名称，随后编辑值并保存。",
-      inputLabel: "配置项名称",
-      confirmText: "添加配置项",
-    });
-    if (!name?.trim()) return;
-    const cleanName = name.trim();
-    if (items.some((it) => it.name === cleanName)) return notify.error("名称已存在");
-    applyValues({ [cleanName]: "" });
-  };
-  const remove = (name: string) => {
-    // 仅从本地列表移除，避免向后端提交空字符串误改配置。
-    // 如需真正删除，请由后端提供 delete 接口后接入。
-    setDraftItems((s) => s.filter((it) => it.name !== name));
-    setDirty((d) => {
-      const n = { ...d };
-      delete n[name];
-      return n;
-    });
-    notify.info("已从列表移除（后端未提供删除接口，保存不会同步）");
-  };
-
-  const normalizeForSave = (payload: Record<string, string>) => {
-    const next = { ...payload };
-    if (next.ip !== undefined) next.ip = next.ip.trim().replace(/\/+$/, "");
-    // GitHub 代理默认留空；非空值去掉末尾斜杠，后端仍会执行 HTTPS 与路径安全校验。
-    if (next.github_download_proxy !== undefined) {
-      next.github_download_proxy = next.github_download_proxy.trim().replace(/\/+$/, "");
-    }
-    return next;
-  };
-
-  const save = async () => {
-    if (Object.keys(dirty).length === 0) return notify.info("没有需要保存的更改");
-    const payload = normalizeForSave(dirty);
+  const suggestedPanelAddress =
+    typeof window === "undefined"
+      ? ""
+      : `${window.location.hostname}:${window.location.port || (window.location.protocol === "https:" ? "443" : "80")}`;
+  const save = () => {
+    const payload = { ...dirty };
+    // 地址与可信 HTTPS 下载代理去除首尾空白和末尾斜杠，最终安全校验仍由后端负责。
+    if (payload.ip !== undefined) payload.ip = payload.ip.trim().replace(/\/+$/, "");
+    if (payload.github_download_proxy !== undefined)
+      payload.github_download_proxy = payload.github_download_proxy.trim().replace(/\/+$/, "");
     if (payload.ip !== undefined && !isPanelAddressLike(payload.ip)) {
-      notify.error("面板公网地址格式不正确，请填写 host:port 或 http(s)://host:port");
+      setAddressError("面板公网地址格式不正确，请填写 host:port 或 http(s)://host:port");
+      void navigate({ to: "/config", search: { tab: "site" } });
+      requestAnimationFrame(() => document.getElementById("site-config-ip")?.focus());
       return;
     }
-    saveMutation.mutate(payload);
+    if (dirtyCount) saveMutation.mutate(payload);
   };
-
+  const remove = async (name: string) => {
+    if (isProtectedConfigName(name) || controlsDisabled) return;
+    if (
+      await confirm({
+        title: "删除配置项",
+        description: `删除「${name}」会立即从服务器移除此配置，使用它的功能将回到默认行为，请确认影响后继续`,
+        confirmText: "删除配置项",
+        tone: "danger",
+        requireText: name,
+      })
+    )
+      deleteMutation.mutate(name);
+  };
   const backup = async () => {
     setBusy("backup");
     try {
       const { blob, filename } = await downloadSiteBackup();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename || "backup.db";
-      a.click();
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename || "backup.db";
+      anchor.click();
       URL.revokeObjectURL(url);
       notify.success("备份已下载");
-    } catch (e) {
-      notify.error(errorMessage(e));
+    } catch (error) {
+      notify.error(errorMessage(error));
     } finally {
       setBusy(null);
     }
   };
-
-  const restore = async (file: File) => {
+  const restore = async () => {
+    if (!selectedFile || busy !== null) return;
+    const invalid = restoreFileError(selectedFile);
+    if (invalid) {
+      setFileError(invalid);
+      return;
+    }
     if (
       !(await confirm({
         title: "恢复站点备份",
-        description: `使用「${file.name}」恢复将覆盖当前站点数据，无法撤销。请先备份当前数据。`,
+        description: `使用「${selectedFile.name}」恢复将覆盖当前数据库和节点配置，无法撤销。建议先下载一份当前备份；确认后请保持页面打开，恢复过程不可取消`,
         confirmText: "恢复备份",
         tone: "danger",
-        requireText: file.name,
+        requireText: "恢复",
       }))
     )
       return;
     setBusy("restore");
+    setRestoreError("");
     try {
-      await restoreSiteBackup(file);
-      notify.success("已恢复，稍后请重新登录");
+      const result = await restoreSiteBackup(selectedFile);
+      setSummary(result);
+      setBusy("restored");
+      setEdits({});
+      // 恢复可能改变账户和令牌版本；展示真实摘要后等待 3 秒，清理旧身份并重新登录。
+      signOutTimer.current = setTimeout(() => {
+        restoredRef.current = true;
+        clearSession("restored");
+        void navigate({ to: "/login", search: { reason: "restored" }, ignoreBlocker: true });
+      }, 3000);
     } catch (error) {
-      notify.error(error instanceof Error ? error.message : "恢复失败");
-    } finally {
+      setRestoreError(errorMessage(error));
       setBusy(null);
     }
   };
-
-  const dirtyCount = Object.keys(dirty).length;
-  const insecureDownloadNoticeState = resolveInsecureDownloadNoticeState(
-    persistedValues.allow_insecure_node_downloads ?? "false",
-    values.allow_insecure_node_downloads ?? "false",
-    persistedValues[allowInsecureNodeDownloadsEnvOverrideName] ?? "false",
+  const insecureNotice = insecureDownloadNotice(
+    persistedValues,
+    values,
     dirty.allow_insecure_node_downloads !== undefined,
   );
 
-  // 告警以已保存策略为准，并单独标出尚未保存的草稿，避免管理员误以为
-  // 拨动开关后策略已经改变；部署级环境覆盖始终拥有最高提示优先级。
-  let insecureDownloadNotice: { tone: "danger" | "warning"; text: string } | null = null;
-  if (insecureDownloadNoticeState === "environment_override") {
-    insecureDownloadNotice = {
-      tone: "danger",
-      text: "部署环境变量 ALLOW_INSECURE_NODE_DOWNLOADS=true 仍在生效，公网 HTTP 安装/升级继续被允许，页面开关无法单独关闭。要恢复强制 HTTPS，请确保下方开关已关闭，将环境变量改为 false 后重启面板。",
-    };
-  } else if (insecureDownloadNoticeState === "enabled") {
-    insecureDownloadNotice = {
-      tone: "danger",
-      text: "HTTP 节点安装/升级已开启。节点密钥和下载程序将通过明文链路传输，可能被监听或篡改；完成安装或迁移后请立即关闭。",
-    };
-  } else if (insecureDownloadNoticeState === "disable_pending") {
-    insecureDownloadNotice = {
-      tone: "danger",
-      text: "HTTP 节点安装/升级当前仍已开启。你已选择关闭，但更改尚未保存；保存成功后才会恢复强制 HTTPS。",
-    };
-  } else if (insecureDownloadNoticeState === "enable_pending") {
-    insecureDownloadNotice = {
-      tone: "warning",
-      text: "你已选择允许 HTTP 节点安装/升级，但更改尚未生效；保存后节点密钥和下载程序可能通过明文链路传输。",
-    };
-  }
-
   return (
-    <div className="space-y-6">
+    <div className={dirtyCount ? "space-y-6 pb-24" : "space-y-6"}>
       <PageHeader
-        icon={<SlidersHorizontal className="h-5 w-5" />}
         title="系统配置"
-        description="全局参数、gost 模板、站点备份与恢复"
+        description="管理站点、节点安全策略和备份"
         actions={
-          <>
-            <Button variant="outline" size="sm" onClick={reload} disabled={configsQuery.isFetching}>
-              <RefreshCcw className={`h-4 w-4 ${configsQuery.isFetching ? "animate-spin" : ""}`} />{" "}
-              刷新
-            </Button>
-            <Button size="sm" onClick={save} disabled={saving || dirtyCount === 0}>
-              <Save className="h-4 w-4" />{" "}
-              {saving ? "保存中…" : `保存${dirtyCount ? ` (${dirtyCount})` : ""}`}
-            </Button>
-          </>
+          <Button
+            variant="outline"
+            onClick={() => void configsQuery.refetch()}
+            disabled={controlsDisabled || dirtyCount > 0}
+            loading={configsQuery.isFetching}
+          >
+            <RefreshCcw aria-hidden="true" />
+            刷新配置
+          </Button>
         }
       />
-
-      <QueryErrorNotice error={configsQuery.error} onRetry={() => void configsQuery.refetch()} />
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Globe2 className="h-4 w-4 text-primary" />
-            <CardTitle className="text-base">站点配置</CardTitle>
-          </div>
-          <CardDescription>
-            节点安装、登录验证码和站点展示依赖这些配置。节点安装前至少需要设置面板公网地址。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {!values.ip && (
-            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
-              尚未设置面板公网地址，节点安装命令暂时无法生成。
-              {suggestedPanelAddress && (
-                <Button
-                  type="button"
-                  variant="link"
-                  className="ml-1 h-auto p-0 text-amber-700 underline dark:text-amber-300"
-                  onClick={() => setValue("ip", suggestedPanelAddress)}
-                >
-                  使用当前地址 {suggestedPanelAddress}
-                </Button>
-              )}
-            </div>
-          )}
-          {insecureDownloadNotice && (
-            <div
-              role="alert"
-              className={
-                insecureDownloadNotice.tone === "danger"
-                  ? "rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-status-critical-text"
-                  : "rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300"
-              }
+      {configsQuery.error && (
+        <ErrorState error={configsQuery.error} onRetry={() => void configsQuery.refetch()} />
+      )}
+      <Tabs
+        orientation={verticalTabs ? "vertical" : "horizontal"}
+        value={tab ?? "site"}
+        onValueChange={(value) =>
+          void navigate({ to: "/config", search: { tab: value as ConfigTab } })
+        }
+        className="min-w-0 lg:grid lg:grid-cols-[160px_minmax(0,1fr)] lg:items-start lg:gap-6"
+      >
+        <TabsList
+          aria-label="系统配置分区"
+          className="flex w-full justify-start gap-4 overflow-x-auto lg:flex-col lg:items-stretch lg:gap-1 lg:border-b-0 lg:border-r lg:pr-4"
+        >
+          {tabLabels.map((item) => (
+            <TabsTrigger
+              key={item.value}
+              value={item.value}
+              disabled={restoring}
+              className="shrink-0 lg:justify-start lg:border-b-0 lg:border-l-2 lg:px-3 lg:data-[state=active]:border-l-primary"
             >
-              {insecureDownloadNotice.text}
-            </div>
-          )}
-          <div className="grid gap-4 lg:grid-cols-2">
-            {keyConfigMeta
-              .filter((item) => shouldShowKeyConfig(item, values))
-              .map((item) => (
-                <SiteConfigControl
-                  key={item.name}
-                  meta={item}
-                  value={values[item.name] ?? ""}
-                  changed={dirty[item.name] !== undefined}
-                  onChange={(value) => setValue(item.name, value)}
-                />
-              ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <div>
-            <CardTitle className="text-base">高级配置项</CardTitle>
-            <CardDescription>额外键 / 值配置，支持多行内容（如 gost 模板）</CardDescription>
-          </div>
-          <Button variant="outline" size="sm" onClick={addKey}>
-            <Plus className="h-4 w-4" /> 新增
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {advancedItems.length === 0 && (
-            <div className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              {loading ? "加载中…" : "暂无额外配置项"}
-            </div>
-          )}
-          {advancedItems.map((it) => {
-            const isLong = it.value.length > 80 || it.value.includes("\n");
-            return (
-              <div
-                key={it.name}
-                className={`rounded-md border p-3 ${dirty[it.name] !== undefined ? "border-primary/40 bg-primary/5" : "border-border"}`}
+              {item.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <div className="min-w-0 pt-4 lg:pt-0">
+          <TabsContent value="site" className="mt-0 space-y-6">
+            <ConfigSection
+              title="站点"
+              description="节点安装前请先设置节点服务器可以访问的面板公网地址"
+            >
+              {configsQuery.isPending ? (
+                <LoadingRows rows={2} />
+              ) : (
+                <>
+                  {!values.ip && (
+                    <Notice tone="warning">
+                      尚未设置面板公网地址，节点安装命令暂时无法生成
+                      {suggestedPanelAddress && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 block"
+                          disabled={controlsDisabled}
+                          onClick={() => setValue("ip", suggestedPanelAddress)}
+                        >
+                          使用当前地址
+                        </Button>
+                      )}
+                    </Notice>
+                  )}
+                  {keyConfigMeta
+                    .filter((meta) => ["ip", "app_name"].includes(meta.name))
+                    .map((meta) => (
+                      <SiteConfigControl
+                        key={meta.name}
+                        meta={meta}
+                        value={values[meta.name] ?? ""}
+                        onChange={(value) => setValue(meta.name, value)}
+                        disabled={controlsDisabled}
+                        error={meta.name === "ip" ? addressError : undefined}
+                      />
+                    ))}
+                </>
+              )}
+            </ConfigSection>
+          </TabsContent>
+          <TabsContent value="security" className="mt-0">
+            <ConfigSection
+              title="节点与安全"
+              description="配置节点下载策略、可信代理与参考诊断目标"
+            >
+              {configsQuery.isPending ? (
+                <LoadingRows rows={3} />
+              ) : (
+                <>
+                  {insecureNotice && (
+                    <Notice tone={insecureNotice.tone}>{insecureNotice.text}</Notice>
+                  )}
+                  {keyConfigMeta
+                    .filter((meta) => !["ip", "app_name"].includes(meta.name))
+                    .map((meta) => (
+                      <SiteConfigControl
+                        key={meta.name}
+                        meta={meta}
+                        value={values[meta.name] ?? ""}
+                        onChange={(value) => setValue(meta.name, value)}
+                        disabled={controlsDisabled}
+                      />
+                    ))}
+                </>
+              )}
+            </ConfigSection>
+          </TabsContent>
+          <TabsContent value="backup" className="mt-0 space-y-6">
+            <ConfigSection
+              title="下载备份"
+              description="导出包含用户、节点密钥和面板配置的一致性 SQLite 快照，请安全保管"
+            >
+              <Button
+                variant="outline"
+                loading={busy === "backup"}
+                disabled={busy !== null}
+                onClick={() => void backup()}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor={`config-item-${it.name}`} className="font-mono text-xs">
-                    {it.name}
-                  </Label>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => remove(it.name)}
-                    className="h-7 w-7 text-muted-foreground hover:text-status-critical-text"
-                    aria-label={`移除配置项 ${it.name}`}
+                <Download aria-hidden="true" />
+                下载备份
+              </Button>
+            </ConfigSection>
+            <Card className="border-status-critical">
+              <CardHeader>
+                <CardTitle>从备份恢复</CardTitle>
+                <CardDescription>
+                  恢复将覆盖当前数据库与节点配置，建议先下载一份当前备份
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {summary ? (
+                  <div
+                    role="status"
+                    className="space-y-3 rounded-md border border-hairline bg-canvas-soft p-4 text-sm text-body"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                    <p className="text-body-strong text-ink">数据已恢复，3 秒后自动退出登录</p>
+                    <dl className="space-y-2">
+                      <div>
+                        <dt className="text-mute">恢复时间</dt>
+                        <dd className="font-mono">{formatDateTime(summary.restoredAt)}</dd>
+                      </div>
+                      {summary.preRestoreBackup && (
+                        <div>
+                          <dt className="text-mute">恢复前数据库备份</dt>
+                          <dd className="break-all font-mono">{summary.preRestoreBackup}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </div>
+                ) : (
+                  <>
+                    <FormField
+                      label="SQLite 备份文件"
+                      htmlFor="restore-file"
+                      hint="只支持本面板导出的 SQLite 备份，最大 256 MB"
+                      error={fileError}
+                    >
+                      <Input
+                        id="restore-file"
+                        ref={fileRef}
+                        type="file"
+                        accept=".db,.sqlite,.sqlite3"
+                        className="h-auto min-h-9 py-2 file:mr-3 file:text-body"
+                        disabled={busy !== null}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null;
+                          const error = file ? restoreFileError(file) : undefined;
+                          setFileError(error);
+                          setSelectedFile(error ? null : file);
+                          setRestoreError("");
+                          if (error) event.target.value = "";
+                        }}
+                      />
+                    </FormField>
+                    {selectedFile && (
+                      <p className="break-all text-caption text-body">
+                        <span className="font-mono">{selectedFile.name}</span> ·{" "}
+                        {formatBytes(selectedFile.size)}
+                      </p>
+                    )}
+                    {restoreError && <ErrorState error={restoreError} />}
+                    {busy === "restore" && (
+                      <div role="status" className="text-sm text-body">
+                        正在上传并恢复数据库，请保持页面打开，恢复过程不可取消
+                      </div>
+                    )}
+                    <Button
+                      variant="danger"
+                      loading={busy === "restore"}
+                      disabled={!selectedFile || busy !== null}
+                      onClick={() => void restore()}
+                    >
+                      <Upload aria-hidden="true" />
+                      恢复备份
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent
+            value="r2"
+            forceMount
+            className="mt-0 space-y-4 data-[state=inactive]:hidden"
+          >
+            <p className="text-sm text-mute">
+              R2 设置通过独立接口保存，使用下方“保存 R2 设置”，不计入页面底部的未保存修改数量
+            </p>
+            <R2BackupCard />
+          </TabsContent>
+          <TabsContent value="advanced" className="mt-0">
+            <Card>
+              <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+                <div className="space-y-1">
+                  <CardTitle>高级配置项</CardTitle>
+                  <CardDescription>仅展示后端返回的自定义配置，修改会在保存后生效</CardDescription>
                 </div>
-                {isLong ? (
-                  <Textarea
-                    id={`config-item-${it.name}`}
-                    rows={6}
-                    className="mt-2 font-mono text-xs"
-                    value={it.value}
-                    onChange={(e) => setValue(it.name, e.target.value)}
+                <Button
+                  variant="outline"
+                  disabled={controlsDisabled}
+                  onClick={() => setAddOpen(true)}
+                >
+                  <Plus aria-hidden="true" />
+                  新增配置项
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {configsQuery.isPending ? (
+                  <LoadingRows />
+                ) : advancedItems.length === 0 ? (
+                  <EmptyState
+                    title="暂无自定义配置项"
+                    description="仅在需要扩展功能时添加自定义键值"
                   />
                 ) : (
-                  <Input
-                    id={`config-item-${it.name}`}
-                    className="mt-2 font-mono text-xs"
-                    value={it.value}
-                    onChange={(e) => setValue(it.name, e.target.value)}
-                  />
+                  advancedItems.map(([name, value]) => (
+                    <div key={name} className="space-y-3 rounded-md border border-hairline p-4">
+                      <div className="flex min-w-0 items-center justify-between gap-3">
+                        <span className="min-w-0 break-all font-mono text-sm text-ink">{name}</span>
+                        {!isProtectedConfigName(name) && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            aria-label={`删除配置项 ${name}`}
+                            disabled={controlsDisabled}
+                            onClick={() => void remove(name)}
+                          >
+                            <Trash2 aria-hidden="true" className="text-status-critical-text" />
+                          </Button>
+                        )}
+                      </div>
+                      <FormField label={`${name} 的值`} htmlFor={`config-item-${name}`}>
+                        {value.length > 80 || value.includes("\n") ? (
+                          <Textarea
+                            id={`config-item-${name}`}
+                            rows={6}
+                            className="font-mono text-code"
+                            value={value}
+                            disabled={controlsDisabled}
+                            onChange={(event) => setValue(name, event.target.value)}
+                          />
+                        ) : (
+                          <Input
+                            id={`config-item-${name}`}
+                            className="font-mono text-code"
+                            value={value}
+                            disabled={controlsDisabled}
+                            onChange={(event) => setValue(name, event.target.value)}
+                          />
+                        )}
+                      </FormField>
+                    </div>
+                  ))
                 )}
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">站点备份</CardTitle>
-          <CardDescription>下载全站数据快照，或使用备份文件恢复</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-3">
-            <Button variant="outline" onClick={backup} disabled={busy === "backup"}>
-              <Download className="h-4 w-4" /> {busy === "backup" ? "打包中…" : "下载备份"}
-            </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".db,.sqlite,.sqlite3,.tar.gz,.gz,.zip,.tar,application/vnd.sqlite3,application/x-sqlite3"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void restore(f);
-                e.target.value = "";
-              }}
-            />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </div>
+      </Tabs>
+      {dirtyCount > 0 && (
+        <div
+          role="region"
+          aria-label="未保存的系统配置"
+          className="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border border-hairline bg-canvas-soft p-4"
+        >
+          <p role="status" className="text-sm text-ink">
+            {dirtyCount} 项未保存的修改
+          </p>
+          <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={() => fileRef.current?.click()}
-              disabled={busy === "restore"}
+              disabled={controlsDisabled}
+              onClick={() => {
+                setEdits({});
+                setAddressError(undefined);
+              }}
             >
-              <Upload className="h-4 w-4" /> {busy === "restore" ? "恢复中…" : "从备份恢复"}
+              放弃修改
+            </Button>
+            <Button loading={saveMutation.isPending} disabled={controlsDisabled} onClick={save}>
+              <Save aria-hidden="true" />
+              保存配置
             </Button>
           </div>
-          <Separator className="my-4" />
-          <p className="text-xs text-muted-foreground">
-            恢复操作会覆盖当前数据库与节点配置，建议先下载最新备份。
-          </p>
-        </CardContent>
-      </Card>
-
-      <R2BackupCard />
+        </div>
+      )}
+      <AddConfigDialog
+        key={String(addOpen)}
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        existing={Object.keys(values)}
+        onAdd={(name, value) => setValue(name, value)}
+      />
     </div>
   );
 }
 
+function ConfigSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">{children}</CardContent>
+    </Card>
+  );
+}
+function Notice({ tone, children }: { tone: "danger" | "warning"; children: React.ReactNode }) {
+  // 复用规范中已验证的语义文字/背景组合；危险边框与图标不承担正文信息。
+  return (
+    <div
+      role="alert"
+      className={`flex items-start gap-2 rounded-md border p-3 text-sm ${tone === "danger" ? "border-status-critical bg-status-critical-bg text-status-critical-text" : "border-status-warning bg-status-warning-bg text-status-warning"}`}
+    >
+      <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
 function SiteConfigControl({
   meta,
   value,
-  changed,
   onChange,
+  disabled,
+  error,
 }: {
   meta: KeyConfigMeta;
   value: string;
-  changed: boolean;
   onChange: (value: string) => void;
+  disabled: boolean;
+  error?: string;
 }) {
-  const controlID = `site-config-${meta.name}`;
+  const id = `site-config-${meta.name}`;
   return (
-    <div
-      className={`rounded-md border p-3 ${
-        changed ? "border-primary/40 bg-primary/5" : "border-border"
-      }`}
+    <FormField
+      label={meta.label}
+      htmlFor={id}
+      hint={meta.description}
+      error={error}
+      required={meta.name === "ip"}
     >
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div>
-          <Label htmlFor={controlID} className="text-sm font-medium">
-            {meta.label}
-          </Label>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{meta.description}</p>
-        </div>
-        {changed && (
-          <span className="rounded bg-primary/10 px-2 py-0.5 text-[11px] text-primary">已修改</span>
-        )}
-      </div>
       {meta.type === "switch" ? (
-        <div className="flex h-9 items-center">
-          <Switch
-            id={controlID}
-            checked={value === "true"}
-            onCheckedChange={(checked) => onChange(String(checked))}
-          />
-        </div>
+        <Switch
+          id={id}
+          checked={value === "true"}
+          disabled={disabled}
+          onCheckedChange={(checked) => onChange(String(checked))}
+        />
       ) : meta.type === "select" ? (
-        <Select value={value || meta.options?.[0]?.value || ""} onValueChange={onChange}>
-          <SelectTrigger id={controlID}>
+        <Select
+          value={value || meta.options?.[0]?.value || ""}
+          onValueChange={onChange}
+          disabled={disabled}
+        >
+          <SelectTrigger id={id}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {(meta.options ?? []).map((option) => (
+            {meta.options?.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>
@@ -457,25 +657,148 @@ function SiteConfigControl({
         </Select>
       ) : (
         <Input
-          id={controlID}
-          className="font-mono text-xs"
+          id={id}
           value={value}
           placeholder={meta.placeholder}
-          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          className={meta.name === "app_name" ? "" : "font-mono"}
+          onChange={(event) => onChange(event.target.value)}
         />
       )}
-    </div>
+    </FormField>
   );
 }
-
+function AddConfigDialog({
+  open,
+  onOpenChange,
+  existing,
+  onAdd,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  existing: string[];
+  onAdd: (name: string, value: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string>();
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const invalid = customConfigNameError(name, existing);
+    setError(invalid);
+    if (invalid) {
+      document.getElementById("new-config-name")?.focus();
+      return;
+    }
+    onAdd(name, value);
+    onOpenChange(false);
+  };
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (next) {
+          setName("");
+          setValue("");
+          setError(undefined);
+        }
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>新增配置项</DialogTitle>
+          <DialogDescription>填写自定义键值，添加后还需保存配置才会写入服务器</DialogDescription>
+        </DialogHeader>
+        <form id="new-config-form" className="space-y-4" onSubmit={submit}>
+          <FormField
+            label="键名"
+            htmlFor="new-config-name"
+            required
+            error={error}
+            hint="只允许小写字母、数字和下划线，不得使用系统内部键"
+          >
+            <Input
+              id="new-config-name"
+              autoFocus
+              className="font-mono"
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                setError(undefined);
+              }}
+            />
+          </FormField>
+          <FormField
+            label="值"
+            htmlFor="new-config-value"
+            hint="支持多行文本；配置用途由使用该键的功能决定"
+          >
+            <Textarea
+              id="new-config-value"
+              rows={6}
+              className="font-mono text-code"
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+            />
+          </FormField>
+        </form>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            取消
+          </Button>
+          <Button type="submit" form="new-config-form">
+            添加配置项
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 function isPanelAddressLike(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return true;
-  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
   try {
-    const url = new URL(candidate);
+    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`);
     return !!url.hostname && (!url.port || Number(url.port) <= 65535);
   } catch {
     return false;
+  }
+}
+function insecureDownloadNotice(
+  persisted: Record<string, string>,
+  values: Record<string, string>,
+  dirty: boolean,
+): { tone: "danger" | "warning"; text: string } | null {
+  // 必须使用服务端已保存值计算实际策略；环境变量覆盖最高，草稿开关不能提前声称生效。
+  const state = resolveInsecureDownloadNoticeState(
+    persisted.allow_insecure_node_downloads ?? "false",
+    values.allow_insecure_node_downloads ?? "false",
+    persisted[allowInsecureNodeDownloadsEnvOverrideName] ?? "false",
+    dirty,
+  );
+  switch (state) {
+    case "environment_override":
+      return {
+        tone: "danger",
+        text: "部署环境变量 ALLOW_INSECURE_NODE_DOWNLOADS=true 仍在生效，公网 HTTP 安装/升级继续被允许，页面开关无法单独关闭。要恢复强制 HTTPS，请确保开关已关闭，将环境变量改为 false 后重启面板",
+      };
+    case "enabled":
+      return {
+        tone: "danger",
+        text: "HTTP 节点安装/升级已开启。节点密钥和下载程序将通过明文链路传输，可能被监听或篡改；完成安装或迁移后请立即关闭",
+      };
+    case "disable_pending":
+      return {
+        tone: "danger",
+        text: "HTTP 节点安装/升级当前仍已开启。你已选择关闭，但更改尚未保存；保存成功后才会恢复强制 HTTPS",
+      };
+    case "enable_pending":
+      return {
+        tone: "warning",
+        text: "你已选择允许 HTTP 节点安装/升级，但更改尚未生效；保存后节点密钥和下载程序可能通过明文链路传输",
+      };
+    default:
+      return null;
   }
 }
