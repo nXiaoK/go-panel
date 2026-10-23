@@ -151,12 +151,13 @@ const Network = {
         });
     });
   },
-  download(path = ""): Promise<Blob> {
+  // 默认下载仍为 30 秒；仅已知大文件接口显式传入更长毫秒期限，避免全局慢请求占用。
+  download(path = "", timeout = 30000): Promise<Blob> {
     return new Promise((resolve, reject) => {
       http
         .get(path, {
           baseURL: computeBaseURL(),
-          timeout: 30000,
+          timeout,
           responseType: "blob",
           headers: baseHeaders(),
         })
@@ -187,12 +188,13 @@ const Network = {
         });
     });
   },
-  upload<T = unknown>(path = "", data: FormData): Promise<ApiResponse<T>> {
+  // 默认上传保持 60 秒；备份等限大小接口可覆盖期限，不能替代服务端上传大小校验。
+  upload<T = unknown>(path = "", data: FormData, timeout = 60000): Promise<ApiResponse<T>> {
     return new Promise((resolve, reject) => {
       http
         .post(path, data, {
           baseURL: computeBaseURL(),
-          timeout: 60000,
+          timeout,
           headers: baseHeaders(),
         })
         .then((r: AxiosResponse<ApiResponse<T>>) => {

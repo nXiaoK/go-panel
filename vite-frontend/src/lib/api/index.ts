@@ -19,6 +19,15 @@ import Network from "./network";
 
 // 节点会同步等待最多 90 秒的升级结果；额外预留 10 秒给 HTTP 往返与响应解析。
 const nodeUpgradeRequestTimeoutMs = 100_000;
+// 诊断后端写期限为 90 秒；额外 5 秒留给网络往返与解析，仅覆盖两个诊断接口。
+const diagnosisRequestTimeoutMs = 95_000;
+// 最大 256 MB 备份在 512 KB/s 网络下约需 8.5 分钟；与后端 10 分钟传输窗口一致。
+const backupTransferTimeoutMs = 10 * 60 * 1000;
+// 测速先按后端规则归一化：非正值默认 10 秒、上限 120 秒；50 秒余量晚于后端的 45 秒。
+function speedTestRequestTimeoutMs(seconds = 10): number {
+  const duration = !Number.isFinite(seconds) || seconds <= 0 ? 10 : Math.min(seconds, 120);
+  return (duration + 50) * 1000;
+}
 
 // ---------- Auth ----------
 export interface LoginData {
@@ -72,7 +81,8 @@ export const getTunnelById = (id: number) => Network.post("/tunnel/get", { id })
 export const updateTunnel = (data: TunnelForm | Record<string, unknown>) =>
   Network.post("/tunnel/update", data);
 export const deleteTunnel = (id: number) => Network.post("/tunnel/delete", { id });
-export const diagnoseTunnel = (tunnelId: number) => Network.post("/tunnel/diagnose", { tunnelId });
+export const diagnoseTunnel = (tunnelId: number) =>
+  Network.postWithTimeout("/tunnel/diagnose", { tunnelId }, diagnosisRequestTimeoutMs);
 export const speedTestTunnel = (data: {
   tunnelId: number;
   testId?: string;
@@ -81,7 +91,11 @@ export const speedTestTunnel = (data: {
   parallel?: number;
   port?: number;
 }) =>
-  Network.postWithTimeout("/tunnel/speed-test", data, ((data.durationSeconds || 10) + 30) * 1000);
+  Network.postWithTimeout(
+    "/tunnel/speed-test",
+    data,
+    speedTestRequestTimeoutMs(data.durationSeconds),
+  );
 
 // ---------- User↔Tunnel ----------
 export const assignUserTunnel = (data: Record<string, unknown>) =>
@@ -105,7 +119,7 @@ export const forceDeleteForward = (id: number) => Network.post("/forward/force-d
 export const pauseForwardService = (id: number) => Network.post("/forward/pause", { id });
 export const resumeForwardService = (id: number) => Network.post("/forward/resume", { id });
 export const diagnoseForward = (forwardId: number) =>
-  Network.post("/forward/diagnose", { forwardId });
+  Network.postWithTimeout("/forward/diagnose", { forwardId }, diagnosisRequestTimeoutMs);
 export const updateForwardOrder = (data: { forwards: Array<{ id: number; inx: number }> }) =>
   Network.post("/forward/update-order", data);
 export const detectNftRules = (nodeId: number) =>
@@ -138,11 +152,12 @@ export const updateConfig = (name: string, value: string) =>
   Network.post("/config/update-single", { name, value });
 
 // ---------- Backup ----------
-export const downloadSiteBackup = () => Network.download("/backup/download");
+export const downloadSiteBackup = () =>
+  Network.download("/backup/download", backupTransferTimeoutMs);
 export const restoreSiteBackup = (file: File) => {
   const fd = new FormData();
   fd.append("file", file);
-  return Network.upload("/backup/restore", fd);
+  return Network.upload("/backup/restore", fd, backupTransferTimeoutMs);
 };
 export const detectExtraRules = () => Network.post("/backup/detect-extra-rules", {});
 export const handleExtraRules = (rules: unknown[]) =>

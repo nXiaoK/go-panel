@@ -493,6 +493,10 @@ func performTcpPing(node *model.Node, targetIP string, port int, description str
 
 // DiagnoseTunnel 隧道诊断
 func DiagnoseTunnel(tunnelID int64) result.R {
+	return diagnoseTunnelWithPing(tunnelID, performTcpPing)
+}
+
+func diagnoseTunnelWithPing(tunnelID int64, ping diagnosisPingFunc) result.R {
 	var tunnel model.Tunnel
 	if err := model.DB.First(&tunnel, tunnelID).Error; err != nil {
 		return result.Err("隧道不存在")
@@ -502,9 +506,9 @@ func DiagnoseTunnel(tunnelID int64) result.R {
 		return result.Err("入口节点不存在")
 	}
 
-	var results []DiagnosisResult
+	var probes []diagnosisProbe
 	if tunnel.Type == tunnelTypePortForward {
-		results = append(results, performTcpPing(&inNode, "www.google.com", 443, "入口->外网", 2, 3000))
+		probes = append(probes, diagnosisProbe{inNode, "www.google.com", 443, "入口->外网", 2, 3000})
 	} else {
 		var outNode model.Node
 		if err := model.DB.First(&outNode, tunnel.OutNodeID).Error; err != nil {
@@ -548,17 +552,17 @@ func DiagnoseTunnel(tunnelID int64) result.R {
 				firstDesc += "(未检测到转发,默认测SSH 22)"
 				secondDesc += "(未检测到转发,默认测SSH 22)"
 			}
-			// 三个检查单次最多约 2.5 秒，串行总时长仍低于面板 API 超时。
-			results = append(results, performTcpPing(&inNode, relayNode.ServerIP, relayPort, firstDesc, 1, 2500))
-			results = append(results, performTcpPing(&relayNode, outNode.ServerIP, outPort, secondDesc, 1, 2500))
-			results = append(results, performTcpPing(&outNode, "www.google.com", 443, "出口->外网", 1, 2500))
+			// 三段链路可独立检查；统一限并发执行，并保留入口、中继、出口的展示顺序。
+			probes = append(probes, diagnosisProbe{inNode, relayNode.ServerIP, relayPort, firstDesc, 1, 2500})
+			probes = append(probes, diagnosisProbe{relayNode, outNode.ServerIP, outPort, secondDesc, 1, 2500})
+			probes = append(probes, diagnosisProbe{outNode, "www.google.com", 443, "出口->外网", 1, 2500})
 		} else {
 			desc := "入口->出口"
 			if !hasActiveForward {
 				desc = "入口->出口(未检测到转发,默认测SSH 22)"
 			}
-			results = append(results, performTcpPing(&inNode, outNode.ServerIP, outPort, desc, 2, 3000))
-			results = append(results, performTcpPing(&outNode, "www.google.com", 443, "出口->外网", 2, 3000))
+			probes = append(probes, diagnosisProbe{inNode, outNode.ServerIP, outPort, desc, 2, 3000})
+			probes = append(probes, diagnosisProbe{outNode, "www.google.com", 443, "出口->外网", 2, 3000})
 		}
 	}
 
@@ -570,7 +574,7 @@ func DiagnoseTunnel(tunnelID int64) result.R {
 		"tunnelId":   tunnelID,
 		"tunnelName": tunnel.Name,
 		"tunnelType": tunnelTypeName,
-		"results":    results,
+		"results":    runDiagnosisProbes(probes, ping),
 		"timestamp":  time.Now().UnixMilli(),
 	})
 }
