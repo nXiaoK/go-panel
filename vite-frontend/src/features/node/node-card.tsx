@@ -22,10 +22,12 @@ export function NodeLiveMetric({ node, field }: { node: Node; field: keyof NodeS
     </span>
   );
 }
-export function NodeVersion({ node }: { node: Node }) {
+export function NodeVersion({ node, compact = false }: { node: Node; compact?: boolean }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <span className="break-all font-mono">{node.version || "—"}</span>
+    <div className={cn("flex min-w-0 items-center gap-2", compact ? "w-max" : "flex-wrap")}>
+      <span className={cn("font-mono", compact ? "whitespace-nowrap" : "break-all")}>
+        {node.version || "—"}
+      </span>
       {node.upgradeAvailable && (
         <StatusPill
           tone="warning"

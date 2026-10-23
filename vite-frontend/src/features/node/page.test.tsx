@@ -144,6 +144,12 @@ async function mount(url = "/node") {
 async function ready() {
   await screen.findByRole("article", { name: "节点 香港在线" });
 }
+async function listReady() {
+  localStorage.setItem("go-panel-node-view", "list");
+  await mount();
+  await screen.findByRole("table", { name: "节点列表" });
+  await screen.findByText("香港在线");
+}
 function menu(name: string) {
   fireEvent.pointerDown(screen.getByRole("button", { name: `节点操作：${name}` }), {
     button: 0,
@@ -315,5 +321,121 @@ describe("节点页面的真实路由和操作", () => {
     expect(post.mock.calls.filter(([path]) => path === "/node/upgrade")).toHaveLength(1);
     await act(async () => resolve({ nodeId: 1, latestVersion: "1.2.7", message: "已触发" }));
     await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  });
+  it("桌面列表只内联检测和更多，菜单保留全部操作及正确编辑删除目标", async () => {
+    await listReady();
+    const row = screen.getByText("香港在线").closest("tr")!;
+    expect(
+      within(row)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label") || button.textContent),
+    ).toEqual(["检测", "节点操作：香港在线"]);
+    menu("香港在线");
+    for (const name of ["安装命令", "升级", "编辑节点", "检测状态", "卸载命令", "删除节点"])
+      expect(await screen.findByRole("menuitem", { name: new RegExp(`^${name}$`) })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: /^编辑节点$/ }));
+    const editing = await screen.findByRole("dialog", { name: "编辑节点" });
+    expect(
+      (within(editing).getByRole("textbox", { name: /节点名称/ }) as HTMLInputElement).value,
+    ).toBe("香港在线");
+    fireEvent.click(within(editing).getByRole("button", { name: /^取消$/ }));
+    menu("香港在线");
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^删除节点$/ }));
+    expect(await screen.findByText(/依赖该节点的 2 条隧道/)).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "输入「香港在线」确认" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^删除节点$/ }).hasAttribute("disabled")).toBe(true);
+  });
+  it.each([
+    ["安装命令", "/node/install"],
+    ["卸载命令", "/node/uninstall"],
+  ])("桌面列表的%s使用对应节点并仍只在显式复制时写剪贴板", async (name, path) => {
+    await listReady();
+    menu("香港在线");
+    fireEvent.click(await screen.findByRole("menuitem", { name: new RegExp(`^${name}$`) }));
+    expect(await screen.findByRole("dialog", { name: `${name} · 香港在线` })).toBeTruthy();
+    expect(await screen.findByText("echo protected-node-command")).toBeTruthy();
+    expect(post.mock.calls.find(([calledPath]) => calledPath === path)?.[1]).toEqual({
+      id: 1,
+      forwardMode: "gost",
+    });
+    expect(copy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /^复制命令$/ }));
+    await waitFor(() => expect(copy).toHaveBeenCalledWith("echo protected-node-command"));
+  });
+  it("桌面列表内联检测只请求所选离线节点", async () => {
+    await listReady();
+    post.mockResolvedValueOnce({
+      nodeId: 2,
+      name: "日本离线",
+      connected: false,
+      responsive: false,
+      dbStatus: 0,
+      forwardMode: "nftables",
+      syncState: "failed",
+      syncLastError: "等待节点重连",
+      checkedAt: Date.now(),
+    });
+    const row = screen.getByText("日本离线").closest("tr")!;
+    fireEvent.click(within(row).getByRole("button", { name: /^检测$/ }));
+    expect(await screen.findByRole("dialog", { name: "节点检测 · 日本离线" })).toBeTruthy();
+    expect(post).toHaveBeenCalledWith("/node/check-status", { nodeId: 2 }, undefined);
+    expect(post.mock.calls.filter(([path]) => path === "/node/check-status")).toHaveLength(1);
+  });
+  it("桌面列表离线升级禁用并说明原因，不调用升级接口", async () => {
+    await listReady();
+    menu("日本离线");
+    const upgrade = await screen.findByRole("menuitem", { name: /^升级$/ });
+    expect(upgrade.getAttribute("aria-disabled")).toBe("true");
+    expect(document.getElementById(upgrade.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "节点离线，无法远程升级",
+    );
+    fireEvent.click(upgrade);
+    expect(post.mock.calls.some(([path]) => path === "/node/upgrade")).toBe(false);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+  it("桌面列表升级确认后保留菜单加载状态并防止重复提交", async () => {
+    await listReady();
+    menu("香港在线");
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^升级$/ }));
+    expect(await screen.findByText(/节点会自动重启并短暂离线/)).toBeTruthy();
+    let resolve!: (value: unknown) => void;
+    post.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^升级节点$/ }));
+    await waitFor(() =>
+      expect(post.mock.calls.filter(([path]) => path === "/node/upgrade")).toHaveLength(1),
+    );
+    expect(post.mock.calls.find(([path]) => path === "/node/upgrade")?.[1]).toEqual({ id: 1 });
+    menu("香港在线");
+    const pending = await screen.findByRole("menuitem", { name: /^升级$/ });
+    expect(pending.getAttribute("aria-disabled")).toBe("true");
+    expect(pending.getAttribute("aria-busy")).toBe("true");
+    expect(pending.textContent).toContain("升级中");
+    fireEvent.click(pending);
+    expect(post.mock.calls.filter(([path]) => path === "/node/upgrade")).toHaveLength(1);
+    await act(async () => resolve({ nodeId: 1, latestVersion: "1.2.7", message: "已触发" }));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    menu("香港在线");
+    const available = await screen.findByRole("menuitem", { name: /^升级$/ });
+    expect(available.getAttribute("aria-disabled")).toBeNull();
+    expect(available.getAttribute("aria-busy")).toBeNull();
+    expect(available.textContent).toBe("升级");
+  });
+  it("手机列表卡片保留安装、升级和检测常用按钮", async () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: true,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    localStorage.setItem("go-panel-node-view", "list");
+    await mount();
+    await ready();
+    const card = screen.getByRole("article", { name: "节点 香港在线" });
+    for (const name of ["安装命令", "升级", "检测", "节点操作：香港在线"])
+      expect(within(card).getByRole("button", { name: new RegExp(`^${name}$`) })).toBeTruthy();
   });
 });

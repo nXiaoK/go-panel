@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, Pencil, Plus, RefreshCw, Stethoscope, Trash2 } from "lucide-react";
+import {
+  LoaderCircle,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Stethoscope,
+  Trash2,
+} from "lucide-react";
 import { PageHeader } from "@/components/patterns/page-header";
 import { TableToolbar } from "@/components/patterns/table-toolbar";
 import { DataTable } from "@/components/patterns/data-table";
@@ -231,19 +239,24 @@ export function NodePage() {
       if (request === diagnosisRequest.current) setDiagnosis({ node, loading: false, error });
     }
   }
-  function actions(node: Node) {
+  function actions(node: Node, compact = false) {
     const offline = !online(node);
+    const pendingUpgrade = upgrading.has(node.id);
     return (
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => setCommand({ node, kind: "install" })}
-        >
-          安装命令
-        </Button>
-        {node.upgradeAvailable && (
+      <div
+        className={compact ? "flex w-max items-center gap-2" : "flex flex-wrap items-center gap-2"}
+      >
+        {!compact && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setCommand({ node, kind: "install" })}
+          >
+            安装命令
+          </Button>
+        )}
+        {!compact && node.upgradeAvailable && (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -252,7 +265,7 @@ export function NodePage() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    loading={upgrading.has(node.id)}
+                    loading={pendingUpgrade}
                     disabled={offline}
                     onClick={() => void runUpgrade(node)}
                   >
@@ -279,6 +292,38 @@ export function NodePage() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {compact && (
+              <>
+                <DropdownMenuItem onClick={() => setCommand({ node, kind: "install" })}>
+                  安装命令
+                </DropdownMenuItem>
+                {node.upgradeAvailable && (
+                  <>
+                    <DropdownMenuItem
+                      aria-label="升级"
+                      aria-busy={pendingUpgrade || undefined}
+                      aria-describedby={offline ? `node-upgrade-reason-${node.id}` : undefined}
+                      disabled={offline || pendingUpgrade}
+                      onClick={() => void runUpgrade(node)}
+                    >
+                      {pendingUpgrade && (
+                        <LoaderCircle aria-hidden="true" className="animate-spin" />
+                      )}
+                      {pendingUpgrade ? "升级中…" : "升级"}
+                    </DropdownMenuItem>
+                    {offline && (
+                      <p
+                        id={`node-upgrade-reason-${node.id}`}
+                        className="px-2 pb-2 text-caption text-mute"
+                      >
+                        节点离线，无法远程升级
+                      </p>
+                    )}
+                  </>
+                )}
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuItem onClick={() => openEdit(node)}>
               <Pencil aria-hidden="true" />
               编辑节点
@@ -377,14 +422,14 @@ export function NodePage() {
     {
       accessorKey: "version",
       header: "版本",
-      cell: ({ row }) => <NodeVersion node={row.original} />,
+      cell: ({ row }) => <NodeVersion node={row.original} compact />,
     },
     { id: "sync", header: "同步", cell: ({ row }) => <NodeSync node={row.original} /> },
     {
       id: "actions",
       header: "操作",
       meta: { actions: true },
-      cell: ({ row }) => actions(row.original),
+      cell: ({ row }) => actions(row.original, true),
     },
   ];
   const clearFilters = () => {
