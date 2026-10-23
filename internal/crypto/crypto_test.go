@@ -126,3 +126,35 @@ func TestParseTokenLegacyWithoutVerField(t *testing.T) {
 		t.Fatalf("TokenVersion=%d, want 0 for missing ver", claims.TokenVersion)
 	}
 }
+
+func TestGenerateTokenUsesConfiguredLifetimeWithoutChangingExistingExpiry(t *testing.T) {
+	defer InitJwt("unit-test-secret")
+	InitJwtWithTTL("unit-test-secret", 72*time.Hour)
+	oldToken, err := GenerateToken(1, "ttl-user", 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldClaims, err := ParseToken(oldToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldClaims.Exp-oldClaims.Iat != int64((72*time.Hour)/time.Second) {
+		t.Fatalf("lifetime=%d", oldClaims.Exp-oldClaims.Iat)
+	}
+	InitJwtWithTTL("unit-test-secret", time.Hour)
+	token, err := GenerateToken(1, "ttl-user", 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := ParseToken(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.Exp-claims.Iat != 3600 {
+		t.Fatalf("lifetime=%d", claims.Exp-claims.Iat)
+	}
+	reparsed, err := ParseToken(oldToken)
+	if err != nil || reparsed.Exp != oldClaims.Exp {
+		t.Fatalf("existing token changed: %+v %v", reparsed, err)
+	}
+}

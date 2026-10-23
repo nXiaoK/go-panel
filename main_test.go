@@ -310,3 +310,13 @@ func TestConfigureTrustedProxiesRejectsNonCIDR(t *testing.T) {
 		t.Fatal("trusted proxy without an explicit CIDR must be rejected")
 	}
 }
+
+func TestInitializeRuntimeSecurityRejectsInvalidJWTLifetimeBeforeInitialization(t *testing.T) {
+	t.Setenv("JWT_TTL", "30m")
+	cfg := config.Load()
+	initialized := false
+	err := initializeRuntimeSecurity(cfg, strings.NewReader(strings.Repeat("r", 32)), func(string) { initialized = true })
+	if err == nil || !strings.Contains(err.Error(), "JWT_TTL") || initialized {
+		t.Fatalf("err=%v initialized=%v", err, initialized)
+	}
+}

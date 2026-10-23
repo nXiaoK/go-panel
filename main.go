@@ -28,7 +28,9 @@ import (
 
 func main() {
 	cfg := config.Load()
-	if err := initializeRuntimeSecurity(cfg, cryptorand.Reader, crypto.InitJwt); err != nil {
+	if err := initializeRuntimeSecurity(cfg, cryptorand.Reader, func(secret string) {
+		crypto.InitJwtWithTTL(secret, cfg.JwtTTL)
+	}); err != nil {
 		log.Fatalf("安全配置无效: %v", err)
 	}
 
@@ -103,6 +105,9 @@ func main() {
 }
 
 func initializeRuntimeSecurity(cfg *config.Config, random io.Reader, initJWT func(string)) error {
+	if err := cfg.ValidateJWTLifetime(); err != nil {
+		return err
+	}
 	if err := cfg.PrepareRuntimeSecurity(random); err != nil {
 		return err
 	}

@@ -16,6 +16,10 @@ services:
       LISTEN_ADDR: ":6365"
       # 远程部署必须使用至少 32 字节随机密钥；修改后所有现有登录令牌立即失效。
       JWT_SECRET: ${JWT_SECRET:?必须在 .env 中设置至少 32 字节的 JWT_SECRET}
+      # 新令牌默认 2160h（90天），范围 1h–2160h（Go duration）；越界或无效值拒绝启动。
+      # 缩短会增加登录频率，已签发令牌仍按原 exp 到期；立即全部失效需轮换 JWT_SECRET。
+      # 轮换 JWT_SECRET 同时影响 R2 凭据解密，需重新配置凭据，不能仅为缩短会话而随意轮换。
+      JWT_TTL: ${JWT_TTL:-2160h}
       # 首次创建管理员时使用；已有安全管理员后可清空，避免长期保存明文密码。
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin_user}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
