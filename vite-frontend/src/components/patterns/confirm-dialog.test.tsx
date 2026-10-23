@@ -17,14 +17,14 @@ function Harness({
   onResult: (value: unknown) => void;
   options?: Partial<ConfirmOptions>;
 }) {
-  const confirm = useConfirm(),
+  const requestConfirm = useConfirm(),
     prompt = usePrompt();
   return (
     <>
       <button
         onClick={async () =>
           onResult(
-            await confirm({
+            await requestConfirm({
               title: "删除转发",
               description: "删除后无法恢复",
               confirmText: "删除",
@@ -88,16 +88,20 @@ describe("统一确认对话框", () => {
   it("并发确认排队且不丢失promise，后续输入状态重置", async () => {
     const results: boolean[] = [];
     function Queue() {
-      const confirm = useConfirm();
+      const requestConfirm = useConfirm();
       return (
         <button
           onClick={() => {
-            void confirm({ title: "第一步", description: "第一步说明", requireText: "one" }).then(
-              (value) => results.push(value),
-            );
-            void confirm({ title: "第二步", description: "第二步说明", requireText: "two" }).then(
-              (value) => results.push(value),
-            );
+            void requestConfirm({
+              title: "第一步",
+              description: "第一步说明",
+              requireText: "one",
+            }).then((value) => results.push(value));
+            void requestConfirm({
+              title: "第二步",
+              description: "第二步说明",
+              requireText: "two",
+            }).then((value) => results.push(value));
           }}
         >
           排队
@@ -150,7 +154,7 @@ function pointerClick(target: HTMLElement) {
 }
 
 function SheetHarness({ onDelete, onClose }: { onDelete: () => void; onClose: () => void }) {
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   const [open, setOpen] = useState(true);
   const [draft, setDraft] = useState("原始草稿");
   return (
@@ -167,7 +171,7 @@ function SheetHarness({ onDelete, onClose }: { onDelete: () => void; onClose: ()
         type="button"
         onClick={async () => {
           if (
-            await confirm({
+            await requestConfirm({
               title: "删除用户",
               description: "删除不可恢复",
               requireText: "alice",
@@ -265,16 +269,18 @@ it("确认已获焦后追加队列，Enter推进且最终取消仍回最初页�
   const results: boolean[] = [];
   let queueSecond!: () => void;
   function QueuedFromDialog() {
-    const confirm = useConfirm();
+    const requestConfirm = useConfirm();
     return (
       <button
         type="button"
         onClick={() => {
-          void confirm({ title: "第一项操作", description: "第一项说明", requireText: "one" }).then(
-            (value) => results.push(value),
-          );
+          void requestConfirm({
+            title: "第一项操作",
+            description: "第一项说明",
+            requireText: "one",
+          }).then((value) => results.push(value));
           queueSecond = () => {
-            void confirm({
+            void requestConfirm({
               title: "第二项操作",
               description: "第二项说明",
               requireText: "two",

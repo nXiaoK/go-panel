@@ -30,7 +30,7 @@ import { UserPermissions } from "./permissions";
 
 export function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => void }) {
   const client = useQueryClient();
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   const formId = useId();
   const [active, setActive] = useState(user);
   const initial: UserValues = {
@@ -101,7 +101,7 @@ export function UserDetailSheet({ user, onClose }: { user: User | null; onClose:
         num: Number(values.num),
         // 日期未变时保留原始毫秒时间；仅新建或主动改日期沿用日末失效策略。
         expTime:
-          active?.expTime && values.expiry === toDateInput(active.expTime)
+          active?.expTime != null && values.expiry === toDateInput(active.expTime)
             ? active.expTime
             : dateTimestamp(values.expiry)!,
         flowResetTime: Number(values.reset),
@@ -130,7 +130,7 @@ export function UserDetailSheet({ user, onClose }: { user: User | null; onClose:
   async function remove() {
     if (!active || busyRef.current) return;
     if (
-      !(await confirm({
+      !(await requestConfirm({
         title: "删除用户",
         description: `删除 ${active.user} 后，该账号的全部隧道权限与转发规则将一并移除，且无法恢复`,
         requireText: active.user,

@@ -69,9 +69,7 @@ export function buildAttentionItems({
       href: `/forward?focus=${forward.id}`,
     }));
   const expiring: AttentionItem[] = [...users]
-    .filter(
-      (user) => user.expTime != null && user.expTime > 0 && user.expTime <= now + 7 * 86400000,
-    )
+    .filter((user) => user.expTime != null && user.expTime <= now + 7 * 86400000)
     .sort((a, b) => a.expTime! - b.expTime! || a.id - b.id)
     .map((user) => ({
       ...expiryStatus(user.expTime, now),

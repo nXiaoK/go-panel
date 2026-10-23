@@ -32,7 +32,7 @@ const defaults = {
 export function TunnelPage() {
   const { state, setState } = useUrlState(defaults);
   const queryClient = useQueryClient();
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   const [formOpen, setFormOpen] = useState(false);
   const [initialForm, setInitialForm] = useState<TunnelForm>(emptyTunnelForm);
   const [formKey, setFormKey] = useState(0);
@@ -135,7 +135,7 @@ export function TunnelPage() {
   }
   async function remove(tunnel: Tunnel) {
     if (
-      await confirm({
+      await requestConfirm({
         title: `删除隧道「${tunnel.name}」`,
         description: "已被转发或用户权限占用的隧道无法删除，请先解除依赖。删除后无法恢复。",
         confirmText: "删除隧道",

@@ -90,7 +90,7 @@ type BatchAction = "暂停" | "启动" | "删除";
 
 export function ForwardPage() {
   const queryClient = useQueryClient();
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   const { isAdmin } = useSession();
   const { autoRefresh } = usePreferences();
   const { state, setState } = useUrlState(URL_DEFAULTS);
@@ -200,7 +200,7 @@ export function ForwardPage() {
   };
   const remove = async (row: Forward) => {
     if (
-      !(await confirm({
+      !(await requestConfirm({
         title: `删除转发「${row.name}」`,
         description: "删除后入口端口将立即停止转发，且无法恢复。",
         confirmText: "删除转发",
@@ -222,7 +222,7 @@ export function ForwardPage() {
         return;
       }
       if (
-        await confirm({
+        await requestConfirm({
           title: `强制删除转发「${row.name}」`,
           description: `删除失败：${errorMessage(error)}。强制删除会移除面板记录；即使显示成功，节点仍可能残留转发规则，需要检查并手动清理。`,
           confirmText: "强制删除",
@@ -263,7 +263,7 @@ export function ForwardPage() {
     if (batchProgress) return;
     if (
       action === "删除" &&
-      !(await confirm({
+      !(await requestConfirm({
         title: `删除 ${rows.length} 条转发`,
         description: `将删除 ${rows.length} 条转发，入口端口会立即停止转发，且无法恢复。`,
         confirmText: "删除转发",

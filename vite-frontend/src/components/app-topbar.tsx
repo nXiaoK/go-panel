@@ -60,12 +60,17 @@ export function AppTopbar() {
             onClick={() => setSearchOpen(true)}
             aria-haspopup="dialog"
             aria-expanded={searchOpen}
-            aria-label="搜索资源"
+            aria-label="搜索资源 ⌘K"
             className="size-10 p-0 md:h-8 md:w-56 md:justify-start md:px-3"
           >
             <Search className="size-4 text-mute" />
-            <span className="hidden text-mute md:inline">搜索资源…</span>
-            <kbd className="ml-auto hidden font-mono text-caption text-mute md:inline">⌘K</kbd>
+            <span className="hidden text-mute md:inline">搜索资源</span>
+            <kbd
+              aria-hidden="true"
+              className="ml-auto hidden font-mono text-caption text-mute md:inline"
+            >
+              ⌘K
+            </kbd>
           </Button>
           {isAdmin && (
             <div className="hidden md:block">
@@ -81,10 +86,10 @@ export function AppTopbar() {
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            aria-label="用户菜单"
+            aria-label={`用户菜单 ${name.slice(0, 2).toUpperCase()}`}
             className="flex size-10 shrink-0 items-center justify-center rounded-sm hover:bg-surface-hover"
           >
-            <Avatar className="size-8 border border-hairline">
+            <Avatar aria-hidden="true" className="size-8 border border-hairline">
               <AvatarFallback className="bg-canvas-soft text-caption-strong text-ink">
                 {name.slice(0, 2).toUpperCase()}
               </AvatarFallback>

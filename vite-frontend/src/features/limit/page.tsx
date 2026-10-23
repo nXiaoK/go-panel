@@ -37,7 +37,7 @@ type Errors = Partial<Record<"name" | "tunnelId" | "speed", string>>;
 const emptyForm = (): FormState => ({ name: "", tunnelId: "", speed: "100" });
 
 export function LimitPage() {
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   const [search, setSearch] = useState("");
   const [tunnelFilter, setTunnelFilter] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -123,7 +123,7 @@ export function LimitPage() {
   async function remove(limit: SpeedLimit) {
     if (deleteMutation.isPending) return;
     if (
-      await confirm({
+      await requestConfirm({
         title: `删除限速策略「${limit.name}」`,
         description: "删除后无法恢复。仍被用户授权引用的策略无法删除，请先取消分配。",
         confirmText: "删除限速策略",

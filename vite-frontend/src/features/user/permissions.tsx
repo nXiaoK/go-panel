@@ -50,7 +50,7 @@ export function UserPermissions({
   onCountChange: (count: number | null) => void;
 }) {
   const client = useQueryClient();
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   const manager = useUserTunnels<UserTunnel, User>(
     useCallback((userId, signal) => getUserTunnelList({ userId }, { signal }), []),
   );
@@ -139,7 +139,7 @@ export function UserPermissions({
     if (!initial || busyRef.current) return;
     if (
       action !== "toggle" &&
-      !(await confirm({
+      !(await requestConfirm({
         title: action === "reset" ? "重置隧道流量" : "移除隧道权限",
         description:
           action === "reset"

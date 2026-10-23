@@ -43,7 +43,7 @@ export function tunnelStatus(value: { status: number }): StatusDescriptor {
     : { tone: "neutral", label: "已禁用", hollow: true };
 }
 export function expiryStatus(ms: number | null | undefined, now = Date.now()): StatusDescriptor {
-  if (!ms || ms < 0) return { tone: "neutral", label: "长期有效" };
+  if (ms == null) return { tone: "neutral", label: "长期有效" };
   const days = Math.ceil((ms - now) / 86400000);
   if (ms <= now) return { tone: "critical", label: "已到期", icon: CalendarX };
   if (days <= 7) return { tone: "warning", label: `${days} 天后到期`, icon: Clock };

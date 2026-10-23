@@ -75,7 +75,11 @@ export function DiagnosisSheet({
                 )}
                 {item.averageTime != null && (
                   <p className="font-mono text-caption text-body">
-                    平均延迟 {item.averageTime} ms · 丢包 {item.packetLoss ?? "—"}%
+                    平均延迟{" "}
+                    {Number.isFinite(item.averageTime) && item.averageTime >= 0
+                      ? `${item.averageTime} ms`
+                      : "—"}{" "}
+                    · 丢包 {item.packetLoss ?? "—"}%
                   </p>
                 )}
               </li>

@@ -70,7 +70,7 @@ export function UserStats({ queries }: Props) {
       <StatTile
         label="账号到期"
         loading={traffic.isPending}
-        value={account?.expTime && account.expTime > 0 ? formatDate(account.expTime) : "长期有效"}
+        value={account?.expTime != null ? formatDate(account.expTime) : "长期有效"}
         hint={
           account && (
             <span title={formatDateTime(account.expTime)}>
@@ -99,7 +99,7 @@ function TunnelAvailability({ row }: { row: MyTunnel }) {
       tone="critical"
       label={row.unavailableReason}
       icon={AlertCircle}
-      className="h-auto min-h-[22px] whitespace-normal py-1"
+      className="h-auto min-h-5.5 whitespace-normal py-1"
     />
   ) : null;
 }
@@ -148,7 +148,7 @@ export function MyTunnels({ queries }: Props) {
           title={formatDateTime(row.original.permission?.expTime)}
           className="whitespace-nowrap"
         >
-          {row.original.permission?.expTime
+          {row.original.permission?.expTime != null
             ? formatDate(row.original.permission.expTime)
             : "长期有效"}
         </span>
@@ -197,7 +197,11 @@ export function MyTunnels({ queries }: Props) {
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-mute">到期</dt>
-                <dd>{row.permission?.expTime ? formatDate(row.permission.expTime) : "长期有效"}</dd>
+                <dd>
+                  {row.permission?.expTime != null
+                    ? formatDate(row.permission.expTime)
+                    : "长期有效"}
+                </dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-mute">限速</dt>

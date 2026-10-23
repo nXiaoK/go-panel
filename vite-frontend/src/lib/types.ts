@@ -1,4 +1,4 @@
-// Types ported from the original Go-backed Flux Panel frontend.
+// Types ported from the original Go-backed go-panel frontend.
 // Keep field names identical to the backend response shape.
 
 export interface ApiResponse<T = unknown> {

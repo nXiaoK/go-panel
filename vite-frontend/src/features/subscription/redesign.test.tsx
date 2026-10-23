@@ -147,9 +147,9 @@ describe("订阅重构真实页面", () => {
     expect(input.value).toBe("abcd••••••••wxyz");
     expect(input.value).not.toContain("full-secret");
     fireEvent.click(screen.getByRole("button", { name: "随机生成" }));
-    const confirm = await screen.findByRole("alertdialog");
-    expect(confirm).toHaveTextContent("已部署的上报脚本需要更新");
-    fireEvent.click(within(confirm).getByRole("button", { name: "取消" }));
+    const requestConfirm = await screen.findByRole("alertdialog");
+    expect(requestConfirm).toHaveTextContent("已部署的上报脚本需要更新");
+    fireEvent.click(within(requestConfirm).getByRole("button", { name: "取消" }));
     expect(calls("/sub/api-key")).toHaveLength(0);
     await waitFor(() => expect(screen.getByRole("button", { name: "显示" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "显示" }));

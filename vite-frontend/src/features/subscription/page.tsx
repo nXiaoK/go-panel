@@ -93,7 +93,7 @@ async function copy(value: string, message = "已复制") {
 export function SubscriptionPage() {
   const { state, setState } = useUrlState(defaults);
   const queryClient = useQueryClient();
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   const query = useSubscriptionSettings();
   const profiles = useMemo(() => query.data?.profiles ?? [], [query.data]);
   const nodes = useMemo(() => query.data?.nodes ?? [], [query.data]);
@@ -163,7 +163,7 @@ export function SubscriptionPage() {
   }
   async function rotate(profile: SubscriptionProfile) {
     if (
-      !(await confirm({
+      !(await requestConfirm({
         tone: "danger",
         title: "更换订阅 Token",
         description: "旧链接会立即失效，所有已导入该订阅的客户端都需要重新导入新链接。",
@@ -175,7 +175,7 @@ export function SubscriptionPage() {
   }
   async function removeProfile(profile: SubscriptionProfile) {
     if (
-      !(await confirm({
+      !(await requestConfirm({
         tone: "danger",
         title: `删除订阅「${profile.name}」`,
         description: "删除后该订阅链接将立即失效，且无法恢复。",
@@ -229,7 +229,7 @@ export function SubscriptionPage() {
     );
     if (!items.length) return notify.info("所选项目已是目标状态");
     if (
-      !(await confirm({
+      !(await requestConfirm({
         title: label,
         description: `即将${status ? "启用" : "禁用"} ${items.length} 个${kind}，是否继续？`,
         confirmText: label,
@@ -251,7 +251,7 @@ export function SubscriptionPage() {
   }
   async function deleteProfiles() {
     if (
-      !(await confirm({
+      !(await requestConfirm({
         title: "批量删除订阅",
         description: `将删除 ${selectedProfiles.length} 个订阅，旧链接将立即失效，且无法恢复。`,
         confirmText: "删除订阅",
@@ -266,7 +266,7 @@ export function SubscriptionPage() {
     const withRelay = items.filter(hasRelay).length;
     if (
       !items.length ||
-      !(await confirm({
+      !(await requestConfirm({
         title: "批量删除节点",
         description: `将删除 ${items.length} 个协议节点${withRelay ? `，其中 ${withRelay} 个存在关联中转，将一并删除中转规则和中转节点` : ""}，且无法恢复。`,
         confirmText: "删除节点",
@@ -285,7 +285,7 @@ export function SubscriptionPage() {
   async function closeRelay(node: ProxyNode) {
     const ruleCount = Number(Boolean(node.forwardId)) + (node.relayChildCount || 0);
     if (
-      !(await confirm({
+      !(await requestConfirm({
         title: `关闭节点「${node.name}」的中转`,
         description: `将删除 ${ruleCount} 条关联中转规则${node.relayChildCount ? `和 ${node.relayChildCount} 个中转节点` : derived(node) ? "和当前中转节点" : ""}，通过中转地址连接的流量将中断。`,
         confirmText: "关闭中转",

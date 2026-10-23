@@ -34,7 +34,7 @@ export function userSearch(search: Record<string, unknown>) {
   };
 }
 export function toDateInput(timestamp?: number | null) {
-  if (!timestamp) return "";
+  if (timestamp == null) return "";
   const date = new Date(timestamp);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
@@ -57,7 +57,7 @@ export function extendExpiry(value: string, months: number, now = new Date()) {
   return toDateInput(base.getTime());
 }
 export function expiryState(timestamp?: number | null, now = Date.now()) {
-  if (!timestamp) return { tone: "neutral" as const, label: "未设置" };
+  if (timestamp == null) return { tone: "neutral" as const, label: "长期有效" };
   if (timestamp <= now) return { tone: "critical" as const, label: "已到期" };
   const days = Math.ceil((timestamp - now) / 86400000);
   return days <= 7
