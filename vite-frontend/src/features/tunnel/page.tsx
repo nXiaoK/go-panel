@@ -279,7 +279,7 @@ export function TunnelPage() {
               />{" "}
               刷新
             </Button>
-            <Button size="sm" className="shadow-glow" onClick={openCreate}>
+            <Button size="sm" onClick={openCreate}>
               <Plus className="mr-1.5 h-3.5 w-3.5" /> 新建隧道
             </Button>
           </>
@@ -430,7 +430,7 @@ export function TunnelPage() {
                     <TableCell>
                       {(t.status ?? 1) === 1 ? (
                         <span className="inline-flex items-center gap-1.5 text-xs">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                           启用
                         </span>
                       ) : (
@@ -464,7 +464,7 @@ export function TunnelPage() {
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => remove(t)}
-                            className="text-destructive focus:text-destructive"
+                            className="text-status-critical-text focus:text-status-critical-text"
                           >
                             <Trash2 className="mr-2 h-3.5 w-3.5" /> 删除
                           </DropdownMenuItem>
@@ -648,7 +648,7 @@ export function TunnelPage() {
             <Button variant="ghost" onClick={() => setFormOpen(false)}>
               取消
             </Button>
-            <Button onClick={submit} disabled={saveMutation.isPending} className="shadow-glow">
+            <Button onClick={submit} disabled={saveMutation.isPending}>
               {saveMutation.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               保存
             </Button>

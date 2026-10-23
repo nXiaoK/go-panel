@@ -111,7 +111,7 @@ export function QueryErrorNotice({ error, onRetry }: { error: unknown; onRetry?:
       <div className="flex min-w-0 items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
         <div className="min-w-0">
-          <div className="font-medium text-destructive">数据加载失败</div>
+          <div className="font-medium text-status-critical-text">数据加载失败</div>
           <div className="break-words text-xs text-muted-foreground">{message}</div>
         </div>
       </div>
@@ -149,7 +149,7 @@ export function FormField({
       </Label>
       {children}
       {hint && !error ? <div className="text-[10px] text-muted-foreground">{hint}</div> : null}
-      {error ? <div className="text-[10px] text-destructive">{error}</div> : null}
+      {error ? <div className="text-[10px] text-status-critical-text">{error}</div> : null}
     </div>
   );
 }

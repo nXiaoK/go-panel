@@ -71,9 +71,8 @@ export function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background bg-grid p-6">
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
-      <Card className="relative w-full max-w-md border-border/60 bg-card/60 shadow-glow backdrop-blur">
+    <div className="relative flex min-h-screen items-center justify-center bg-background p-6">
+      <Card className="relative w-full max-w-md border-border/60 bg-card/60 backdrop-blur">
         <CardHeader className="space-y-1">
           <div className="flex items-center gap-2 text-primary">
             <ShieldCheck className="h-5 w-5" />
@@ -87,7 +86,7 @@ export function LoginPage() {
           {reason && (
             <p
               role="status"
-              className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+              className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-status-critical-text"
             >
               {reason === "disabled" ? "账号已被禁用，请联系管理员" : "登录已失效，请重新登录"}
             </p>
@@ -114,7 +113,7 @@ export function LoginPage() {
                 placeholder="••••••••"
               />
             </div>
-            <Button type="submit" className="w-full gap-2 shadow-glow" disabled={loading}>
+            <Button type="submit" className="w-full gap-2" disabled={loading}>
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

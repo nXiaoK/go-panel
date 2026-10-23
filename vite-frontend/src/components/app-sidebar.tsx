@@ -126,7 +126,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-2.5 px-2 py-2">
-          <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gradient-primary shadow-glow">
+          <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary">
             <Zap className="h-4 w-4 text-primary-foreground" strokeWidth={2.5} />
             {administrator && !forcePassword && updateStatus?.updateAvailable && (
               <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-sidebar bg-warning" />
@@ -177,7 +177,7 @@ export function AppSidebar() {
                       >
                         <Link to={item.url} className="flex items-center gap-2.5">
                           {active && (
-                            <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-gradient-primary shadow-glow" />
+                            <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-primary" />
                           )}
                           <item.icon
                             className={`h-4 w-4 shrink-0 transition ${

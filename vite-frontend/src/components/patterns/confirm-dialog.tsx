@@ -107,7 +107,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               disabled={disabled}
               className={
                 options?.tone === "danger"
-                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  ? "bg-destructive-solid text-destructive-foreground hover:bg-destructive-solid/90"
                   : undefined
               }
               onClick={(event) => {

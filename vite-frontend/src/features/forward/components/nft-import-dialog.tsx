@@ -342,12 +342,12 @@ export function NftDetectDialog({
           </Button>
           {step === "mode" && <Button onClick={nextFromMode}>下一步</Button>}
           {step === "node" && (
-            <Button onClick={detect} disabled={detecting} className="shadow-glow">
+            <Button onClick={detect} disabled={detecting}>
               {detecting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />} 开始识别
             </Button>
           )}
           {step === "result" && (
-            <Button onClick={complete} disabled={completing} className="shadow-glow">
+            <Button onClick={complete} disabled={completing}>
               {completing && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               补全所选 ({selected.size})
             </Button>

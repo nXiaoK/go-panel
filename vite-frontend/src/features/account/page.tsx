@@ -109,7 +109,7 @@ export function ProfilePage() {
         <CardContent className="p-6">
           <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-4 sm:flex">
             <Avatar className="h-16 w-16 border border-border">
-              <AvatarFallback className="bg-gradient-primary text-lg font-semibold text-primary-foreground">
+              <AvatarFallback className="bg-primary text-lg font-semibold text-primary-foreground">
                 {initials}
               </AvatarFallback>
             </Avatar>

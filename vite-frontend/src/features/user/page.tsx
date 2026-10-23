@@ -101,7 +101,10 @@ function getExpStatus(exp?: number) {
   if (!exp) return null;
   const now = Date.now();
   if (exp < now)
-    return { text: "已过期", cls: "text-destructive bg-destructive/10 border-destructive/30" };
+    return {
+      text: "已过期",
+      cls: "text-status-critical-text bg-destructive/10 border-destructive/30",
+    };
   const days = Math.ceil((exp - now) / 86400000);
   if (days <= 7)
     return { text: `${days}天后过期`, cls: "text-warning bg-warning/10 border-warning/30" };
@@ -433,7 +436,7 @@ export function UserPage() {
               />{" "}
               刷新
             </Button>
-            <Button size="sm" className="gap-2 shadow-glow" onClick={openCreate}>
+            <Button size="sm" className="gap-2" onClick={openCreate}>
               <Plus className="h-4 w-4" /> 新增用户
             </Button>
           </>
@@ -461,7 +464,7 @@ export function UserPage() {
         ))}
       </div>
 
-      <Card className="border-border/60 bg-card/40 shadow-card">
+      <Card className="border-border/60 bg-card/40">
         <CardContent className="space-y-4 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="relative">
@@ -502,7 +505,7 @@ export function UserPage() {
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Avatar className="h-9 w-9 border border-border/60">
-                            <AvatarFallback className="bg-gradient-primary text-xs font-medium text-primary-foreground">
+                            <AvatarFallback className="bg-primary text-xs font-medium text-primary-foreground">
                               {initials(u.name || u.user)}
                             </AvatarFallback>
                           </Avatar>
@@ -519,7 +522,7 @@ export function UserPage() {
                           className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${
                             u.status === 1
                               ? "text-success bg-success/10 border-success/30"
-                              : "text-destructive bg-destructive/10 border-destructive/30"
+                              : "text-status-critical-text bg-destructive/10 border-destructive/30"
                           }`}
                         >
                           {u.status === 1 ? "正常" : "禁用"}
@@ -582,7 +585,7 @@ export function UserPage() {
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
+                              className="text-status-critical-text focus:text-status-critical-text"
                               onClick={() => setToDelete(u)}
                             >
                               <Trash2 className="mr-2 h-4 w-4" /> 删除
@@ -731,7 +734,7 @@ export function UserPage() {
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
-              className="bg-destructive hover:bg-destructive/90"
+              className="bg-destructive-solid text-destructive-foreground hover:bg-destructive-solid/90"
             >
               确认删除
             </AlertDialogAction>
@@ -909,7 +912,7 @@ export function UserPage() {
                             className={`inline-flex rounded-full border px-2 py-0.5 text-xs ${
                               ut.status === 1
                                 ? "text-success bg-success/10 border-success/30"
-                                : "text-destructive bg-destructive/10 border-destructive/30"
+                                : "text-status-critical-text bg-destructive/10 border-destructive/30"
                             }`}
                           >
                             {ut.status === 1 ? "启用" : "禁用"}
@@ -959,7 +962,7 @@ export function UserPage() {
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
+                                className="text-status-critical-text focus:text-status-critical-text"
                                 onClick={() => setUtToDelete(ut)}
                                 disabled={!canMutateUserTunnels}
                               >
@@ -998,7 +1001,7 @@ export function UserPage() {
             <AlertDialogAction
               onClick={confirmRemoveUt}
               disabled={!canMutateUserTunnels}
-              className="bg-destructive hover:bg-destructive/90"
+              className="bg-destructive-solid text-destructive-foreground hover:bg-destructive-solid/90"
             >
               确认移除
             </AlertDialogAction>

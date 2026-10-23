@@ -176,7 +176,7 @@ export function SubscriptionRelayDialog({
           {previewQuery.error ? (
             <div
               role="alert"
-              className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+              className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-status-critical-text"
             >
               {previewQuery.error instanceof Error
                 ? previewQuery.error.message

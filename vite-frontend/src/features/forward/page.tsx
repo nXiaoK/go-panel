@@ -336,7 +336,7 @@ export function ForwardPage() {
                 <Scan className="mr-1.5 h-3.5 w-3.5" /> 识别 NFT 规则
               </Button>
             )}
-            <Button size="sm" className="shadow-glow" onClick={openCreate}>
+            <Button size="sm" onClick={openCreate}>
               <Plus className="mr-1.5 h-3.5 w-3.5" /> 新建转发
             </Button>
           </>
@@ -578,7 +578,7 @@ export function ForwardPage() {
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => remove(f)}
-                            className="text-destructive focus:text-destructive"
+                            className="text-status-critical-text focus:text-status-critical-text"
                           >
                             <Trash2 className="mr-2 h-3.5 w-3.5" /> 删除
                           </DropdownMenuItem>
@@ -688,7 +688,7 @@ function renderStatus(status: number) {
   if (status === 1) {
     return (
       <span className="inline-flex items-center gap-1.5 text-xs">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
         运行中
       </span>
     );
@@ -701,7 +701,7 @@ function renderStatus(status: number) {
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-destructive">
+    <span className="inline-flex items-center gap-1.5 text-xs text-status-critical-text">
       <span className="h-1.5 w-1.5 rounded-full bg-destructive" /> 异常
     </span>
   );
