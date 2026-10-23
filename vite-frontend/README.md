@@ -108,7 +108,9 @@ Node 22 下运行 `npm run dev` 后访问 `/_dev/components`，可检查基础�
 
 `useUrlState(defaults)` 返回 `{state,setState}`，只合并修改的 search 字段并 replace 历史。各页面必须在路由 `validateSearch` 中验证并保留需要的 `q/status/sort/focus` 等字段，避免路由丢弃共享链接中的状态；分页同样由页面声明。该工具不会重载整页。
 
-`EntitySheet` 的 `onSubmit` 可省略，以支持只读详情与自定义表单，避免嵌套 form。默认底栏通过 `footerActions` 加左侧操作；完全自定义时用 `footer={({requestClose,submitting}) => ...}`，关闭操作必须调用 `requestClose` 以保留 dirty 确认。提交期间控件禁止重复提交与关闭。
+`EntitySheet` 的 `onSubmit` 可省略，以支持只读详情与自定义表单，避免嵌套 form。默认底栏通过 `footerActions` 加左侧操作；完全自定义时用 `footer={({requestClose,submitting}) => ...}`，关闭操作必须调用 `requestClose` 以保留 dirty 确认。提交期间控件禁止重复提交与关闭。确认层会隔离内部点击，避免关闭动画期间误触发底层抽屉的外部点击。`useConfirm` / `usePrompt` 在整组队列结束后回焦到最初的页面控件；排队期间不把焦点移出当前确认框。
+
+`CodeBlock` 默认保留多行命令并自动换行；订阅链接可传 `singleLine`，完整文本通过 title 与内建复制按钮保留，视觉上仅单行省略。`label` 用作复制按钮说明，`trailingActions` 只传打开链接、二维码等其他动作，不再额外添加复制按钮。单行复制使用图标按钮，复制成功与失败都通过状态文字反馈；`CopyButton` 的 `iconOnly` 是可选紧凑展示，默认文字按钮行为保持不变。
 
 `DiagnosisSheet` 直接接收 `DiagnosisResult | NodeStatusCheck`；advisory 外网失败只显示警告，不计链路失败。`lib/batch.runBatch(items,action,{nameOf,onProgress,concurrency})` 默认且最多4并发，结果按输入排序并逐项保留 success/reason；进度提供 done/total。增加并发会同时发送写请求，页面应展示部分失败摘要，禁止无限并发。
 
