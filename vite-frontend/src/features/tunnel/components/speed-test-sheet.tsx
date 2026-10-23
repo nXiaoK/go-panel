@@ -363,7 +363,9 @@ function Metric({
   return (
     <div className={framed ? "rounded-md border border-hairline p-4" : "min-w-0"}>
       <p className="text-caption text-mute">{label}</p>
-      <p className={`mt-1 break-words text-ink ${large ? "text-metric-lg" : "text-metric-md"}`}>
+      <p
+        className={`mt-1 break-words font-mono text-ink ${large ? "text-metric-lg" : "text-metric-md"}`}
+      >
         {value}
         {warning && (
           <AlertTriangle
