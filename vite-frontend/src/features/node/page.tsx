@@ -529,7 +529,7 @@ export function NodePage() {
               刷新
             </Button>
             {isAdmin && (
-              <Button size="sm" className="shadow-glow" onClick={openAdd}>
+              <Button size="sm" onClick={openAdd}>
                 <Plus className="mr-1.5 h-3.5 w-3.5" /> 新增节点
               </Button>
             )}
@@ -713,7 +713,7 @@ export function NodePage() {
             <Button variant="ghost" onClick={() => setFormOpen(false)}>
               取消
             </Button>
-            <Button onClick={submit} disabled={saveMutation.isPending} className="shadow-glow">
+            <Button onClick={submit} disabled={saveMutation.isPending}>
               {saveMutation.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}{" "}
               保存
             </Button>
@@ -738,7 +738,7 @@ export function NodePage() {
             <Button variant="ghost" onClick={() => setCmdOpen(false)}>
               关闭
             </Button>
-            <Button onClick={manualCopy} className="shadow-glow">
+            <Button onClick={manualCopy}>
               <Copy className="mr-1.5 h-3.5 w-3.5" /> 复制命令
             </Button>
           </DialogFooter>
@@ -800,7 +800,7 @@ function NodeCard({
     .map((s) => s.trim())
     .filter(Boolean);
   return (
-    <Card className="border-border/60 bg-card/60 transition-shadow hover:shadow-glow">
+    <Card className="border-border/60 bg-card/60 transition-shadow">
       <CardContent className="space-y-4 p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -820,9 +820,7 @@ function NodeCard({
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  online
-                    ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]"
-                    : "bg-muted-foreground/60"
+                  online ? "bg-emerald-400 " : "bg-muted-foreground/60"
                 }`}
               />
               {online ? "在线" : "离线"}
@@ -867,7 +865,7 @@ function NodeCard({
 
         {node.syncState === "failed" && (
           <div
-            className="flex items-center gap-1 text-xs text-destructive"
+            className="flex items-center gap-1 text-xs text-status-critical-text"
             title={node.syncLastError}
           >
             <AlertCircle className="h-3.5 w-3.5 shrink-0" /> 规则同步失败
@@ -979,7 +977,7 @@ function NodeCard({
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={onDelete}
-                    className="text-destructive focus:text-destructive"
+                    className="text-status-critical-text focus:text-status-critical-text"
                   >
                     <Trash2 className="mr-2 h-3.5 w-3.5" /> 删除
                   </DropdownMenuItem>
@@ -1113,7 +1111,7 @@ function DiagResult({ data }: { data: NodeStatusCheck | null }) {
           )}
         </dd>
         <dt className="text-muted-foreground">同步</dt>
-        <dd className={data.syncState === "failed" ? "text-destructive" : ""}>
+        <dd className={data.syncState === "failed" ? "text-status-critical-text" : ""}>
           {data.syncState === "failed" && <AlertCircle className="mr-1 inline h-3.5 w-3.5" />}
           {nodeSyncLabels[data.syncState]}
         </dd>
@@ -1121,7 +1119,7 @@ function DiagResult({ data }: { data: NodeStatusCheck | null }) {
         <dd className="break-words font-mono">{formatDateTime(data.checkedAt)}</dd>
       </dl>
       {data.syncState === "failed" && data.syncLastError && (
-        <div className="break-words text-xs text-destructive">{data.syncLastError}</div>
+        <div className="break-words text-xs text-status-critical-text">{data.syncLastError}</div>
       )}
       {data.message && <p className="text-xs text-muted-foreground">{data.message}</p>}
     </div>

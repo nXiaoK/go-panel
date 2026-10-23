@@ -87,3 +87,11 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 `app_name` 优先使用已有数据库配置，空值回退 `go-panel`；新库只在该项缺失时写入默认值，已有名称不会迁移。页面标题由根组件统一组合为“页面名 · 站点名称”，配置保存和路由切换即时更新，`HeadContent` 继续管理其余 meta。
 
 字节和速率统一使用 1024 进制，数值小于 10 保留两位、小于 100 保留一位，否则取整；测速保留原有 Mbps 转 MB/s 的两位小数。日期使用 `zh-CN`，无效值显示破折号。危险操作使用共享异步确认框，节点删除及备份恢复需输入名称或备份文件名；这只加强操作确认，不改变后端权限。
+
+## 字体、主题与设计令牌配置
+
+`package.json` / `package-lock.json` 新增的 `@fontsource-variable/inter` 和 `@fontsource-variable/jetbrains-mono` 用于自托管字体，不访问 Google Fonts 或字体 CDN。锁定版本的 `wght.css` 含所有语种，且未提供 latin 专用 CSS 入口，因此 `src/main.tsx` 导入本地 `src/fonts.css`，只声明两包 `files/*-latin-wght-normal.woff2`，保留上游的字重范围、`unicode-range` 与 `font-display: swap`；不导入 cyrillic、greek、latin-ext 等子集，中文回退系统字体。实际分发的 Inter latin 子集已移除 `cv02/cv03/cv04/cv11/ss01`，正文只配置实际保留的 `calt`，等宽字体不继承这些字形配置。字体许可均为 SIL OFL 1.1，版权和完整许可见根 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) 以及随页面分发的 `public/font-licenses/`，升级字体时必须同步这些声明。
+
+`index.html` 固定 `class="dark"`、`color-scheme: dark` 和暗色元数据；主题无脚本、无切换或持久化读写，旧浏览器 `theme` 值不影响结果。`src/styles.css` 按根设计规范提供语义颜色与 shadcn 兼容映射，圆角 `sm=6px`、`md=8px`，命名间距使用 `space-` 前缀（例如 `p-space-sm`），避免与 `max-w-sm` / `max-w-xl` 等容器尺寸冲突；普通卡片只使用边线，只有浮层和交互卡片悬停使用阴影。`destructive` 仅用于图形/边界，危险确认实心按钮使用 `destructive-solid` 与 `ink`，避免文字对比不足。焦点轮廓始终显示；减弱动态偏好关闭动画与过渡但保留布局定位。
+
+`test/design-tokens.test.mjs` 扫描所有 TSX 字符串（包含变量和模板字符串），禁止新增原生色板、旧特效与小于 12px 字号。`test/design-token-legacy.mjs` 仅记录 U01 前既有页面的具体违规值和精确次数，文件内新增同值也会失败，减少/删除时必须同步收紧对应清单项，禁止保留可回填额度；清单只供 U03–U11 逐页清理，U12 必须归零。允许清单不得用于新增组件或扩大现有豁免。

@@ -783,7 +783,7 @@ export function SubscriptionPage() {
                         ))}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
-                          className="text-destructive"
+                          className="text-status-critical-text"
                           onClick={() => removeProfile(p)}
                         >
                           <Trash2 className="mr-2" />
@@ -1021,7 +1021,10 @@ export function SubscriptionPage() {
                         </>
                       )}
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-destructive" onClick={() => removeNode(n)}>
+                      <DropdownMenuItem
+                        className="text-status-critical-text"
+                        onClick={() => removeNode(n)}
+                      >
                         <Trash2 className="mr-2" />
                         删除
                       </DropdownMenuItem>
@@ -1118,7 +1121,7 @@ export function SubscriptionPage() {
               disabled={confirmState.pending}
               className={
                 confirmState.destructive
-                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  ? "bg-destructive-solid text-destructive-foreground hover:bg-destructive-solid/90"
                   : ""
               }
               onClick={async (e) => {
@@ -1170,7 +1173,7 @@ export function SubscriptionPage() {
                           成功 {ok}
                         </span>
                         <span
-                          className={`rounded px-2 py-0.5 ${fail > 0 ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}
+                          className={`rounded px-2 py-0.5 ${fail > 0 ? "bg-destructive/10 text-status-critical-text" : "bg-muted text-muted-foreground"}`}
                         >
                           失败 {fail}
                         </span>
@@ -1194,7 +1197,7 @@ export function SubscriptionPage() {
                             {it.success ? (
                               <span className="text-emerald-600 dark:text-emerald-400">成功</span>
                             ) : (
-                              <span className="text-destructive">失败</span>
+                              <span className="text-status-critical-text">失败</span>
                             )}
                           </td>
                           <td className="px-2 py-1.5 text-muted-foreground">

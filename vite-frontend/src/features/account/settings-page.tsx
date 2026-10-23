@@ -8,30 +8,20 @@ import { Switch } from "@/components/ui/switch";
 import { getPanelAddress, setPanelAddress } from "@/lib/api/client";
 import { notify } from "@/lib/notify";
 import { readPreferences, setPreference } from "@/lib/preferences";
-import { resolveTheme, setTheme, type Theme } from "@/lib/theme";
-import { Globe, Moon, Save, Settings2, Sun } from "lucide-react";
+import { Globe, Save, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export function SettingsPage() {
   const [address, setAddress] = useState("");
   const [notificationsEnabled, setNotify] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [theme, setThemeState] = useState<Theme>("dark");
 
   useEffect(() => {
     setAddress(getPanelAddress());
-    setThemeState(resolveTheme());
     const prefs = readPreferences();
     setNotify(prefs.notify);
     setAutoRefresh(prefs.autoRefresh);
   }, []);
-
-  const toggleTheme = (v: boolean) => {
-    const next: Theme = v ? "dark" : "light";
-    setTheme(next);
-    setThemeState(next);
-    notify.success(v ? "已切换到深色模式" : "已切换到浅色模式");
-  };
 
   const saveAddress = () => {
     const v = address.trim();
@@ -98,20 +88,6 @@ export function SettingsPage() {
           <CardDescription>仅存储在浏览器 localStorage</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex items-center justify-between rounded-md border border-border p-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-muted/40 text-primary">
-                {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-              </div>
-              <div>
-                <div className="text-sm font-medium">深色模式</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  切换深色 / 浅色主题；也可在顶栏一键切换
-                </div>
-              </div>
-            </div>
-            <Switch checked={theme === "dark"} onCheckedChange={toggleTheme} />
-          </div>
           <div className="flex items-center justify-between rounded-md border border-border p-3">
             <div>
               <div className="text-sm font-medium">操作通知</div>

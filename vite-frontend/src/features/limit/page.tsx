@@ -260,7 +260,7 @@ export function LimitPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => setDeleteTarget(l)}
-                          className="text-destructive hover:text-destructive"
+                          className="text-status-critical-text hover:text-status-critical-text"
                           aria-label="删除限速策略"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -344,7 +344,7 @@ export function LimitPage() {
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive-solid text-destructive-foreground hover:bg-destructive-solid/90"
             >
               删除
             </AlertDialogAction>

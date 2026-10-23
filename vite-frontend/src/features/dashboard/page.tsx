@@ -98,7 +98,7 @@ import { formatLatencyMs, formatLossPercent } from "@/lib/speed-rate";
 const toneMap = {
   success: "text-success bg-success/10 border-success/30",
   warning: "text-warning bg-warning/10 border-warning/30",
-  danger: "text-destructive bg-destructive/10 border-destructive/30",
+  danger: "text-status-critical-text bg-destructive/10 border-destructive/30",
   info: "text-primary bg-primary/10 border-primary/30",
 };
 
@@ -567,8 +567,7 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-xl border border-border bg-card p-6 shadow-card">
-        <div className="bg-grid pointer-events-none absolute inset-0 opacity-40" />
+      <div className="relative overflow-hidden rounded-xl border border-border bg-card p-6">
         <div className="relative flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
           <div>
             <div className="flex items-center gap-2">
@@ -590,7 +589,7 @@ export function Dashboard() {
               </span>
               {dashboardError ? (
                 <span
-                  className="max-w-[220px] truncate font-mono text-[10px] text-destructive"
+                  className="max-w-[220px] truncate font-mono text-[10px] text-status-critical-text"
                   title={dashboardError}
                 >
                   sync issue · {dashboardError}
@@ -598,7 +597,7 @@ export function Dashboard() {
               ) : null}
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight lg:text-4xl">
-              {timeGreeting()}，<span className="text-gradient-primary">{displayName}</span>
+              {timeGreeting()}，<span className="text-foreground">{displayName}</span>
             </h1>
             <p className="mt-2 max-w-xl text-sm text-muted-foreground">
               {isAdmin
@@ -622,7 +621,7 @@ export function Dashboard() {
               压力测试
             </Button>
             <Button
-              className="bg-gradient-primary text-primary-foreground shadow-glow hover:opacity-90"
+              className="bg-primary text-primary-foreground hover:opacity-90"
               onClick={() => navigate({ to: "/tunnel", search: { action: "create" } })}
             >
               <Zap className="mr-2 h-4 w-4" />
@@ -638,7 +637,7 @@ export function Dashboard() {
           {kpis.map((k) => (
             <Card
               key={k.label}
-              className="group relative overflow-hidden border-border bg-card p-5 shadow-card transition hover:border-primary/40 hover:shadow-glow"
+              className="group relative overflow-hidden border-border bg-card p-5 transition hover:border-primary/40"
             >
               <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-primary/10 opacity-0 blur-2xl transition group-hover:opacity-100" />
               <div className="flex items-start justify-between">
@@ -673,7 +672,9 @@ export function Dashboard() {
                   <div className="mt-2 flex items-center gap-1.5">
                     <span
                       className={`inline-flex items-center gap-0.5 rounded-sm px-1 py-0.5 font-mono text-[10px] font-medium ${
-                        k.up ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
+                        k.up
+                          ? "bg-success/10 text-success"
+                          : "bg-destructive/10 text-status-critical-text"
                       }`}
                     >
                       {k.up ? (
@@ -696,7 +697,7 @@ export function Dashboard() {
       </TooltipProvider>
 
       {/* Traffic chart */}
-      <Card className="border-border bg-card p-6 shadow-card">
+      <Card className="border-border bg-card p-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -742,7 +743,7 @@ export function Dashboard() {
               </span>
             ) : null}
             <div className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-primary shadow-glow" />
+              <span className="h-2 w-2 rounded-full bg-primary" />
               <span className="font-mono text-xs text-muted-foreground">下行</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -1168,11 +1169,7 @@ export function Dashboard() {
             <Button variant="outline" onClick={() => setStressOpen(false)}>
               关闭
             </Button>
-            <Button
-              disabled={stressLoading || stressTunnels.length === 0}
-              onClick={runStressTest}
-              className="shadow-glow"
-            >
+            <Button disabled={stressLoading || stressTunnels.length === 0} onClick={runStressTest}>
               {stressLoading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               开始测试
             </Button>
@@ -1182,7 +1179,7 @@ export function Dashboard() {
 
       {/* Nodes + Events */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="border-border bg-card p-6 shadow-card lg:col-span-2">
+        <Card className="border-border bg-card p-6 lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-base font-semibold tracking-tight">节点状态</h2>
@@ -1209,7 +1206,7 @@ export function Dashboard() {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className={`h-2 w-2 rounded-full ${statusClass} shadow-glow`} />
+                      <span className={`h-2 w-2 rounded-full ${statusClass} `} />
                       <span className="font-mono text-sm font-medium">{n.name}</span>
                     </div>
                     <span className="font-mono text-[11px] uppercase text-muted-foreground">
@@ -1219,7 +1216,11 @@ export function Dashboard() {
                   <div className="mt-3 space-y-2">
                     <div className="flex items-center justify-between font-mono text-[11px]">
                       <span className="text-muted-foreground">在线状态</span>
-                      <span className={n.status === "online" ? "text-success" : "text-destructive"}>
+                      <span
+                        className={
+                          n.status === "online" ? "text-success" : "text-status-critical-text"
+                        }
+                      >
                         {n.status === "online" ? "在线" : "离线"}
                       </span>
                     </div>
@@ -1240,7 +1241,7 @@ export function Dashboard() {
           </div>
         </Card>
 
-        <Card className="border-border bg-card p-6 shadow-card">
+        <Card className="border-border bg-card p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-base font-semibold tracking-tight">最近活动</h2>

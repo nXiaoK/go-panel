@@ -147,7 +147,7 @@ export function R2BackupCard() {
         {loadError && (
           <div
             role="alert"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-status-critical-text"
           >
             <span>R2 备份设置加载失败：{loadError}</span>
             <Button
@@ -163,7 +163,7 @@ export function R2BackupCard() {
         )}
 
         {!loading && settings && !settings.credentialEncryptionAvailable && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-status-critical-text">
             当前没有持久 JWT_SECRET，不能安全保存 R2 Secret Access Key。请在部署环境配置至少 32
             字节的 JWT_SECRET 并重启面板。
           </div>
@@ -243,7 +243,7 @@ export function R2BackupCard() {
               )}
             </div>
             {settings?.credentialMessage && !settings.secretUsable && (
-              <p className="mt-2 text-xs text-destructive">{settings.credentialMessage}</p>
+              <p className="mt-2 text-xs text-status-critical-text">{settings.credentialMessage}</p>
             )}
           </div>
           <R2Field
@@ -326,7 +326,7 @@ export function R2BackupCard() {
               </div>
             )}
             {settings.lastError && (
-              <div className="rounded border border-destructive/30 bg-destructive/5 p-2 text-destructive sm:col-span-2">
+              <div className="rounded border border-destructive/30 bg-destructive/5 p-2 text-status-critical-text sm:col-span-2">
                 最近错误：{settings.lastError}
               </div>
             )}

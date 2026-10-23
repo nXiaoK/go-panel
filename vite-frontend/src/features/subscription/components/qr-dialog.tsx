@@ -36,7 +36,7 @@ export function SubscriptionQrDialog({
           {dataUrl ? (
             <img src={dataUrl} alt="订阅二维码" width={256} height={256} />
           ) : error ? (
-            <p role="alert" className="py-24 text-sm text-destructive">
+            <p role="alert" className="py-24 text-sm text-status-critical-text">
               {error}
             </p>
           ) : (

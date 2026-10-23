@@ -282,7 +282,7 @@ export function ConfigPage() {
               role="alert"
               className={
                 insecureDownloadNotice.tone === "danger"
-                  ? "rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+                  ? "rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-status-critical-text"
                   : "rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300"
               }
             >
@@ -336,7 +336,7 @@ export function ConfigPage() {
                     variant="ghost"
                     size="icon"
                     onClick={() => remove(it.name)}
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    className="h-7 w-7 text-muted-foreground hover:text-status-critical-text"
                     aria-label={`移除配置项 ${it.name}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />

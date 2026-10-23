@@ -22,3 +22,10 @@ go-panel 包含或引用多个第三方开源组件。各组件仍由其原作�
 ## Go 与 npm 依赖
 
 其余直接和间接依赖记录在 `go.mod`、`go.sum`、`vite-frontend/package.json` 与 `vite-frontend/package-lock.json`。GitHub 发布镜像同时生成 SBOM，具体版本和许可证请以相应发布产物及上游仓库为准。
+
+## 自托管字体（SIL Open Font License 1.1）
+
+- Inter Variable：Copyright 2016 The Inter Project Authors (<https://github.com/rsms/inter>)，由 `@fontsource-variable/inter` 提供 latin 正常体可变字体
+- JetBrains Mono Variable：Copyright 2020 The JetBrains Mono Project Authors (<https://github.com/JetBrains/JetBrainsMono>)，由 `@fontsource-variable/jetbrains-mono` 提供 latin 正常体可变字体
+- 字体未经修改；本项目随应用捆绑分发，不单独出售，衍生字体还须遵守保留名称与 OFL 条款
+- 原始版权及完整 SIL Open Font License 1.1 分别保存在 [Inter 许可](vite-frontend/public/font-licenses/inter-OFL.txt) 和 [JetBrains Mono 许可](vite-frontend/public/font-licenses/jetbrains-mono-OFL.txt)，构建后分别可通过 `/font-licenses/inter-OFL.txt` 和 `/font-licenses/jetbrains-mono-OFL.txt` 访问，并随 Go 内嵌页面一起分发

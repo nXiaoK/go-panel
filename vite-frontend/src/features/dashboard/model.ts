@@ -152,7 +152,7 @@ export function healthBadge(status: DashboardHealthStatus): {
     default:
       return {
         label: "sync failed",
-        className: "border-destructive/40 bg-destructive/10 text-destructive",
+        className: "border-destructive/40 bg-destructive/10 text-status-critical-text",
         tone: "danger",
       };
   }

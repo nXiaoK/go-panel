@@ -1,4 +1,3 @@
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -103,7 +102,7 @@ export function AppTopbar() {
                 }
               }}
               placeholder="搜索隧道、节点、用户…"
-              className="h-9 w-full rounded-md border border-border bg-card/60 pl-9 pr-16 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary/60 focus:shadow-glow"
+              className="h-9 w-full rounded-md border border-border bg-card/60 pl-9 pr-16 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary/60"
             />
             <kbd className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
               <Command className="h-3 w-3" />K
@@ -146,13 +145,11 @@ export function AppTopbar() {
       )}
 
       <div className="ml-auto flex items-center gap-1.5">
-        {!forcePassword && <ThemeToggle />}
-
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 rounded-md px-1.5 py-1 transition hover:bg-accent">
               <Avatar className="h-7 w-7 border border-border">
-                <AvatarFallback className="bg-gradient-primary text-[11px] font-semibold text-primary-foreground">
+                <AvatarFallback className="bg-primary text-[11px] font-semibold text-primary-foreground">
                   {initials}
                 </AvatarFallback>
               </Avatar>
@@ -174,7 +171,10 @@ export function AppTopbar() {
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
+            <DropdownMenuItem
+              onClick={logout}
+              className="text-status-critical-text focus:text-status-critical-text"
+            >
               退出登录
             </DropdownMenuItem>
           </DropdownMenuContent>
