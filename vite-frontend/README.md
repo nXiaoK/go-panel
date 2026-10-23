@@ -95,3 +95,21 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 `index.html` 固定 `class="dark"`、`color-scheme: dark` 和暗色元数据；主题无脚本、无切换或持久化读写，旧浏览器 `theme` 值不影响结果。`src/styles.css` 按根设计规范提供语义颜色与 shadcn 兼容映射，圆角 `sm=6px`、`md=8px`，命名间距使用 `space-` 前缀（例如 `p-space-sm`），避免与 `max-w-sm` / `max-w-xl` 等容器尺寸冲突；普通卡片只使用边线，只有浮层和交互卡片悬停使用阴影。`destructive` 仅用于图形/边界，危险确认实心按钮使用 `destructive-solid` 与 `ink`，避免文字对比不足。焦点轮廓始终显示；减弱动态偏好关闭动画与过渡但保留布局定位。
 
 `test/design-tokens.test.mjs` 扫描所有 TSX 字符串（包含变量和模板字符串），禁止新增原生色板、旧特效与小于 12px 字号。`test/design-token-legacy.mjs` 仅记录 U01 前既有页面的具体违规值和精确次数，文件内新增同值也会失败，减少/删除时必须同步收紧对应清单项，禁止保留可回填额度；清单只供 U03–U11 逐页清理，U12 必须归零。允许清单不得用于新增组件或扩大现有豁免。
+
+## U02 共享组件与开发预览
+
+`package.json` / `package-lock.json` 新增 `@tanstack/react-table`，供统一 DataTable 使用；新增 `@radix-ui/react-popover`，提供具备焦点管理与键盘关闭的 Popover。两者均为本地打包的运行依赖，不访问外部服务，不改变业务权限或生产审计门槛。
+
+Node 22 下运行 `npm run dev` 后访问 `/_dev/components`，可检查基础控件、列表、表单、状态、配额、复制、诊断与抽屉。入口仅在 `import.meta.env.DEV` 下动态挂载，生产构建会移除入口与整个预览模块；不将它添加到正式路由树。发布前扫描 `dist/assets`，不得包含唯一标记“组件验收实验室 U02”。
+
+页面从 `components/patterns/` 按组件路径导入。`DataTable` 必须提供稳定 `getRowId` 和 `renderMobileCard`；`sorting/onSortingChange`、`rowSelection/onRowSelectionChange` 为 TanStack 受控状态，`initialRowSelection` 可预选。`onRowActivate` 同时支持鼠标和回车/空格，内嵌按钮、复选框、链接不触发行激活。操作列使用 `meta.actions`，数值列使用 `meta.numeric` 与 `meta.align="right"`。筛选空态传 `filtered/onClearFilters`。`focusRowId` 等待异步数据后清选择、滚动、聚焦并高亮2秒。
+
+`useUrlState(defaults)` 返回 `{state,setState}`，只合并修改的 search 字段并 replace 历史。各页面必须在路由 `validateSearch` 中验证并保留需要的 `q/status/sort/focus` 等字段，避免路由丢弃共享链接中的状态；分页同样由页面声明。该工具不会重载整页。
+
+`EntitySheet` 的 `onSubmit` 可省略，以支持只读详情与自定义表单，避免嵌套 form。默认底栏通过 `footerActions` 加左侧操作；完全自定义时用 `footer={({requestClose,submitting}) => ...}`，关闭操作必须调用 `requestClose` 以保留 dirty 确认。提交期间控件禁止重复提交与关闭。
+
+`DiagnosisSheet` 直接接收 `DiagnosisResult | NodeStatusCheck`；advisory 外网失败只显示警告，不计链路失败。`lib/batch.runBatch(items,action,{nameOf,onProgress,concurrency})` 默认且最多4并发，结果按输入排序并逐项保留 success/reason；进度提供 done/total。增加并发会同时发送写请求，页面应展示部分失败摘要，禁止无限并发。
+
+字体注意：`text-body` 是正文颜色令牌；由于同名的颜色/字号歧义，Tailwind 会把该类解析为颜色。正文14px/20px请显式使用 `text-sm leading-5`，并搭配 `text-ink`、`text-body` 或 `text-mute`；不要用 `text-body` 代替字号。
+
+`FormField` 会给单个真实控件或可透传 DOM 属性的代理控件注入 id/aria，复用控件已有 id。Select 根通过上下文把关联传给 Trigger，RadioGroup 通过 `aria-labelledby` 关联组标题。布局 div/多控件字段必须使用 render prop，为各控件设置唯一 id；第一项可关联主 label，其余设置独立 aria-label，错误说明可共享。基础 Input 不再向嵌套的多个字段传播同一个 id。复制、清搜索和重试等共享动作明确使用 `type="button"`，避免位于实体表单时误提交。

@@ -15,14 +15,6 @@ export const legacyViolations = {
       "text-[11px]": 2,
     },
   },
-  "src/components/page.tsx": {
-    owner: "U02",
-    values: {
-      "emerald-400": 1,
-      "amber-400": 1,
-      "text-[10px]": 2,
-    },
-  },
   "src/features/auth/page.tsx": {
     owner: "U03",
     values: {

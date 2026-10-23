@@ -633,21 +633,29 @@ export function NodePage() {
               />
             </FormField>
             <FormField label="转发方式">
-              <div className="grid grid-cols-2 gap-2">
-                {(["gost", "nftables"] as const).map((mode) => (
-                  <Button
-                    key={mode}
-                    type="button"
-                    variant={form.forwardMode === mode ? "default" : "outline"}
-                    onClick={() => setForm({ ...form, forwardMode: mode })}
+              {(control) => (
+                <>
+                  <div
+                    role="group"
+                    aria-labelledby={control["aria-labelledby"]}
+                    className="grid grid-cols-2 gap-2"
                   >
-                    {mode.toUpperCase()}
-                  </Button>
-                ))}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                选择 nftables 后，安装脚本会切换为 nftables 节点脚本
-              </div>
+                    {(["gost", "nftables"] as const).map((mode) => (
+                      <Button
+                        key={mode}
+                        type="button"
+                        variant={form.forwardMode === mode ? "default" : "outline"}
+                        onClick={() => setForm({ ...form, forwardMode: mode })}
+                      >
+                        {mode.toUpperCase()}
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    选择 nftables 后，安装脚本会切换为 nftables 节点脚本
+                  </div>
+                </>
+              )}
             </FormField>
             <div className="grid grid-cols-2 gap-3">
               <FormField label="起始端口" htmlFor="node-form-port-start" error={errors.portSta}>
