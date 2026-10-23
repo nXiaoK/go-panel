@@ -115,7 +115,7 @@ export function SystemUpdateDialog({ open, status, onOpenChange }: SystemUpdateD
                 : "自动更新仅允许管理员执行，也可以由服务器管理员运行："}
             </p>
             <div className="flex items-center gap-2">
-              <code className="min-w-0 flex-1 overflow-x-auto rounded bg-background px-2 py-1.5 text-[11px]">
+              <code className="min-w-0 flex-1 break-all whitespace-pre-wrap rounded bg-canvas px-2 py-1.5 text-code">
                 {MANUAL_UPDATE_COMMAND}
               </code>
               <Button type="button" variant="outline" size="icon" onClick={copyManualCommand}>

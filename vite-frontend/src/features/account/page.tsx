@@ -14,7 +14,7 @@ import { formatBytes } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { clearSession } from "@/lib/session";
 import type { PasswordUpdate, UserPackage } from "@/lib/types";
-import { Route } from "@/routes/_app.profile";
+import { Route } from "@/routes/_app.account";
 import { useNavigate } from "@tanstack/react-router";
 import { KeyRound, LogOut, ShieldCheck, UserCircle2 } from "lucide-react";
 import { useEffect, useState } from "react";

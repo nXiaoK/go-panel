@@ -108,11 +108,11 @@ describe("forced password change", () => {
     requirePasswordChange();
     expect(storage.getItem("must_change_pwd")).toBe("1");
     expect(storage.getItem("token")).toBe("t");
-    expect(navigate).toHaveBeenCalledExactlyOnceWith("/profile?forcePassword=1");
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/account?tab=security&forcePassword=1");
     // 重建依赖模拟刷新，守卫仍从持久存储读取要求。
     configureSessionForTest({ storage, navigate, pathname: "/forward" });
-    expect(passwordChangeRedirect("/forward")).toBe("/profile?forcePassword=1");
-    expect(passwordChangeRedirect("/profile")).toBeNull();
+    expect(passwordChangeRedirect("/forward")).toBe("/account?tab=security&forcePassword=1");
+    expect(passwordChangeRedirect("/account")).toBeNull();
     setPasswordChangeRequired(false);
     expect(isPasswordChangeRequired()).toBe(false);
     expect(passwordChangeRedirect("/forward")).toBeNull();

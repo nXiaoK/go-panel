@@ -65,7 +65,7 @@ describe.each(Object.entries(requests))("%s session failures", (method, request)
     await expect(request("/secure")).rejects.toThrow();
     expect(localStorage.getItem("token")).toBe("secret");
     expect(localStorage.getItem("must_change_pwd")).toBe("1");
-    expect(navigate).toHaveBeenCalledExactlyOnceWith("/profile?forcePassword=1");
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/account?tab=security&forcePassword=1");
   });
   it("preserves session on an administrator permission error", async () => {
     respond({ code: 403, msg: "权限不足，仅管理员可操作" }, method === "download");
@@ -122,5 +122,5 @@ it("classifies non-2xx JSON download bodies", async () => {
     };
   });
   await expect(apiDownload("/secure")).rejects.toThrow();
-  expect(navigate).toHaveBeenCalledExactlyOnceWith("/profile?forcePassword=1");
+  expect(navigate).toHaveBeenCalledExactlyOnceWith("/account?tab=security&forcePassword=1");
 });

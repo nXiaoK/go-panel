@@ -34,20 +34,6 @@ export function computeBaseURL(): string {
   return currentPanelEndpoint().apiBase;
 }
 
-export const PANEL_ADDRESS_CHANGED_EVENT = "panel-address-changed";
-// 地址切换会把令牌发送到指定服务器；仅保存用户明确填写的值，并通知缓存清空旧站点数据。
-export function setPanelAddress(address: string) {
-  if (typeof window === "undefined") return;
-  const next = address.trim();
-  const previous = window.localStorage.getItem("panel_address") || "";
-  if (next) window.localStorage.setItem("panel_address", next);
-  else window.localStorage.removeItem("panel_address");
-  if (next !== previous) window.dispatchEvent(new Event(PANEL_ADDRESS_CHANGED_EVENT));
-}
-export function getPanelAddress(): string {
-  return typeof window === "undefined" ? "" : window.localStorage.getItem("panel_address") || "";
-}
-
 function isPublic(config?: AxiosRequestConfig): boolean {
   return (
     config?.panelPublic ??
@@ -86,7 +72,7 @@ function statusMessage(status?: number) {
   return status ? `请求失败（HTTP ${status}）` : "无法连接面板，请检查网络";
 }
 
-// 全站只使用一个实例。端点与令牌逐次读取，避免地址或会话切换后发送旧鉴权信息。
+// 全站只使用一个实例。端点与令牌逐次读取，避免会话切换后发送旧鉴权信息。
 const http = axios.create();
 http.interceptors.request.use((config) => {
   config.baseURL = computeBaseURL();

@@ -5,6 +5,8 @@ export type GlobalSearchKind = "tunnel" | "node" | "user" | "forward";
 export interface GlobalSearchItem {
   id: string;
   kind: GlobalSearchKind;
+  entityId: string;
+  statusValue: number;
   title: string;
   subtitle: string;
   href: "/tunnel" | "/node" | "/user" | "/forward";
@@ -37,20 +39,17 @@ function compact(values: Array<string | number | null | undefined | unknown>) {
   return values.map((value) => String(value ?? "").trim()).filter(Boolean);
 }
 
-function statusLabel(value: unknown) {
-  return Number(value ?? 1) === 1 ? "启用" : "停用";
-}
-
 export function buildGlobalSearchItems(lists: GlobalSearchLists): GlobalSearchItem[] {
   const tunnels = (lists.tunnels || []).map((t) => ({
     id: `tunnel-${t.id}`,
+    entityId: String(t.id),
+    statusValue: t.status ?? 1,
     kind: "tunnel" as const,
     title: String(t.name || `隧道 #${t.id}`),
     subtitle: compact([
       `#${t.id}`,
       t.type === 2 ? "隧道转发" : "端口转发",
       String(t.protocol || "tcp").toUpperCase(),
-      statusLabel(t.status),
     ]).join(" · "),
     href: "/tunnel" as const,
     keywords: compact([
@@ -66,43 +65,33 @@ export function buildGlobalSearchItems(lists: GlobalSearchLists): GlobalSearchIt
 
   const nodes = (lists.nodes || []).map((n) => ({
     id: `node-${n.id}`,
+    entityId: String(n.id),
+    statusValue: n.status ?? 0,
     kind: "node" as const,
     title: String(n.name || `节点 #${n.id}`),
-    subtitle: compact([
-      `#${n.id}`,
-      n.forwardMode || "gost",
-      n.serverIp || n.ip,
-      Number(n.status) === 1 ? "在线" : "离线",
-    ]).join(" · "),
+    subtitle: compact([`#${n.id}`, n.forwardMode || "gost", n.serverIp || n.ip]).join(" · "),
     href: "/node" as const,
     keywords: compact([n.id, n.name, n.forwardMode, n.serverIp, n.serverIpv6, n.ip, n.version]),
   }));
 
   const users = (lists.users || []).map((u) => ({
     id: `user-${u.id}`,
+    entityId: String(u.id),
+    statusValue: u.status ?? 1,
     kind: "user" as const,
     title: String(u.user || u.name || `用户 #${u.id}`),
-    subtitle: compact([
-      u.name,
-      `#${u.id}`,
-      statusLabel(u.status),
-      roleLabel(Number(u.roleId ?? u.role_id)),
-    ]).join(" · "),
+    subtitle: compact([u.name, `#${u.id}`, roleLabel(Number(u.roleId ?? u.role_id))]).join(" · "),
     href: "/user" as const,
     keywords: compact([u.id, u.user, u.name, u.roleId]),
   }));
 
   const forwards = (lists.forwards || []).map((f) => ({
     id: `forward-${f.id}`,
+    entityId: String(f.id),
+    statusValue: f.status ?? 1,
     kind: "forward" as const,
     title: String(f.name || `转发 #${f.id}`),
-    subtitle: compact([
-      `#${f.id}`,
-      f.tunnelName,
-      f.inPort,
-      f.remoteAddr,
-      statusLabel(f.status),
-    ]).join(" · "),
+    subtitle: compact([`#${f.id}`, f.tunnelName, f.inPort, f.remoteAddr]).join(" · "),
     href: "/forward" as const,
     keywords: compact([
       f.id,

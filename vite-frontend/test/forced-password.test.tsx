@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { clearSession, configureSessionForTest, readSession } from "../src/lib/session";
 import { Route as AppRoute } from "../src/routes/_app";
-import { Route as ProfileRoute } from "../src/routes/_app.profile";
+import { ProfilePage } from "../src/features/account/page";
 
 const api = vi.hoisted(() => ({ package: vi.fn(), password: vi.fn() }));
 vi.mock("../src/lib/api", async (importOriginal) => ({
@@ -46,15 +46,17 @@ describe("forced password route", () => {
     } catch (error) {
       failure = error;
     }
-    expect(failure).toMatchObject({ options: { to: "/profile", search: { forcePassword: 1 } } });
+    expect(failure).toMatchObject({
+      options: { to: "/account", search: { tab: "security", forcePassword: 1 } },
+    });
     expect(() =>
-      AppRoute.options.beforeLoad?.({ location: { pathname: "/profile" } } as never),
+      AppRoute.options.beforeLoad?.({ location: { pathname: "/account" } } as never),
     ).not.toThrow();
   });
 
   it("shows the requirement and never fetches a package in forced mode", async () => {
     localStorage.setItem("must_change_pwd", "1");
-    const Profile = ProfileRoute.options.component as ComponentType;
+    const Profile = ProfilePage;
     render(
       <QueryClientProvider client={new QueryClient()}>
         <Profile />
@@ -67,7 +69,7 @@ describe("forced password route", () => {
   });
 
   it("keeps the package available after a normal login", async () => {
-    const Profile = ProfileRoute.options.component as ComponentType;
+    const Profile = ProfilePage;
     render(
       <QueryClientProvider client={new QueryClient()}>
         <Profile />
@@ -79,7 +81,7 @@ describe("forced password route", () => {
   it("改密成功清除会话后、延迟导航前不重新请求套餐", async () => {
     localStorage.setItem("must_change_pwd", "1");
     localStorage.setItem("name", "alice");
-    const Profile = ProfileRoute.options.component as ComponentType;
+    const Profile = ProfilePage;
     const client = new QueryClient();
     render(
       <QueryClientProvider client={client}>
@@ -103,7 +105,11 @@ describe("forced password route", () => {
   });
   it("退出时立即卸载应用业务树，无需等待导航完成", () => {
     const App = AppRoute.options.component as ComponentType;
-    render(<App />);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <App />
+      </QueryClientProvider>,
+    );
     expect(screen.getByText("业务页面已挂载")).toBeTruthy();
     act(() => clearSession());
     expect(screen.queryByText("业务页面已挂载")).toBeNull();

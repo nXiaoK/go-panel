@@ -47,7 +47,7 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 默认 `npm ci` 严格安装锁定版本。删除锁文件或回退版本可能重新引入已修复的问题；更新后必须重新执行完整前端检查和生产依赖审计，不得降低审计门槛。
 
 - 网络请求模块：`axios@1.20.0` 与 `follow-redirects@1.16.1` 修复请求选项、请求头、代理规则和重定向处理中的安全问题。后续升级需验证登录凭据、错误处理及下载请求。
-- 路由模块：`@tanstack/router-plugin@1.168.48` 与 `@tanstack/react-router@1.170.46` 保留已有安全锁定版本，`seroval` / `seroval-plugins` 为 `1.7.0`。路由生成依赖随树更新，可能改变生成代码和格式检查结果，需完整复验。根路由错误边界使用 `ErrorComponentProps` 处理未知抛出值，只输出浏览器控制台错误并提供重试。
+- 路由模块：`@tanstack/router-plugin@1.168.48` 与 `@tanstack/react-router@1.170.46` 保留已有安全锁定版本，`seroval` / `seroval-plugins` 为 `1.7.0`。路由生成依赖随树更新，可能改变生成代码和格式检查结果，需完整复验。根路由错误边界使用 `ErrorComponentProps` 处理未知抛出值，提供重试；错误堆栈只在开发环境的折叠区展示。
 - 构建与源码映射模块：`vite@8.3.5` 与 `source-map-js@1.2.2` 保留已有修复。开发服务只用于本地调试；更新构建链可能改变静态文件哈希、分块和 CSS 输出，必须重新构建、同步 `web/dist` 并验证 Go 内嵌页面。
 - YAML 工具：`npm ls js-yaml` 显示只剩开发依赖 `eslint → @eslint/eslintrc → js-yaml@4.3.2`；`npm ls --omit=dev js-yaml` 已为空，生产树不再包含它。`4.0.0` 至 `4.3.1` 受 GHSA-2883-xcq3-v3hh 影响，空 YAML 合并源可绕过资源限制并耗尽 CPU；开发依赖同样不能回退到已知受影响版本。
 
@@ -113,3 +113,11 @@ Node 22 下运行 `npm run dev` 后访问 `/_dev/components`，可检查基础�
 字体注意：`text-body` 是正文颜色令牌；由于同名的颜色/字号歧义，Tailwind 会把该类解析为颜色。正文14px/20px请显式使用 `text-sm leading-5`，并搭配 `text-ink`、`text-body` 或 `text-mute`；不要用 `text-body` 代替字号。
 
 `FormField` 会给单个真实控件或可透传 DOM 属性的代理控件注入 id/aria，复用控件已有 id。Select 根通过上下文把关联传给 Trigger，RadioGroup 通过 `aria-labelledby` 关联组标题。布局 div/多控件字段必须使用 render prop，为各控件设置唯一 id；第一项可关联主 label，其余设置独立 aria-label，错误说明可共享。基础 Input 不再向嵌套的多个字段传播同一个 id。复制、清搜索和重试等共享动作明确使用 `type="button"`，避免位于实体表单时误提交。
+
+## 外壳、端点与命令面板
+
+正式构建的 REST、WebSocket 与订阅地址始终使用当前页面同源。已移除登录页与账户页的“面板地址”入口，也不再读取浏览器历史的 `panel_address`；不会迁移或删除该旧键。仅 `import.meta.env.DEV` 为真时允许 `VITE_API_BASE` 覆盖开发后端地址，该值可能接收登录凭据，只能指向可信开发实例。优先使用前述同源开发代理，生产构建即使设置该变量也不会改变同源地址。
+
+侧栏 `sidebar_state` cookie 只保存展开布尔值，有效期 7 天、路径 `/`、`SameSite=Lax`，不包含身份信息。无历史偏好时，桌面默认展开，平板默认折叠，手机使用导航抽屉。管理员系统状态每 60 秒轮询，页面隐藏时暂停；连续两次失败才显示连接异常。普通用户与强制改密模式不读取系统状态、版本或升级接口。
+
+旧 `/profile`、`/settings` 书签分别转至 `/account?tab=security` 与 `/account?tab=preferences`；`forcePassword=1` 会继续保留，真实改密要求仍来自持久会话。账户默认资料与安全分区。命令面板只在打开时加载有权查询的资源，共用资源缓存；资源深链写入使用数字 ID，生成 `focus=<id>`，路由与列表的 `useUrlState` 读取仍为数字，页面在 DataTable 的 `focusRowId` 边界显式转换为字符串，新建操作使用 `create=1`。列表页接收这些参数并在定位时清空筛选；隧道原 `action=create` 与其他页面参数继续保留。已提供但非法的筛选/定位键被规范为空值，页面读取可选参数时使用 `??` 回退自己的默认值；缺省键不会覆盖页面默认值。

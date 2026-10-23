@@ -182,7 +182,9 @@ export function isPasswordChangeRequired(): boolean {
 }
 
 export function passwordChangeRedirect(pathname: string): string | null {
-  return isPasswordChangeRequired() && pathname !== "/profile" ? "/profile?forcePassword=1" : null;
+  return isPasswordChangeRequired() && pathname !== "/account"
+    ? "/account?tab=security&forcePassword=1"
+    : null;
 }
 
 export function requirePasswordChange(): void {
@@ -190,8 +192,8 @@ export function requirePasswordChange(): void {
   setPasswordChangeRequired(true);
   if (forcingPassword) return;
   forcingPassword = true;
-  // 即使当前已在资料页也重新进入强制模式，确保停止套餐及外壳中的业务请求。
-  deps.navigate("/profile?forcePassword=1");
+  // 即使当前已在账户页也重新进入强制模式，确保停止套餐及外壳中的业务请求。
+  deps.navigate("/account?tab=security&forcePassword=1");
 }
 
 /** 登录原子更新身份，避免订阅者观察到上一个账户的角色或强制改密标记。 */

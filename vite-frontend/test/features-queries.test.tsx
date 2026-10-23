@@ -38,6 +38,7 @@ afterEach(() => {
   cleanup();
   client.clear();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   localStorage.clear();
 });
 describe("资源查询与缓存行为", () => {
@@ -143,8 +144,11 @@ describe("资源查询与缓存行为", () => {
     expect(traffic.result.current.data).toBeUndefined();
     expect(client.getQueryData(accountKeys.traffic("24h"))).toBeUndefined();
   });
-  it("节点状态WebSocket保留面板子路径与协议", () => {
+  it("节点状态WebSocket忽略旧地址，保留开发配置子路径与协议", () => {
     localStorage.setItem("panel_address", "https://panel.example/base/api/v1");
-    expect(buildSystemInfoURL()).toBe("wss://panel.example/base/system-info?type=0");
+    expect(buildSystemInfoURL()).toBe(`ws://${window.location.host}/system-info?type=0`);
+    vi.stubEnv("DEV", true);
+    vi.stubEnv("VITE_API_BASE", "https://dev.example/base/api/v1");
+    expect(buildSystemInfoURL()).toBe("wss://dev.example/base/system-info?type=0");
   });
 });
