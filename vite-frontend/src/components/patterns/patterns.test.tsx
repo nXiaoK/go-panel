@@ -10,6 +10,7 @@ import {
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
+import { AppContent } from "@/app/app-content";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   Dialog,
@@ -109,6 +110,54 @@ describe("表格行为", () => {
     fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
     expect(screen.queryByRole("region", { name: "批量操作" })).toBeNull();
   });
+  it.each([false, true])(
+    "长列表跨断点后保留真实选择，批量操作与取消均可用，mobile=%s",
+    (mobile) => {
+      const listeners = new Set<() => void>();
+      const media = {
+        matches: mobile,
+        addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+        removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+      };
+      vi.mocked(window.matchMedia).mockReturnValue(media as unknown as MediaQueryList);
+      const items = Array.from({ length: 50 }, (_, index) => ({
+        id: String(index + 1),
+        name: `长列表条目 ${index + 1}`,
+        amount: index,
+      }));
+      const received = vi.fn();
+      render(
+        <AppContent aria-label="应用内容">
+          <DataTable
+            {...props}
+            data={items}
+            enableSelection
+            bulkActions={(rows) => (
+              <Button onClick={() => received(rows)}>处理所选长列表条目</Button>
+            )}
+          />
+        </AppContent>,
+      );
+      fireEvent.click(screen.getByRole("checkbox", { name: "选择行 1" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "选择行 50" }));
+      const actions = screen.getByRole("region", { name: "批量操作" });
+      expect(screen.getByRole("main", { name: "应用内容" })).toContainElement(actions);
+      expect(actions).toHaveTextContent("已选 2 项");
+      act(() => {
+        media.matches = !mobile;
+        listeners.forEach((listener) => listener());
+      });
+      expect(screen.getByRole("checkbox", { name: "选择行 1" })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "选择行 50" })).toBeChecked();
+      expect(screen.queryByRole("table") !== null).toBe(mobile);
+      fireEvent.click(screen.getByRole("button", { name: "处理所选长列表条目" }));
+      expect(received).toHaveBeenCalledExactlyOnceWith([items[0], items[49]]);
+      fireEvent.click(screen.getByRole("button", { name: "取消选择" }));
+      expect(screen.queryByRole("region", { name: "批量操作" })).toBeNull();
+      expect(screen.getByRole("checkbox", { name: "选择行 1" })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "选择行 50" })).not.toBeChecked();
+    },
+  );
   it("受控预选可供外部保存按钮使用，数据删除后清理无效选择", () => {
     const save = vi.fn();
     function Controlled({ items }: { items: Item[] }) {

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AppContent } from "@/app/app-content";
 import { AlertTriangle, MoreHorizontal } from "lucide-react";
 import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
 import { ConfirmProvider } from "@/components/patterns/confirm-dialog";
@@ -392,10 +393,88 @@ function Preview() {
     </TooltipProvider>
   );
 }
-export function ComponentPreview() {
+// 开发专用长列表：共用实际页面容器，legacy 参数只用来复现旧滚动祖先问题。
+function BatchBarPreview() {
+  const legacy = new URLSearchParams(window.location.search).get("legacy") === "1";
+  const [sheet, setSheet] = useState(false);
+  const confirm = useConfirm();
+  const items = Array.from({ length: 50 }, (_, index) => ({
+    id: String(index + 1),
+    name: `开发夹具条目 ${index + 1}`,
+    flow: (index + 1) * 10,
+  }));
   return (
-    <ConfirmProvider>
-      <Preview />
-    </ConfirmProvider>
+    <div className="flex min-h-svh w-full">
+      <aside className="hidden shrink-0 border-r border-hairline p-2 text-mute md:block md:w-14 lg:w-60">
+        夹具
+      </aside>
+      <div className="relative flex min-w-0 flex-1 flex-col bg-canvas">
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center border-b border-hairline bg-canvas px-4 text-sm">
+          U02 批量条开发夹具
+        </header>
+        <AppContent className={legacy ? "overflow-x-hidden" : undefined}>
+          <PageHeader
+            title="长列表批量操作验收"
+            description={`仅开发环境 · 50 条模拟数据 · ${legacy ? "旧滚动容器复现" : "实际应用内容容器"}`}
+          />
+          <div className="mt-6">
+            <DataTable
+              columns={columns}
+              data={items}
+              getRowId={(row) => row.id}
+              ariaLabel="批量条验收列表"
+              enableSelection
+              renderMobileCard={(row) => (
+                <div className="space-y-3">
+                  <strong>{row.name}</strong>
+                  <p className="text-body">手机长卡片 · 用于验证选中后立即可操作及滚动吸底</p>
+                  <p className="font-mono">127.0.0.1:{6400 + Number(row.id)}</p>
+                  <p className="text-mute">条目 {row.id} / 50</p>
+                </div>
+              )}
+              bulkActions={() => (
+                <>
+                  <Button variant="outline" onClick={() => setSheet(true)}>
+                    打开编辑抽屉
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={() =>
+                      void confirm({
+                        title: "批量删除开发夹具？",
+                        description: "仅验证浮层，未连接业务接口，不会删除数据。",
+                        confirmText: "关闭确认",
+                      })
+                    }
+                  >
+                    打开批量确认
+                  </Button>
+                </>
+              )}
+            />
+          </div>
+          <section className="mt-6 rounded-md border border-hairline p-5">
+            <h2 className="text-sm font-semibold">列表后的独立区域</h2>
+            <p className="mt-2 text-sm text-mute">批量条应随自身列表结束，不覆盖后续内容。</p>
+          </section>
+          <EntitySheet
+            open={sheet}
+            onOpenChange={setSheet}
+            title="批量条浮层验收"
+            description="仅开发夹具，不提交业务数据"
+            onSubmit={() => setSheet(false)}
+            submitText="关闭抽屉"
+          >
+            <FormField label="夹具名称">
+              <Input defaultValue="批量操作测试" />
+            </FormField>
+          </EntitySheet>
+        </AppContent>
+      </div>
+    </div>
   );
+}
+export function ComponentPreview() {
+  const batch = new URLSearchParams(window.location.search).get("batch") === "1";
+  return <ConfirmProvider>{batch ? <BatchBarPreview /> : <Preview />}</ConfirmProvider>;
 }
