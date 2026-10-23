@@ -20,7 +20,7 @@ const {
   normalizeTargetAddressInput,
   splitTargetAddresses,
   validateForwardForm,
-} = await importTs(new URL("../src/lib/forward-form.ts", import.meta.url));
+} = await importTs(new URL("../src/features/forward/model.ts", import.meta.url));
 
 describe("forward form helpers", () => {
   it("allows blank entry port when creating a forward", () => {

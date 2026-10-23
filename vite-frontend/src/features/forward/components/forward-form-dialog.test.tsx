@@ -1,11 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { notify } from "@/lib/notify";
-import { ApiError } from "@/lib/api/client";
-import type { ReactNode } from "react";
+import { ForwardFormDialog } from "@/features/forward/components/forward-form-dialog";
 import { createForward, updateForward } from "@/lib/api";
+import { ApiError } from "@/lib/api/client";
+import { notify } from "@/lib/notify";
 import type { Forward, Tunnel, UserTunnelOption } from "@/lib/types";
-import { ForwardFormDialog } from "./forward-form-dialog";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/notify", () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/api", () => ({ createForward: vi.fn(), updateForward: vi.fn() }));
@@ -46,7 +47,9 @@ vi.mock("@/components/ui/select", () => ({
     </option>
   ),
 }));
-vi.mock("./exit-member-picker", () => ({ ExitMemberPicker: () => <div>出口成员选择</div> }));
+vi.mock("@/features/forward/components/exit-member-picker", () => ({
+  ExitMemberPicker: () => <div>出口成员选择</div>,
+}));
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -82,15 +85,17 @@ function form(
   tunnels: (Tunnel | UserTunnelOption)[] = [option],
 ) {
   render(
-    <ForwardFormDialog
-      mode={mode}
-      open
-      onOpenChange={vi.fn()}
-      editing={current}
-      tunnels={tunnels}
-      nodes={[]}
-      onSaved={vi.fn()}
-    />,
+    <QueryClientProvider client={new QueryClient()}>
+      <ForwardFormDialog
+        mode={mode}
+        open
+        onOpenChange={vi.fn()}
+        editing={current}
+        tunnels={tunnels}
+        nodes={[]}
+        onSaved={vi.fn()}
+      />
+    </QueryClientProvider>,
   );
 }
 describe("regular-user forward form", () => {

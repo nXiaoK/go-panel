@@ -10,7 +10,7 @@ const {
   isR2BackupFormDirty,
   r2BackupSettingsToForm,
   toggleR2BackupSecretClear,
-} = await importTs(new URL("../src/lib/r2-backup.ts", import.meta.url));
+} = await importTs(new URL("../src/features/system/model.ts", import.meta.url));
 
 const settings = {
   enabled: false,

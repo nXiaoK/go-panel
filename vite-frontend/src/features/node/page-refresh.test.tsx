@@ -1,16 +1,16 @@
 import { ConfirmProvider } from "@/components/patterns/confirm-dialog";
-import { act, cleanup, render } from "@testing-library/react";
+import { apiPost } from "@/lib/api/client";
+import { setPreference } from "@/lib/preferences";
+import { Route } from "@/routes/_app.node";
 import {
   focusManager,
   onlineManager,
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
+import { act, cleanup, render } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { apiPost } from "@/lib/api/client";
-import { setPreference } from "@/lib/preferences";
-import { Route } from "./_app.node";
 
 vi.mock("@/lib/api/client", () => ({
   apiPost: vi.fn(),
@@ -46,6 +46,8 @@ async function renderPage() {
 beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
+  localStorage.setItem("token", "test-token");
+  localStorage.setItem("role_id", "0");
   post.mockResolvedValue([]);
   focusManager.setFocused(true);
   onlineManager.setOnline(true);

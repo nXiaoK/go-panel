@@ -1,21 +1,16 @@
 import "@testing-library/jest-dom/vitest";
 
-import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import QRCode from "qrcode";
+import { SubscriptionQrDialog } from "../src/features/subscription/components/qr-dialog";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createSubscriptionQrDataUrl,
   selectSubscriptionQrState,
   useSubscriptionQrDataUrl,
-} from "../src/lib/subscription-qr";
-
-const subscriptionQrDialogSource = await readFile(
-  "src/components/subscription/qr-dialog.tsx",
-  "utf8",
-);
+} from "../src/features/subscription/qr";
 
 afterEach(() => {
   cleanup();
@@ -65,10 +60,20 @@ describe("createSubscriptionQrDataUrl", () => {
     });
   });
 
-  it("renders the subscription QR from local data without a remote endpoint", () => {
-    expect(subscriptionQrDialogSource).toContain("src={dataUrl}");
-    expect(subscriptionQrDialogSource).toContain("useSubscriptionQrDataUrl(open, value)");
-    expect(subscriptionQrDialogSource).not.toMatch(/https?:\/\//);
+  it("renders the real dialog with a local QR, accessible alt and copy button without fetching", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    render(
+      createElement(SubscriptionQrDialog, {
+        open: true,
+        title: "订阅链接",
+        value: "https://panel.example/sub/token",
+        onOpenChange: vi.fn(),
+      }),
+    );
+    const image = await screen.findByRole("img", { name: "订阅二维码" });
+    expect(image).toHaveAttribute("src", expect.stringMatching(/^data:image\/png;base64,/));
+    expect(screen.getByRole("button", { name: "复制" })).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("creates a local PNG data URL without calling fetch", async () => {

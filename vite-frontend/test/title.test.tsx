@@ -10,7 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route as RootRoute } from "@/routes/__root";
 import { getCachedAppName, setCachedAppName } from "@/lib/site-config";
 import { configureSessionForTest, setSession, clearSession } from "@/lib/session";
-import { getGlobalSearchCache } from "@/lib/search-cache";
+import { forwardKeys } from "@/features/forward/queries";
+import { buildGlobalSearchItems } from "@/features/search/model";
 
 beforeEach(() => {
   window.scrollTo = vi.fn();
@@ -22,7 +23,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
-  getGlobalSearchCache().clear();
 });
 async function showApp() {
   const first = createRoute({
@@ -85,16 +85,25 @@ describe("路由标题与会话缓存", () => {
     await waitFor(() => expect(document.title).toBe("转发规则 · go-panel"));
     async function seedCaches() {
       queryClient.setQueryData(["private"], "secret");
-      await getGlobalSearchCache().load("admin", async () => ["secret"]);
+      queryClient.setQueryData(forwardKeys.list(), [{ id: 1, name: "secret" }]);
+      expect(
+        buildGlobalSearchItems({ forwards: queryClient.getQueryData(forwardKeys.list()) }),
+      ).toHaveLength(1);
     }
     await seedCaches();
     act(() => clearSession());
     expect(queryClient.getQueryData(["private"])).toBeUndefined();
-    expect(getGlobalSearchCache().get("admin")).toBeUndefined();
+    expect(queryClient.getQueryData(forwardKeys.list())).toBeUndefined();
+    expect(
+      buildGlobalSearchItems({ forwards: queryClient.getQueryData(forwardKeys.list()) }),
+    ).toEqual([]);
     await seedCaches();
     act(() => setSession({ token: "new", roleId: 1, name: "alice", mustChangePassword: false }));
     expect(queryClient.getQueryData(["private"])).toBeUndefined();
-    expect(getGlobalSearchCache().get("admin")).toBeUndefined();
+    expect(queryClient.getQueryData(forwardKeys.list())).toBeUndefined();
+    expect(
+      buildGlobalSearchItems({ forwards: queryClient.getQueryData(forwardKeys.list()) }),
+    ).toEqual([]);
     await seedCaches();
     act(() => {
       localStorage.setItem("token", "other-tab");
@@ -104,6 +113,9 @@ describe("路由标题与会话缓存", () => {
       );
     });
     expect(queryClient.getQueryData(["private"])).toBeUndefined();
-    expect(getGlobalSearchCache().get("admin")).toBeUndefined();
+    expect(queryClient.getQueryData(forwardKeys.list())).toBeUndefined();
+    expect(
+      buildGlobalSearchItems({ forwards: queryClient.getQueryData(forwardKeys.list()) }),
+    ).toEqual([]);
   });
 });

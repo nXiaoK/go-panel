@@ -1,49 +1,79 @@
-import { describe, expect, it, vi } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { forwardKeys } from "../src/features/forward/queries";
+import { invalidateFor } from "../src/lib/query-keys";
 
-import { SearchCache } from "../src/lib/search-cache";
-
-describe("SearchCache", () => {
-  it("reloads after CRUD invalidation", async () => {
-    const now = 1000;
-    const cache = new SearchCache(60000, () => now);
-    const loader = vi.fn().mockResolvedValue([{ id: "node-1" }]);
-    await cache.load("admin", loader);
-    cache.invalidate("node");
-    await cache.load("admin", loader);
+afterEach(() => vi.restoreAllMocks());
+describe("搜索共享实体缓存", () => {
+  it("CRUD失效后重新加载搜索与页面共用的实体", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: 60_000, retry: false } },
+    });
+    const loader = vi.fn().mockResolvedValue([{ id: 1 }]);
+    const load = () => client.fetchQuery({ queryKey: forwardKeys.list(), queryFn: loader });
+    await load();
+    await invalidateFor(client, "forward.update");
+    await load();
     expect(loader).toHaveBeenCalledTimes(2);
+    client.clear();
   });
-
-  it("shares one in-flight promise per key", async () => {
+  it("同一实体键并发加载只调用一次并向两个消费者返回同一结果", async () => {
+    const client = new QueryClient();
     let resolve!: (value: string[]) => void;
     const loader = vi.fn(
       () =>
-        new Promise<string[]>((r) => {
-          resolve = r;
+        new Promise<string[]>((done) => {
+          resolve = done;
         }),
     );
-    const cache = new SearchCache(60000, () => 0);
-    const a = cache.load("admin", loader);
-    const b = cache.load("admin", loader);
+    const options = { queryKey: forwardKeys.list(), queryFn: loader };
+    const first = client.fetchQuery(options);
+    const second = client.fetchQuery(options);
     expect(loader).toHaveBeenCalledTimes(1);
-    resolve(["x"]);
-    await expect(a).resolves.toEqual(["x"]);
-    await expect(b).resolves.toEqual(["x"]);
+    resolve(["共享行"]);
+    await expect(first).resolves.toEqual(["共享行"]);
+    await expect(second).resolves.toEqual(["共享行"]);
+    client.clear();
   });
-
-  it("expires after TTL and does not cache failures", async () => {
-    let now = 0;
-    const cache = new SearchCache(1000, () => now);
-    const loader = vi.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce(["ok"]);
-
-    await expect(cache.load("user", loader)).rejects.toThrow("boom");
-    expect(cache.get("user")).toBeUndefined();
-
-    await expect(cache.load("user", loader)).resolves.toEqual(["ok"]);
+  it("同一实体键共用在途请求，清缓存后迟到响应不能恢复旧账号数据", async () => {
+    const client = new QueryClient();
+    let resolve!: (value: string[]) => void;
+    const loader = vi.fn(
+      () =>
+        new Promise<string[]>((done) => {
+          resolve = done;
+        }),
+    );
+    const options = { queryKey: forwardKeys.list(), queryFn: loader };
+    const first = client.fetchQuery(options);
+    const second = client.fetchQuery(options);
+    expect(loader).toHaveBeenCalledTimes(1);
+    client.clear();
+    resolve(["旧账号"]);
+    await expect(first).rejects.toBeDefined();
+    await expect(second).rejects.toBeDefined();
+    expect(client.getQueryData(forwardKeys.list())).toBeUndefined();
+  });
+  it("缓存过期后重新加载，失败请求不会形成成功缓存", async () => {
+    let now = 1000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: 1000, retry: false } },
+    });
+    const loader = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(["ok"])
+      .mockResolvedValueOnce(["fresh"]);
+    const load = () => client.fetchQuery({ queryKey: forwardKeys.list(), queryFn: loader });
+    await expect(load()).rejects.toThrow("boom");
+    expect(client.getQueryData(forwardKeys.list())).toBeUndefined();
+    await expect(load()).resolves.toEqual(["ok"]);
+    await expect(load()).resolves.toEqual(["ok"]);
     expect(loader).toHaveBeenCalledTimes(2);
-
-    now = 1001;
-    const loader2 = vi.fn().mockResolvedValue(["fresh"]);
-    await expect(cache.load("user", loader2)).resolves.toEqual(["fresh"]);
-    expect(loader2).toHaveBeenCalledTimes(1);
+    now = 2001;
+    await expect(load()).resolves.toEqual(["fresh"]);
+    expect(loader).toHaveBeenCalledTimes(3);
+    client.clear();
   });
 });

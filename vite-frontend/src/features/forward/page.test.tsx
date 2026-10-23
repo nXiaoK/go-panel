@@ -1,9 +1,9 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiPost } from "@/lib/api/client";
 import { ConfirmProvider } from "@/components/patterns/confirm-dialog";
-import { ForwardPage } from "./_app.forward";
+import { ForwardPage } from "@/features/forward/page";
+import { apiPost } from "@/lib/api/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
   apiPost: vi.fn(),
@@ -18,6 +18,7 @@ afterEach(() => {
 
 function renderPage(role: number) {
   localStorage.setItem("role_id", String(role));
+  localStorage.setItem("token", "test-token");
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
