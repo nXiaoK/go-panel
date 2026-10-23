@@ -48,7 +48,7 @@ describe("资源查询与缓存行为", () => {
       wrapper,
       initialProps: { range: "24h", tunnelId: undefined as number | undefined },
     });
-    await waitFor(() => expect(dashboard.result.current.data?.status).toBe("success"));
+    await waitFor(() => expect(dashboard.result.current.traffic.isSuccess).toBe(true));
     const search = renderHook(() => useSearchItems(true), { wrapper });
     await waitFor(() =>
       expect(search.result.current.items.some((item) => item.title === "节点")).toBe(true),
@@ -68,14 +68,14 @@ describe("资源查询与缓存行为", () => {
     localStorage.setItem("role_id", "1");
     const dashboard = renderHook(() => useDashboardSources("24h"), { wrapper });
     const search = renderHook(() => useSearchItems(true), { wrapper });
-    await waitFor(() => expect(dashboard.result.current.data?.status).toBe("success"));
+    await waitFor(() => expect(dashboard.result.current.traffic.isSuccess).toBe(true));
     await waitFor(() => expect(search.result.current.isFetching).toBe(false));
     expect(
       vi
         .mocked(apiPost)
         .mock.calls.map(([path]) => path)
         .sort(),
-    ).toEqual(["/forward/list", "/user/package"]);
+    ).toEqual(["/forward/list", "/tunnel/user/tunnel", "/user/package"]);
   });
   it.each(["no-token", "forced-password"])("%s 时所有业务实体/流量查询均禁止", async (kind) => {
     if (kind === "no-token") localStorage.removeItem("token");
