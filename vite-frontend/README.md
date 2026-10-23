@@ -102,6 +102,8 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 
 Node 22 下运行 `npm run dev` 后访问 `/_dev/components`，可检查基础控件、列表、表单、状态、配额、复制、诊断与抽屉。入口仅在 `import.meta.env.DEV` 下动态挂载，生产构建会移除入口与整个预览模块；不将它添加到正式路由树。发布前扫描 `dist/assets`，不得包含唯一标记“组件验收实验室 U02”。
 
+开发预览可用 `/_dev/components?batch=1` 单独验证 50 行长列表：它复用正式 `AppContent` 容器，包含手机长卡片、换行批量操作、抽屉和确认框；数据全部是内存夹具，不访问业务接口。加 `&legacy=1` 仅在开发环境复现旧 `overflow-x-hidden` 滚动祖先行为，不用于正式布局。两个模式都随整个预览模块从生产构建移除。正式内容区使用 `overflow-x-clip` 只裁切横向溢出，避免浏览器将纵向溢出隐式变为 `auto`，让共享列表的吸底批量条继续跟随页面滚动；不要在页面外层重新添加不实际滚动的 `overflow-hidden/auto` 容器。
+
 页面从 `components/patterns/` 按组件路径导入。`DataTable` 必须提供稳定 `getRowId` 和 `renderMobileCard`；`sorting/onSortingChange`、`rowSelection/onRowSelectionChange` 为 TanStack 受控状态，`initialRowSelection` 可预选。`onRowActivate` 同时支持鼠标和回车/空格，内嵌按钮、复选框、链接不触发行激活。操作列使用 `meta.actions`，数值列使用 `meta.numeric` 与 `meta.align="right"`。筛选空态传 `filtered/onClearFilters`。`focusRowId` 等待异步数据后清选择、滚动、聚焦并高亮2秒。
 
 `useUrlState(defaults)` 返回 `{state,setState}`，只合并修改的 search 字段并 replace 历史。各页面必须在路由 `validateSearch` 中验证并保留需要的 `q/status/sort/focus` 等字段，避免路由丢弃共享链接中的状态；分页同样由页面声明。该工具不会重载整页。
