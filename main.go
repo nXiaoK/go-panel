@@ -4,6 +4,8 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -52,7 +55,9 @@ func runMain(args []string, stdout, stderr io.Writer) int {
 	case "help", "-h", "--help":
 		printUsage(stdout)
 		return 0
-	case "supervise", "update", "migrate-check":
+	case "migrate-check":
+		return runMigrateCheck(args[1:], stdout, stderr)
+	case "supervise", "update":
 		fmt.Fprintf(stderr, "子命令 %s 尚未实现\n", args[0])
 		return 2
 	default:
@@ -68,6 +73,8 @@ func printUsage(w io.Writer) {
 子命令：
   serve            提供面板服务（无子命令时的默认行为）
   version [--json] 输出构建版本与兼容信息，不读取配置、不访问数据库和网络
+  migrate-check --db <副本路径> [--json]
+                   在数据库副本上演练迁移；会原地修改该文件，只能用于副本
   help             显示本帮助
 `)
 }
@@ -119,6 +126,9 @@ func runServe() int {
 
 	// SQLite 初始化（自动迁移 + 种子数据）
 	if err := model.Init(cfg.DBPath, bootstrapOptions(cfg)); err != nil {
+		if code, handled := schemaTooNewExit(err, cfg.DBPath, os.Stderr); handled {
+			return code
+		}
 		log.Fatalf("数据库初始化失败: %v", err)
 	}
 	service.EnsureSubscriptionDefaults()
@@ -200,6 +210,94 @@ func runServe() int {
 		log.Fatalf("服务启动失败: %v", err)
 	}
 	return <-exitCode
+}
+
+// schemaTooNewExit 处理“数据库已被不兼容的新版本迁移”：打印恢复指引并返回退出码 78，
+// supervisor 据此判断回滚目标无法读取当前数据库，必要时恢复更新前快照。
+func schemaTooNewExit(err error, dbPath string, w io.Writer) (int, bool) {
+	var tooNew *model.SchemaTooNewError
+	if !errors.As(err, &tooNew) {
+		return 0, false
+	}
+	backups := filepath.Join(filepath.Dir(dbPath), "backups")
+	fmt.Fprintf(w, "数据库初始化失败: %v\n", tooNew)
+	fmt.Fprintf(w, "处理方式：改用不低于 %s 的版本运行；或停止面板后，用 %s 中更新前的快照 pre-update-*.db 替换数据库（会丢失快照之后的修改）。\n",
+		valueOr(tooNew.LastWriterVersion, "写入该数据库"), backups)
+	return protocol.ExitSchemaTooNew, true
+}
+
+func valueOr(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+type migrateCheckOutput struct {
+	OK             bool   `json:"ok"`
+	DurationMs     int64  `json:"durationMs"`
+	SchemaEpoch    int    `json:"schemaEpoch"`
+	MinReaderEpoch int    `json:"minReaderEpoch"`
+	Error          string `json:"error,omitempty"`
+}
+
+// runMigrateCheck 在数据库副本上演练迁移，供软更新在切换前验证候选版本。
+// 退出码：0 成功；1 演练失败或拒绝执行；2 参数错误；78 副本要求更新的读取纪元。
+func runMigrateCheck(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("migrate-check", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	dbPath := flags.String("db", "", "要演练迁移的数据库副本路径（会被原地修改，只能用于副本）")
+	asJSON := flags.Bool("json", false, "以单行 JSON 输出结果")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if flags.NArg() > 0 || strings.TrimSpace(*dbPath) == "" {
+		fmt.Fprintln(stderr, "用法：go-panel migrate-check --db <副本路径> [--json]")
+		return 2
+	}
+
+	result := func(output migrateCheckOutput, code int) int {
+		if *asJSON {
+			_ = json.NewEncoder(stdout).Encode(output)
+		} else if output.OK {
+			fmt.Fprintf(stdout, "迁移演练成功，耗时 %dms，结构纪元 %d，最低读取纪元 %d\n", output.DurationMs, output.SchemaEpoch, output.MinReaderEpoch)
+		} else {
+			fmt.Fprintf(stderr, "迁移演练失败: %s\n", output.Error)
+		}
+		return code
+	}
+
+	// 护栏：拒绝在运行中的主数据库上演练，迁移会原地改写文件。
+	if live := strings.TrimSpace(os.Getenv("DB_PATH")); live != "" && sameExistingFile(live, *dbPath) {
+		return result(migrateCheckOutput{Error: "--db 指向 DB_PATH 中的主数据库，只能对副本演练"}, 1)
+	}
+	report, err := model.MigrateCheck(*dbPath, stderr)
+	if err != nil {
+		code := 1
+		var tooNew *model.SchemaTooNewError
+		if errors.As(err, &tooNew) {
+			code = protocol.ExitSchemaTooNew
+		}
+		return result(migrateCheckOutput{Error: err.Error()}, code)
+	}
+	return result(migrateCheckOutput{
+		OK:             true,
+		DurationMs:     report.Duration.Milliseconds(),
+		SchemaEpoch:    report.SchemaEpoch,
+		MinReaderEpoch: report.MinReaderEpoch,
+	}, 0)
+}
+
+func sameExistingFile(a, b string) bool {
+	left, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	right, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(left, right)
 }
 
 // waitForStop 阻塞到停机信号或重启请求，并返回对应的进程退出码。

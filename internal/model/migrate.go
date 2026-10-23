@@ -30,6 +30,9 @@ type BootstrapOptions struct {
 	AdminUsername    string
 	AdminPassword    string
 	CredentialWriter io.Writer
+	// LogWriter 接收数据库慢查询与错误日志，默认 os.Stdout；migrate-check 改写到 stderr，
+	// 避免日志混入其 JSON 输出。
+	LogWriter io.Writer
 }
 
 // Init 打开 SQLite、自动迁移并写入种子数据
@@ -43,12 +46,6 @@ func Init(dbPath string, options ...BootstrapOptions) error {
 	} else if hasActiveBootstrapOptions && dbPath == databasePath {
 		bootstrap = activeBootstrapOptions
 	}
-	if bootstrap.AdminUsername == "" {
-		bootstrap.AdminUsername = "admin_user"
-	}
-	if bootstrap.CredentialWriter == nil {
-		bootstrap.CredentialWriter = io.Discard
-	}
 
 	if DB != nil {
 		if sqlDB, err := DB.DB(); err == nil {
@@ -57,49 +54,88 @@ func Init(dbPath string, options ...BootstrapOptions) error {
 		DB = nil
 	}
 
+	db, err := openAndMigrate(dbPath, bootstrap)
+	if err != nil {
+		return err
+	}
+
+	DB = db
+	databasePath = dbPath
+	activeBootstrapOptions = withBootstrapDefaults(bootstrap)
+	hasActiveBootstrapOptions = true
+	return nil
+}
+
+func withBootstrapDefaults(bootstrap BootstrapOptions) BootstrapOptions {
+	if bootstrap.AdminUsername == "" {
+		bootstrap.AdminUsername = "admin_user"
+	}
+	if bootstrap.CredentialWriter == nil {
+		bootstrap.CredentialWriter = io.Discard
+	}
+	if bootstrap.LogWriter == nil {
+		bootstrap.LogWriter = os.Stdout
+	}
+	return bootstrap
+}
+
+// openAndMigrate 打开数据库并完成纪元检查、预检、迁移、回填与种子初始化，不修改全局句柄。
+// 任何一步失败都会关闭连接，调用方无需清理。
+func openAndMigrate(dbPath string, bootstrap BootstrapOptions) (*gorm.DB, error) {
+	bootstrap = withBootstrapDefaults(bootstrap)
+
 	if dir := filepath.Dir(dbPath); dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("创建数据目录失败: %w", err)
+			return nil, fmt.Errorf("创建数据目录失败: %w", err)
 		}
 	}
 
 	// WAL 模式 + busy_timeout，缓解并发写锁竞争
 	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(0)"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: newDatabaseLogger(os.Stdout, logger.Warn),
+		Logger: newDatabaseLogger(bootstrap.LogWriter, logger.Warn),
 	})
 	if err != nil {
-		return fmt.Errorf("打开 SQLite 失败: %w", err)
+		return nil, fmt.Errorf("打开 SQLite 失败: %w", err)
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// SQLite 单写者：限制为单连接，避免 database is locked
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 
+	fail := func(err error) (*gorm.DB, error) {
+		_ = sqlDB.Close()
+		return nil, err
+	}
+
+	// 先于任何迁移检查结构纪元：数据库被声明不兼容的新版本迁移过时，旧程序直接拒绝启动，
+	// 避免 AutoMigrate 把新版本修改过的列“迁移回去”或旧代码写坏新结构。
+	if err := checkSchemaCompatibility(db); err != nil {
+		return fail(err)
+	}
+
 	// 迁移前预检：历史库中的重复用户名 / 重复 user_tunnel 身份会导致下面的
 	// 唯一索引创建失败。这里显式报告冲突行 ID 并拒绝启动，而不是在
 	// AutoMigrate 深处抛出难以定位的索引错误。预检只读，不改 schema。
 	if err := PreflightSchema(db); err != nil {
-		_ = sqlDB.Close()
-		return err
+		return fail(err)
 	}
 
 	if err := db.AutoMigrate(
 		&User{}, &Node{}, &Tunnel{}, &Forward{}, &ForwardExitMember{},
 		&UserTunnel{}, &SpeedLimit{}, &StatisticsFlow{}, &TrafficHourly{}, &TrafficTunnelHourly{}, &DataMigration{}, &FlowReporterState{}, &ViteConfig{},
-		&ProxyNode{}, &SubscriptionProfile{}, &SubscriptionProfileNode{}, &NodeSyncState{},
+		&ProxyNode{}, &SubscriptionProfile{}, &SubscriptionProfileNode{}, &NodeSyncState{}, &SchemaMeta{},
 	); err != nil {
-		return fmt.Errorf("自动迁移失败: %w", err)
+		return fail(fmt.Errorf("自动迁移失败: %w", err))
 	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		return backfillTrafficHourly(tx)
 	}); err != nil {
-		_ = sqlDB.Close()
-		return err
+		return fail(err)
 	}
 
 	// 为 node_sync_state 表出现之前创建的存量节点补一条 pending 同步状态，
@@ -109,19 +145,17 @@ func Init(dbPath string, options ...BootstrapOptions) error {
 			" SELECT id, 1, 0, 'pending', '', 0 FROM node" +
 			" WHERE id NOT IN (SELECT node_id FROM node_sync_state)",
 	).Error; err != nil {
-		return fmt.Errorf("初始化节点同步状态失败: %w", err)
+		return fail(fmt.Errorf("初始化节点同步状态失败: %w", err))
+	}
+
+	if err := recordSchemaEpochs(db, time.Now()); err != nil {
+		return fail(fmt.Errorf("记录数据库结构纪元失败: %w", err))
 	}
 
 	if err := seed(db, bootstrap); err != nil {
-		_ = sqlDB.Close()
-		return err
+		return fail(err)
 	}
-
-	DB = db
-	databasePath = dbPath
-	activeBootstrapOptions = bootstrap
-	hasActiveBootstrapOptions = true
-	return nil
+	return db, nil
 }
 
 // DatabasePath 返回当前 SQLite 数据库文件路径。
