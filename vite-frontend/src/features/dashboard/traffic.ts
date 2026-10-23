@@ -1,4 +1,4 @@
-import { bytesToGb } from "./format";
+import { bytesToGb } from "@/lib/format";
 export type TrafficRange = "24h" | "7d" | "30d";
 export type TrafficTrendState = "loading" | "empty" | "ready";
 

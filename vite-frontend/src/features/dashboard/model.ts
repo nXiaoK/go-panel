@@ -10,7 +10,7 @@ export type DashboardHealthStatus = "success" | "partial" | "error";
 
 export type DashboardSourceKey = "package" | "nodes" | "tunnels" | "forwards" | "users";
 
-import type { UserPackage, Node, Tunnel, Forward, User } from "@/lib/types";
+import type { Forward, Node, Tunnel, User, UserPackage } from "@/lib/types";
 
 export type DashboardSourceResult<T = unknown> =
   { ok: true; data: T } | { ok: false; error: string };
