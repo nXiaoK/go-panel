@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --config vite.spa.config.ts",
-    "build": "vite build --config vite.spa.config.ts",
+    "build": "vite build --config vite.spa.config.ts && node scripts/precompress.mjs",
     "build:start": "npm run build",
     "build:dev": "vite build --config vite.spa.config.ts --mode development",
     "preview": "vite preview --config vite.spa.config.ts",

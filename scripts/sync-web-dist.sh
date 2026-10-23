@@ -5,6 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source_dir="$root/vite-frontend/dist/"
 target_dir="$root/web/dist/"
 
+# 完整同步原始资源及构建生成的 .br/.gz 旁路文件，避免后端引用到缺失的压缩产物。
 test -f "${source_dir}index.html"
 if command -v rsync >/dev/null 2>&1; then
   rsync -a --delete --exclude .gitkeep "$source_dir" "$target_dir"
