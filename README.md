@@ -1,55 +1,95 @@
 # go-panel
 
+**自托管的网络转发与节点管理面板。** 在一个界面中管理节点、隧道、转发规则、用户配额和客户端订阅。
+
 [![CI and Release](https://github.com/nXiaoK/go-panel/actions/workflows/ci.yml/badge.svg)](https://github.com/nXiaoK/go-panel/actions/workflows/ci.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/nXiaoK/go-panel?display_name=tag)](https://github.com/nXiaoK/go-panel/releases)
 [![GHCR](https://img.shields.io/badge/GHCR-go--panel-2496ED?logo=docker)](https://github.com/nXiaoK/go-panel/pkgs/container/go-panel)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-一个基于 **Go、React 和 SQLite** 的轻量网络转发管理面板。后端以单二进制内嵌前端，可管理 go-gost 与 nftables 节点，并通过 GitHub Actions 发布完整的多架构 Docker 镜像和节点程序。
+Go 后端内嵌 React 界面，使用 SQLite 保存数据。通过一个 Docker 容器即可部署面板，无需另建数据库或单独部署前端；支持 `linux/amd64` 与 `linux/arm64`。
 
-> 项目仍在快速迭代。升级前请生成一致性数据库备份并阅读对应 Release Notes；旧版本可能无法识别新数据库结构。
+[快速开始](#快速开始) · [界面预览](#界面预览) · [部署与运维](OPERATIONS.md) · [版本下载](https://github.com/nXiaoK/go-panel/releases) · [问题反馈](https://github.com/nXiaoK/go-panel/issues)
 
-界面采用统一暗色设计：桌面数据表格、手机卡片列表、全屏编辑抽屉、按角色过滤的命令搜索与中文状态反馈。控制台区分管理员资源概览和普通用户账户配额；账户集中管理安全与偏好，系统配置按分区保存并提示未保存修改。字体全部自托管，无外部字体请求；表单和确认支持键盘焦点管理。
+![深色控制台：节点在线状态、转发统计、上下行流量趋势与待处理异常](assets/screenshots/dashboard-dark.png)
 
-## 主要能力
+> 截图来自项目实际界面，使用演示数据与文档保留 IP，不包含真实服务器或用户信息。项目仍在迭代，升级前请备份数据库并阅读对应 Release Notes。
 
-- 单进程面板：Go 后端内嵌 React SPA，SQLite 数据库无需额外服务。
-- 节点管理：支持 amd64/arm64 的 go-gost、nft agent、规则工具和流量上报工具。
-- 数据面收敛：节点离线或响应丢失时保留期望状态，重连后自动对账。
-- 转发、隧道、限速、用户配额和订阅管理。
-- 普通用户创建的隧道转发固定使用隧道配置的出口；多出口和手动切换只能由管理员设置。
-- nftables 隧道支持可选单中继的 `A → B → C` 三节点 IPv4 串联；三台节点必须全部使用 nftables 模式，流量只在入口节点计费。
-- SQLite 一致性下载/恢复，以及 Cloudflare R2 定时异地备份和保留策略。
-- GitHub Release 更新检查、真实构建版本展示和可选的一键容器更新。
-- GHCR 多架构镜像：部署机不需要安装 Go、Node.js，也不需要本地构建节点程序。
+## 可以用它做什么
 
-## 发布通道
+| 能力 | 说明 |
+| --- | --- |
+| 节点管理 | 接入 go-gost 或 nftables 节点，查看在线状态与运行指标，生成安装命令并升级节点组件 |
+| 隧道与转发 | 管理 TCP/UDP 转发、入口与出口、多个目标及管理员配置的出口切换；支持规则诊断和批量操作 |
+| 状态同步 | 节点离线或响应丢失时保留期望配置，重连后自动对账，使节点规则与面板配置保持一致 |
+| 用户与配额 | 区分管理员和普通用户，管理隧道授权、流量配额、到期时间、转发数量与限速策略 |
+| 客户端订阅 | 管理协议节点和订阅链接，提供 Surge、Clash、v2rayN、sing-box 格式；可用协议以各客户端支持范围为准 |
+| 备份与更新 | 下载、恢复 SQLite 一致性备份，配置 Cloudflare R2 定时备份，检查版本并可选启用容器一键更新 |
 
-| 通道 | 镜像标签 | 用途 |
-|---|---|---|
-| 稳定版 | `latest`、`v0.1.0`、`v0.1`、`v0` | 由 `v*.*.*` Git Tag 发布，推荐生产环境使用 |
-| 开发版 | `edge` | 每次 `main` Push 测试通过后发布，可能包含尚未发布的变更 |
-| 不可变构建 | `sha-xxxxxxx` | 精确定位某次 Git Commit，适合审计和回滚 |
+面板负责配置与状态管理，转发流量由你部署的节点处理。典型路径如下：
 
-镜像地址：`ghcr.io/nxiaok/go-panel`，支持 `linux/amd64` 与 `linux/arm64`。
+```text
+端口转发：客户端 → 入口节点 → 目标服务
+隧道转发：客户端 → 入口节点 → 出口节点 → 目标服务
+```
 
-## Docker Compose 快速开始
+nftables 隧道还支持可选单中继的 `入口 → 中继 → 出口` 三节点 IPv4 串联，三台节点须全部使用 nftables 模式，流量在入口计费。普通用户使用管理员授权的隧道，出口由隧道配置决定。
 
-需要 Docker Engine 24+ 和 Docker Compose v2。整个过程只下载 GitHub 上的配置与 GHCR 镜像，不在服务器编译源码。
+## 界面预览
+
+**浅色与深色主题** — 右上角切换浅色、深色或跟随系统，浏览器记住选择。控制台汇总资源状态，流量图可切换时间范围、隧道和表格视图。
+
+![浅色控制台：资源概览、流量图表与节点状态](assets/screenshots/dashboard-light.png)
+
+**转发规则** — 搜索名称、端口、目标或用户，按隧道和状态筛选；查看上下行流量，执行诊断、启停及批量操作。
+
+![浅色转发列表：筛选工具栏、入口与目标地址、运行状态和流量](assets/screenshots/forwards-light.png)
+
+<table>
+  <tr>
+    <th>全局搜索</th>
+    <th>手机布局</th>
+  </tr>
+  <tr>
+    <td valign="top" width="65%">
+      <img src="assets/screenshots/global-search.png" alt="全局搜索：类型筛选、分组结果、状态标签与键盘提示" width="640" />
+    </td>
+    <td valign="top" width="35%">
+      <img src="assets/screenshots/mobile-forwards.png" alt="手机上的转发卡片列表，展示入口、目标、状态和操作菜单" width="320" />
+    </td>
+  </tr>
+</table>
+
+使用 `⌘K` / `Ctrl+K` 搜索有权访问的资源、页面和新建操作，方向键选择、回车打开并定位条目。手机端自动切换为卡片列表与全屏编辑界面；字体随面板自托管，无需请求外部字体服务。
+
+## 快速开始
+
+准备一台安装了 **Docker Engine 24+ 与 Docker Compose v2** 的服务器。部署过程直接拉取 GHCR 镜像，不需要在服务器安装 Go、Node.js 或编译节点程序。
+
+### 1. 获取配置
 
 ```bash
-mkdir -p go-panel && cd go-panel
+mkdir -p go-panel
+cd go-panel
 curl -fsSLO https://raw.githubusercontent.com/nXiaoK/go-panel/main/compose.yml
 curl -fsSL https://raw.githubusercontent.com/nXiaoK/go-panel/main/.env.example -o .env
 ```
 
-编辑 `.env`，至少替换以下内容：
+### 2. 编辑 `.env`
 
-- `JWT_SECRET`：执行 `openssl rand -hex 32` 生成。
-- `ADMIN_PASSWORD`：首次创建管理员所需的唯一高强度密码。
-- `CORS_ALLOW_ORIGIN`：浏览器访问面板所用的完整来源，例如 `https://panel.example.com`。
+保留模板中的中文说明，至少填写下面三项：
 
-启动并检查状态：
+| 配置 | 如何填写 |
+| --- | --- |
+| `JWT_SECRET` | 用 `openssl rand -hex 32` 生成并长期保存；修改会让现有登录失效，也会影响已加密的 R2 凭据 |
+| `ADMIN_PASSWORD` | 为首次创建管理员设置唯一的高强度密码；不要保留模板占位值 |
+| `CORS_ALLOW_ORIGIN` | 填实际浏览器访问来源，含协议及非默认端口、不带末尾斜杠，例如 `http://192.0.2.10:6365` 或 `https://panel.example.com`；示例地址需替换，多个来源用逗号分隔 |
+
+默认管理员用户名是 `admin_user`，可通过 `ADMIN_USERNAME` 修改。默认 `PANEL_BIND=0.0.0.0`、`PANEL_PORT=6365`，会向宿主机所有接口开放 6365 端口；公网部署请使用 HTTPS。若 HTTPS 反向代理运行在同一宿主机，将 `PANEL_BIND` 改为 `127.0.0.1`，由代理转发到 `http://127.0.0.1:6365`。
+
+完整变量、Docker Run、反向代理和安全策略说明见 [部署与运维指南](OPERATIONS.md)。
+
+### 3. 启动面板
 
 ```bash
 docker compose up -d
@@ -57,169 +97,78 @@ docker compose ps
 docker compose logs -f panel
 ```
 
-访问 `http://服务器地址:6365`。生产环境建议使用 HTTPS 反向代理，并将 `.env` 中的 `PANEL_BIND` 改成 `127.0.0.1`，避免 6365 端口直接暴露公网。HSTS 由 HTTPS 反向代理按实际域名和证书配置；面板自身不发送 HSTS，以保留 HTTP 内网访问和代理终止 HTTPS 的兼容性。
+直接映射端口时，访问 `http://服务器地址:6365`；使用反向代理时，访问配置好的 HTTPS 域名。使用 `admin_user`（或自定义用户名）与 `.env` 中设置的密码登录。
 
-确认管理员已创建并完成密码轮换后，可以清空 `.env` 中的 `ADMIN_PASSWORD` 再执行 `docker compose up -d`。`JWT_SECRET` 必须长期保留；修改它会使所有现有登录令牌失效，也可能使已加密保存的 R2 凭据无法读取。
+数据保存在 `panel_data` 命名卷中，重建容器不会清除数据。**不要执行 `docker compose down -v`**，它会删除数据库和本地备份。
 
-### Docker Run
+## 第一次使用
 
-Compose 是推荐方式；如只需要单容器，可以直接运行公开镜像：
+1. **设置面板地址**：在“系统配置”填写节点服务器可访问的面板地址，用于生成安装命令。节点安装与升级默认要求 HTTPS。
+2. **添加节点**：在“节点”选择 go-gost 或 nftables 模式，在对应 Linux 服务器执行面板生成的安装命令，等待节点上线。
+3. **创建隧道**：选择入口节点、转发模式，以及需要的出口节点；先确认节点连通性与防火墙端口。
+4. **创建转发**：选择隧道，填写监听端口和目标地址，保存后查看状态并执行诊断。
+5. **按需配置**：为普通用户分配隧道和配额，创建客户端订阅，在“系统配置”设置备份策略。
 
-```bash
-docker volume create go-panel-data
-docker run -d \
-  --name go-panel \
-  --restart unless-stopped \
-  --pull always \
-  -p 6365:6365 \
-  -v go-panel-data:/app/data \
-  -e ENVIRONMENT=production \
-  -e JWT_SECRET='替换为至少32字节随机密钥' \
-  -e ADMIN_PASSWORD='替换为唯一高强度密码' \
-  -e CORS_ALLOW_ORIGIN='https://panel.example.com' \
-  ghcr.io/nxiaok/go-panel:latest
-```
+面板容器与节点程序分别升级：**更新面板镜像不会自动替换远端节点程序**，需要在节点管理中继续升级对应组件。
 
-## 升级与回滚
+## 升级与备份
 
-版本与运行状态兼容说明：`/api/v1/system/version` 和 `/api/v1/system/update/check` 仅允许管理员调用，普通用户返回业务 `code: 403`，界面不再显示精确版本或升级提示。所有已完成初始改密的登录用户仍可调用 `/api/v1/system/status`；该接口仅返回进程启动时间 `startedAt`（毫秒）和进程运行秒数 `uptimeSeconds`，重启后重新计时，不再使用最早数据库记录时间。本次变更不迁移数据库，依赖旧接口的外部客户端需按角色调整调用。
-
-会话响应兼容说明：账号禁用统一返回业务 `code: 4031`，必须先修改初始密码返回 `code: 4032`；普通权限不足仍为 `403`，HTTP 状态维持原行为。新版前端同时兼容旧版后端的 `403` 中文文案。旧前端遇到新业务码时仅显示普通错误，因此升级时应同步更新内嵌前端；本次变更不迁移数据库，回滚不需要还原数据。受保护接口的任意业务或 HTTP `401` 都会清除本地会话并返回登录页，公开登录接口的认证失败不触发会话失效。
-
-稳定版手动升级只需要拉取镜像并重建容器：
+先在“系统配置”下载数据库备份，阅读 [Release Notes](https://github.com/nXiaoK/go-panel/releases)，再更新容器：
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-升级不会删除 `panel_data` 卷。不要执行 `docker compose down -v`，其中的 `-v` 会永久删除数据库和本地更新备份。
+默认 `GO_PANEL_VERSION=latest` 跟随稳定版；正式部署可改为 Releases 中已发布的完整版本标签，便于控制升级和回滚。`edge` 跟随 `main` 的开发构建。回滚涉及数据库结构变化时，需要配套恢复升级前的备份。
 
-如需回滚，将 `.env` 中的 `GO_PANEL_VERSION` 改为升级前的明确版本，例如 `v0.1.0`，然后再次运行上述两条命令。若新版本已经执行不兼容的数据迁移，还必须同时恢复升级前的数据库快照。
-
-### 可选：界面一键更新
-
-主面板不会直接挂载 Docker Socket。需要界面“立即更新”按钮时，再下载并启用独立更新扩展：
-
-```bash
-curl -fsSLO https://raw.githubusercontent.com/nXiaoK/go-panel/main/compose.update.yml
-printf '\nUPDATE_TRIGGER_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
-docker compose -f compose.yml -f compose.update.yml up -d
-```
-
-更新流程会先把经过完整性校验的 SQLite 快照保存到数据卷的 `backups/`，再由受标签和 Token 限制的 Watchtower 侧车拉取并替换面板容器。Docker Socket 具备接近宿主机 root 的控制能力，只应在可信服务器上启用该扩展。
-
-一键更新要求 `.env` 中的 `GO_PANEL_VERSION=latest`；如果固定为 `v0.1.0` 等不可变标签，Watchtower 只会重新检查该固定镜像，不会跨版本升级。一键更新只替换镜像，不能自动修改 Compose 或环境变量。Release Notes 标注需要部署配置变更时，请使用手动升级流程。
-
-## 数据备份
-
-- 管理界面可以下载通过 `VACUUM INTO` 创建且经过 `PRAGMA integrity_check` 校验的 SQLite 快照。
-- 系统配置支持 Cloudflare R2 每日自动备份、连接测试、立即上传和远端保留数量。
-- 点击一键更新前会在数据卷内保留本地快照，默认保留最近 5 份。
-
-不要直接复制运行中的主数据库文件。SQLite WAL 可能尚未合并，仅复制 `flux-panel.db` 不能保证得到一致备份。该历史文件名为兼容旧数据卷而保留。
-
-## 节点程序
-
-正式镜像和 GitHub Release 都包含以下 amd64/arm64 产物：
-
-- `gost`
-- `nft_agent`
-- `nft_rule_payload`
-- `nft_flow_reporter`
-
-节点仍从自己的面板地址 `/api/v1/node/assets/<filename>` 下载程序，因此可以复用面板的 HTTPS、访问路径和节点认证；实际二进制由 GitHub Actions 构建并随镜像发布，不依赖服务器上的本地文件。
-
-GOST 节点 `1.2.7` 将内置 gRPC 升至 `v1.83.2`，修复 GO-2026-6443（缺失 authority/Host 引发服务端崩溃）和 GO-2026-6348（HTTP/2 DATA 帧碎片导致内存耗尽）。`go-gost/go.mod` 与 `go-gost/x/go.mod` 分别固定依赖基线，必须同步维护并独立扫描；仅更新面板不会替换节点二进制，发布后需在节点管理中升级 GOST 节点至 `1.2.7` 或更高版本。
-
-GOST 节点 `1.2.8` 与 nftables 节点 `nftables-go-1.3.14` 使用 Go 1.26.10 和 `golang.org/x/net v0.60.0` 重建，修复网络服务、HTTP/2 处理和证书校验的已知安全问题；三个模块仅同步该安全依赖所需的加密、系统调用、文本和构建工具版本。面板最新版本与节点上报版本已同步递增，发布后仍需在节点管理中升级现有节点，才会替换旧二进制；仅升级面板无法修复远端节点。
-
-GOST 节点 `1.2.9` 处理 `TcpPing` 诊断和面板“检测状态”这类只读命令后不再重写 `gost.json`，避免频繁截断重写配置文件，降低节点断电或磁盘写满时配置损坏的风险；转发规则行为不变。需要在节点管理中升级 GOST 节点后生效。
-
-节点安装和升级默认要求 HTTPS。公网 HTTP 可能泄露节点密钥并允许程序被篡改，`ALLOW_INSECURE_NODE_DOWNLOADS=true` 只应在明确隔离的临时升级窗口使用。
-
-中国大陆节点安装 `gost` 或 nftables Agent 时不会直接访问 GitHub：脚本和节点程序均从面板地址下载。订阅服务器脚本安装 Xray、sing-box 等上游组件时仍需要 GitHub；可在“系统配置 → GitHub 下载代理”填写可信的 HTTPS 全链接代理前缀。该代理不会修改 APT/DNF/APK 软件源，系统包下载仍应使用服务器所在地区可达且可信的发行版镜像。下载代理能够替换可执行文件，禁止使用来源不明的公共服务。
-
-nftables 模式安装、远程组件升级和规则刷新都会写入 `/etc/sysctl.d/99-flux-nftables-forwarding.conf` 并立即启用 `net.ipv4.ip_forward=1`；否则 DNAT 规则虽然存在，数据包也不会进入 `forward` 链。卸载只删除这份持久配置，不会强制把运行时值改回 `0`，以免中断同机 Docker、VPN 或其他路由服务。
-
-在 Debian 12 的 `nftables v1.0.6 (Lester Gooch #5)` 上，若添加中转报 `verify dormant capability probe: decode nft table inventory: EOF`，表示探测临时 dormant 表时未能读到完整 JSON；探测结束后手动执行 `nft -j list tables` 仍可能正常。节点规则工具对该精确版本成功命令返回的空输出或以 EOF 结束的截断 JSON 自动改用 `nft list tables`，再逐表读取文本核实 active/dormant 状态。此兼容无需配置；未知版本、其他 JSON 语法或结构错误、空文本清单或无法确认的表状态仍会阻止规则切换，避免覆盖现有转发。修复随 `nft_flow_reporter` 发布，更新到包含修复的面板镜像后，还需在节点管理中升级受影响节点的组件至 `nftables-go-1.3.13` 或更高版本。仅更新面板不会替换服务器上的节点二进制；面板最新节点版本和 Agent 上报版本必须随组件修复同步递增，否则同版本升级检查会阻止下发。`1.3.12` 仅处理完全空输出，`1.3.13` 补全非空截断情况；若仍失败，错误会附带 stdout 字节数及 stdout/stderr 各前 256 字节，便于确认实际失败分支。排查时应以本次添加返回的错误和近期日志为准，`systemctl status` 可能仍显示更新前的失败记录。
-
-## 订阅节点名称
-
-在“编辑节点”中修改名称并保存后，名称会持久保留；后续节点上报仍更新地址、端口和凭据，但不会覆盖手动名称。仅编辑其他字段时，未改名的节点继续按上报信息自动命名。升级时自动增加内部 `proxy_node.name_customized` 标记，旧记录默认不锁定名称，不改变已有连接信息；此前已被覆盖的名称需要重新填写并保存。
-
-同服务商、地区、协议的节点可能有相同名称。Surge、Clash 和 v2rayN 订阅导出时会为重名项附加节点 ID（例如 `PrimeSecurity-JP-Snell-12`），若后缀仍有冲突则追加序号；Clash 策略组同步引用导出名称，sing-box 沿用自身的标签去重。此处理仅影响导出副本，不修改面板中的名称。更新面板后需刷新客户端订阅；客户端以前按旧名称记住的选择可能需要重新选择。
-
-## 配置
-
-完整、带风险说明的模板见 [`.env.example`](.env.example)。主要变量如下：
-
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `JWT_SECRET` | 无 | 远程部署必填，至少 32 字节；修改会使 JWT 和 R2 凭据受影响 |
-| `JWT_TTL` | `2160h`（90 天） | 新令牌有效期，使用 Go duration 格式，范围 `1h`–`2160h`，非法或越界值拒绝启动。缩短会增加重新登录频率；已签发令牌仍按原 `exp` 失效。立即让全部令牌失效需轮换 `JWT_SECRET`，同时会影响已有 R2 凭据解密，须重新配置 |
-| `ADMIN_USERNAME` | `admin_user` | 首次创建管理员使用的用户名 |
-| `ADMIN_PASSWORD` | 空 | 新数据库远程启动时必填；管理员安全建立后可清空 |
-| `CORS_ALLOW_ORIGIN` | 无 | 生产模式必填，多个明确来源用逗号分隔 |
-| `CSP_MODE` | `report-only` | HTML 文档的内容安全策略；仅允许 `report-only`（浏览器报告违规）、`enforce`（强制拦截）、`off`（关闭 CSP 纵深防护），非法值拒绝启动。首版先观察一个版本，确认无违规后显式改为 `enforce`；API、订阅及 JS/CSS 不发送该策略 |
-| `PANEL_BIND` | `0.0.0.0` | 宿主机监听地址，反向代理部署建议 `127.0.0.1` |
-| `PANEL_PORT` | `6365` | 宿主机映射端口 |
-| `GO_PANEL_VERSION` | `latest` | 可固定为具体稳定版本以便回滚 |
-| `TRUSTED_PROXIES` | 空 | 可信反向代理 CIDR；空值不信任转发头 |
-| `UPDATE_CHECK_ENABLED` | `true` | 是否检查 GitHub 最新稳定 Release |
-| `UPDATE_CHECK_INTERVAL` | `6h` | 成功检查结果缓存，最小 5 分钟、最大 7 天 |
-| `ALLOW_INSECURE_NODE_DOWNLOADS` | `false` | 临时允许 HTTP 节点下载，存在泄密和篡改风险 |
-| `ALLOW_LEGACY_NFT_REPORTS` | `false` | 临时兼容旧上报，缺少完整幂等保障 |
-| `VITE_DEV_API_TARGET` | `http://127.0.0.1:6365` | 仅 Vite 本地开发代理的后端目标；生产容器不使用，不能指向不可信服务 |
-
-HTML 内容安全策略只允许同源脚本、字体、API 和 WebSocket，禁止内联脚本及被其他页面嵌入。Radix/sonner 所需的内联样式和二维码的 `data:`/`blob:` 图片仍允许。首次部署保留 `CSP_MODE=report-only`，在实际 HTTPS 域名、反向代理及所用浏览器中检查控制台、节点实时指标、订阅二维码与备份下载；观察一个版本无违规后再设为 `enforce` 并重建容器。`off` 只应用于明确的临时排障，排障后恢复策略；基础安全头不受此开关影响。
-
-面板在 `POST /api/v1/csp-report` 提供同源 CSP 违规报告端点，HTML 响应通过 `report-uri` 与 `report-to`（`Reporting-Endpoints`）指向它；`report-only` 与 `enforce` 都会上报，`off` 不发送。端点无需登录，按来源 IP 每分钟 20 次、全站每分钟 200 次限流，请求体上限 16 KB，只把指令、处置类型及被拦截资源和页面的来源（协议、主机、端口）写入日志 `CSP 违规报告：`，不入库；URL 路径、查询串、片段、用户信息及 data/blob 内容均不记录。匿名报告可能被伪造或触发限流，日志缺失不能单独证明无违规。观察期用 `docker compose logs panel | grep "CSP 违规报告"` 检查；`report-only` 不会拦截资源，Playwright WebKit 也不能替代原生 Safari 验收。
-
-当前版本默认仍为 `report-only`。在正式域名、代理和实际浏览器中确认功能正常且无违规后，可在 `.env` 中显式设置 `CSP_MODE=enforce` 并重建容器；如需继续观察，保留 `CSP_MODE=report-only`。
-
-诊断按节点分组：同一次诊断对同一节点串行探测，不同节点最多 4 路并发，结果保持原始顺序。HTTP 写期限按每条命令 10 秒回包等待加 15 秒余量计算，上限 5 分钟；预计超过预算的诊断在下发前整次拒绝（当前单节点最多 28 个探测目标），已有转发配置不受影响。浏览器为诊断单独预留 305 秒，部署反向代理时也需为诊断路由配置足够的响应等待时间。
+面板提供 SQLite 一致性快照与 R2 定时备份。不要直接复制运行中的 `flux-panel.db`，因为 WAL 中的数据可能尚未合并。更多内容见 [备份说明](OPERATIONS.md#数据备份) 与 [升级、回滚和一键更新](OPERATIONS.md#升级与回滚)。
 
 ## 本地开发
 
-需要 Go 1.26.10、Node.js 22.12+ 和 npm。Go 版本与三个模块、CI 和 Docker 保持一致；该补丁版本修复网络服务和证书校验漏洞，降级会恢复已知安全风险。下面显式指定工具链，避免系统 Go 版本影响验证结果：
+需要 **Go 1.26.10、Node.js 22.12+ 和 npm**；Node 主版本与仓库 `.nvmrc` 保持一致。
 
 ```bash
-# .nvmrc 选择 Node 22，.npmrc 会拒绝不满足 engines 的旧版本。
-source ~/.nvm/nvm.sh
-cd vite-frontend
-nvm install
-nvm use
-cd ..
+git clone https://github.com/nXiaoK/go-panel.git
+cd go-panel
 npm ci --prefix vite-frontend
 npm run build --prefix vite-frontend
-bash ./scripts/sync-web-dist.sh
-GOTOOLCHAIN=go1.26.10 go test ./...
+bash scripts/sync-web-dist.sh
 GOTOOLCHAIN=go1.26.10 go run .
 ```
 
-热更新开发先启动上面的 Go 后端，再运行 `VITE_DEV_API_TARGET=http://127.0.0.1:6365 npm run dev --prefix vite-frontend`。此变量只配置 Vite 开发代理，支持 `/api`、`/flow` 与 `/system-info` WebSocket；生产镜像和后端不读取它，正式部署仍使用同源访问。
+源码启动默认只监听 `127.0.0.1:6365`。首次启动空库且未设置 `ADMIN_PASSWORD` 时，会在本机日志中打印随机初始密码，并要求登录后修改；远程监听必须显式配置强密码与持久化密钥。源码启动不会自动读取 Compose 的 `.env`，需要时请通过进程环境设置。
 
-完整验证入口：
-
-```bash
-GOTOOLCHAIN=go1.26.10 ./scripts/verify.sh
-GOTOOLCHAIN=go1.26.10 RUN_RACE=1 ./scripts/verify.sh
-GOTOOLCHAIN=go1.26.10 RUN_PACKAGING=1 ./scripts/verify.sh
-```
-
-节点产物仅在本地调试时需要手工生成：
+前端热更新可在另一个终端运行：
 
 ```bash
-./scripts/build-node-assets.sh
+# 仅用于本地开发代理；生产构建始终同源访问，目标须为可信的开发后端。
+VITE_DEV_API_TARGET=http://127.0.0.1:6365 npm run dev --prefix vite-frontend
 ```
 
-## 贡献与安全
+提交前运行与改动相关的检查：
 
-欢迎通过 Issue 和 Pull Request 提交问题、修复和功能建议。提交前请运行后端、前端和相关并发测试，不要提交 `.env`、数据库、节点密钥或构建产物。
+```bash
+GOTOOLCHAIN=go1.26.10 go test ./...
+npm run check --prefix vite-frontend
+```
 
-安全问题请优先使用 GitHub 仓库的私密 Security Advisory，不要在公开 Issue 中粘贴密钥、数据库或可直接利用的漏洞细节。
+全仓检查（包含内置 go-gost 的独立模块、漏洞扫描和构建）使用 `scripts/verify.sh`；并发或打包改动可分别设置 `RUN_RACE=1`、`RUN_PACKAGING=1`。脚本最后要求工作区无差异，验证未提交改动时可设置 `SKIP_GIT_DIFF=1`，这只跳过最后的 Git 差异检查。
 
-## License
+## 文档与贡献
 
-项目主体使用 [MIT License](LICENSE)。内置修改版 go-gost 及其他依赖保留各自许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和各依赖源码/发布包中的许可证文件。
+| 文档 | 内容 |
+| --- | --- |
+| [部署与运维指南](OPERATIONS.md) | 部署方式、升级回滚、备份、安全配置及节点兼容性 |
+| [环境变量模板](.env.example) | 配置用途、默认行为与风险说明 |
+| [前端开发说明](https://github.com/nXiaoK/go-panel/blob/main/vite-frontend/README.md) | 前端结构、设计令牌、测试与浏览器验收 |
+| [节点产物说明](https://github.com/nXiaoK/go-panel/blob/main/node-assets/README.md) | 节点二进制的构建与分发 |
+| [订阅模板说明](https://github.com/nXiaoK/go-panel/blob/main/subscription-assets/README.md) | 客户端配置、协议兼容及下载代理 |
+
+欢迎提交 [Issue](https://github.com/nXiaoK/go-panel/issues) 或 [Pull Request](https://github.com/nXiaoK/go-panel/pulls)。反馈问题时请附面板版本、节点模式、复现步骤和脱敏日志；贡献代码前请阅读 [协作规则](https://github.com/nXiaoK/go-panel/blob/main/AGENTS.md) 与 [界面规范](https://github.com/nXiaoK/go-panel/blob/main/DESIGN.md)。不要提交 `.env`、数据库、节点密钥或构建产物。
+
+安全问题请通过仓库的 [私密漏洞报告入口](https://github.com/nXiaoK/go-panel/security/advisories/new) 联系维护者，不要在公开 Issue 中披露凭据或可直接利用的漏洞细节。
+
+## 开源许可
+
+项目主体采用 [MIT License](LICENSE)。内置修改版 go-gost 及其他第三方组件保留各自版权与许可证，详见 [第三方声明](THIRD_PARTY_NOTICES.md)。

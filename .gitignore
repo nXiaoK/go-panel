@@ -28,7 +28,7 @@ mockups/
 # 旧浏览器诊断脚本会输出会话信息且不属于发行内容，禁止带入公开仓库。
 /diagnose-*.js
 
-# 新公开仓库不发布任何层级的 docs 目录；必要的部署、安全和开发说明统一维护在 README。
+# 不发布任何层级的 docs 工作目录；公开说明维护在 README、根目录专题文档和 assets/screenshots。
 docs/
 
 # Go

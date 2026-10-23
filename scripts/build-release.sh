@@ -29,7 +29,10 @@ for arch in amd64 arm64; do
   cp "$ROOT_DIR"/node-assets/gost-* "$bundle_dir/node-assets/"
   cp "$ROOT_DIR"/node-assets/nft_* "$bundle_dir/node-assets/"
   cp "$ROOT_DIR/compose.yml" "$ROOT_DIR/compose.update.yml" "$ROOT_DIR/.env.example" "$bundle_dir/"
-  cp "$ROOT_DIR/README.md" "$ROOT_DIR/LICENSE" "$ROOT_DIR/THIRD_PARTY_NOTICES.md" "$bundle_dir/"
+  # README 使用相对路径引用运维指南和界面截图，发布包必须一并携带，保证离线阅读不缺图。
+  cp "$ROOT_DIR/README.md" "$ROOT_DIR/OPERATIONS.md" "$ROOT_DIR/LICENSE" "$ROOT_DIR/THIRD_PARTY_NOTICES.md" "$bundle_dir/"
+  mkdir -p "$bundle_dir/assets"
+  cp -R "$ROOT_DIR/assets/screenshots" "$bundle_dir/assets/"
   tar -C "$OUTPUT_DIR" -czf "$OUTPUT_DIR/$bundle_name.tar.gz" "$bundle_name"
 done
 
