@@ -82,7 +82,7 @@ func enforceCurrentUser(c *gin.Context, user *CurrentUser, claims *crypto.Claims
 	case nil:
 		return true
 	case errCurrentUserDisabled:
-		c.AbortWithStatusJSON(http.StatusOK, result.ErrCode(403, "账号已被禁用"))
+		c.AbortWithStatusJSON(http.StatusOK, result.ErrCode(result.CodeAccountDisabled, "账号已被禁用"))
 	case errCurrentUserExpired:
 		c.AbortWithStatusJSON(http.StatusOK, result.ErrCode(401, "账号已过期"))
 	default:
@@ -170,7 +170,7 @@ func RequirePasswordChanged() gin.HandlerFunc {
 			return
 		}
 		if user.MustChangePwd == 1 {
-			c.AbortWithStatusJSON(http.StatusOK, result.ErrCode(403, "请先修改默认密码"))
+			c.AbortWithStatusJSON(http.StatusOK, result.ErrCode(result.CodePasswordChangeRequired, "请先修改默认密码"))
 			return
 		}
 		c.Next()

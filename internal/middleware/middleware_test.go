@@ -49,8 +49,8 @@ func TestJwtAuthRejectsDisabledUserToken(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Code != 403 {
-		t.Fatalf("code=%d msg=%q, want 403", got.Code, got.Msg)
+	if got.Code != 4031 {
+		t.Fatalf("code=%d msg=%q, want 4031", got.Code, got.Msg)
 	}
 }
 
@@ -201,5 +201,22 @@ func TestValidateCurrentUserLegacyJWTWithoutVer(t *testing.T) {
 	userRotated := &CurrentUser{ID: 1, Status: 1, TokenVersion: 3}
 	if err := ValidateCurrentUser(userRotated, legacy); err != errCurrentUserTokenRevoked {
 		t.Fatalf("nonzero version should reject legacy token: %v", err)
+	}
+}
+
+func TestRequirePasswordChangedReturnsStableCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set(CtxUser, &CurrentUser{ID: 1, Status: 1, MustChangePwd: 1}) })
+	r.Use(RequirePasswordChanged())
+	r.GET("/secure", func(c *gin.Context) { c.JSON(http.StatusOK, result.OkEmpty()) })
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/secure", nil))
+	var got result.R
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Code != 4032 || got.Msg != "请先修改默认密码" {
+		t.Fatalf("response=%+v, want password-change code 4032", got)
 	}
 }

@@ -1,6 +1,6 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Zap } from "lucide-react";
+import { LogOut, RefreshCw, Zap } from "lucide-react";
 
 import {
   Sidebar,
@@ -21,12 +21,14 @@ import { SystemUpdateDialog } from "@/components/system-update-dialog";
 import { appNameFromConfigs, getCachedAppName, setCachedAppName } from "@/lib/site-config";
 import { formatUptimeSeconds } from "@/lib/uptime";
 import { navigationForRole } from "@/lib/navigation";
-import { getRoleID } from "@/lib/session";
+import { clearSession, getRoleID, isPasswordChangeRequired } from "@/lib/session";
 import type { BuildInfo, PanelUpdateStatus } from "@/lib/types";
 import { displayVersion, shouldPromptForUpdate } from "@/lib/update";
 
 export function AppSidebar() {
   const { state } = useSidebar();
+  const navigate = useNavigate();
+  const forcePassword = isPasswordChangeRequired();
   const collapsed = state === "collapsed";
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const [appName, setAppName] = useState(getCachedAppName);
@@ -37,11 +39,22 @@ export function AppSidebar() {
   const [updateStatus, setUpdateStatus] = useState<PanelUpdateStatus | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   // 按角色过滤导航：普通用户不显示管理员专属入口（后端仍是最终权限裁决方）。
-  const navGroups = useMemo(() => navigationForRole(getRoleID()), []);
+  const navGroups = useMemo(() => {
+    const groups = navigationForRole(getRoleID());
+    return forcePassword
+      ? groups
+          .map((group) => ({
+            ...group,
+            items: group.items.filter((item) => item.url === "/profile"),
+          }))
+          .filter((group) => group.items.length)
+      : groups;
+  }, [forcePassword]);
   const isActive = (url: string) =>
     url === "/" ? currentPath === "/" : currentPath === url || currentPath.startsWith(url + "/");
 
   useEffect(() => {
+    if (forcePassword) return;
     let alive = true;
     const onSiteConfig = (event: Event) => {
       const next = (event as CustomEvent<{ appName?: string }>).detail?.appName;
@@ -63,9 +76,10 @@ export function AppSidebar() {
       alive = false;
       window.removeEventListener("site-config-updated", onSiteConfig);
     };
-  }, []);
+  }, [forcePassword]);
 
   useEffect(() => {
+    if (forcePassword) return;
     let alive = true;
     getSystemVersion()
       .then((response) => {
@@ -91,9 +105,10 @@ export function AppSidebar() {
       alive = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [forcePassword]);
 
   useEffect(() => {
+    if (forcePassword) return;
     let alive = true;
     getSystemStatus()
       .then((res) => {
@@ -110,7 +125,7 @@ export function AppSidebar() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [forcePassword]);
 
   useEffect(() => {
     if (!serverStartedAt) return;
@@ -138,17 +153,19 @@ export function AppSidebar() {
               <span className="max-w-36 truncate text-sm font-semibold tracking-tight">
                 {appName}
               </span>
-              <button
-                type="button"
-                className={`flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] text-muted-foreground ${
-                  updateStatus?.updateAvailable ? "cursor-pointer text-warning" : "cursor-default"
-                }`}
-                onClick={() => updateStatus?.updateAvailable && setUpdateDialogOpen(true)}
-                title={buildInfo?.commit ? `commit ${buildInfo.commit}` : undefined}
-              >
-                {updateStatus?.updateAvailable && <RefreshCw className="h-2.5 w-2.5" />}
-                {displayVersion(buildInfo?.version, buildInfo?.commit)}
-              </button>
+              {!forcePassword && (
+                <button
+                  type="button"
+                  className={`flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] text-muted-foreground ${
+                    updateStatus?.updateAvailable ? "cursor-pointer text-warning" : "cursor-default"
+                  }`}
+                  onClick={() => updateStatus?.updateAvailable && setUpdateDialogOpen(true)}
+                  title={buildInfo?.commit ? `commit ${buildInfo.commit}` : undefined}
+                >
+                  {updateStatus?.updateAvailable && <RefreshCw className="h-2.5 w-2.5" />}
+                  {displayVersion(buildInfo?.version, buildInfo?.commit)}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -198,7 +215,18 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border">
-        {!collapsed ? (
+        {forcePassword ? (
+          <SidebarMenuButton
+            onClick={() => {
+              clearSession();
+              navigate({ to: "/login" });
+            }}
+            tooltip="退出登录"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>退出登录</span>
+          </SidebarMenuButton>
+        ) : !collapsed ? (
           <div className="rounded-md border border-sidebar-border bg-sidebar-accent/40 p-3">
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">

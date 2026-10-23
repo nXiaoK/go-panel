@@ -34,6 +34,7 @@ function browserDeps(): SessionDeps {
 
 let deps: SessionDeps = browserDeps();
 let invalidating = false;
+let forcingPassword = false;
 
 export const SESSION_INVALIDATED_EVENT = "session-invalidated";
 export const SESSION_CHANGED_EVENT = "session-changed";
@@ -50,6 +51,7 @@ function removeStoredSession(): void {
   storage.removeItem("token");
   storage.removeItem("role_id");
   storage.removeItem("name");
+  storage.removeItem("must_change_pwd");
 }
 
 export function configureSessionForTest(overrides: {
@@ -63,6 +65,7 @@ export function configureSessionForTest(overrides: {
     pathname: () => overrides.pathname ?? "/",
   };
   invalidating = false;
+  forcingPassword = false;
 }
 
 export function readSession(): SessionSnapshot {
@@ -84,6 +87,7 @@ export function getRoleID(): number | null {
 /** markSessionActive re-arms invalidation after a successful (re)login. */
 export function markSessionActive(): void {
   invalidating = false;
+  forcingPassword = false;
   dispatchSessionEvent(SESSION_CHANGED_EVENT, "login");
 }
 
@@ -98,6 +102,29 @@ export function invalidateSession(reason: string): void {
   if (invalidating) return;
   clearSession(reason);
   if (deps.pathname() !== "/login") {
-    deps.navigate("/login");
+    deps.navigate(`/login?reason=${reason === "disabled" ? "disabled" : "expired"}`);
   }
+}
+
+// 强制改密标记跨刷新保存；登录未要求改密时必须删除，避免沿用上一账户的限制。
+export function setPasswordChangeRequired(required: boolean): void {
+  if (required) deps.storage?.setItem("must_change_pwd", "1");
+  else deps.storage?.removeItem("must_change_pwd");
+}
+
+export function isPasswordChangeRequired(): boolean {
+  return deps.storage?.getItem("must_change_pwd") === "1";
+}
+
+export function passwordChangeRedirect(pathname: string): string | null {
+  return isPasswordChangeRequired() && pathname !== "/profile" ? "/profile?forcePassword=1" : null;
+}
+
+export function requirePasswordChange(): void {
+  if (invalidating) return;
+  setPasswordChangeRequired(true);
+  if (forcingPassword) return;
+  forcingPassword = true;
+  // 即使当前已在资料页也重新进入强制模式，确保停止套餐及外壳中的业务请求。
+  deps.navigate("/profile?forcePassword=1");
 }

@@ -43,7 +43,7 @@ func Login(req dto.LoginDto, clientIP string) result.R {
 		case errors.Is(err, ErrAttemptLimited):
 			return result.Err("登录尝试过多，请稍后重试")
 		case errors.Is(err, ErrAccountDisabled):
-			return result.Err("账号已被禁用")
+			return result.ErrCode(result.CodeAccountDisabled, "账号已被禁用")
 		case errors.Is(err, ErrAccountExpired):
 			return result.Err("账号已过期")
 		case errors.Is(err, ErrCredentialStore):
