@@ -204,7 +204,8 @@ func TestDockerComposePassesRemoteSecurityConfiguration(t *testing.T) {
 }
 
 func TestDeploymentUsesConsistentSQLiteBackup(t *testing.T) {
-	raw, err := os.ReadFile("README.md")
+	// 完整备份说明已从 README 移至运维指南；README 只保留快速入口。
+	raw, err := os.ReadFile("OPERATIONS.md")
 	if err != nil {
 		t.Fatal(err)
 	}
