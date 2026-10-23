@@ -28,7 +28,7 @@ AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, onClick, ...props }, ref) => (
   <AlertDialogPortal>
     <AlertDialogOverlay />
     <AlertDialogPrimitive.Content
@@ -38,6 +38,11 @@ const AlertDialogContent = React.forwardRef<
         className,
       )}
       {...props}
+      onClick={(event) => {
+        onClick?.(event);
+        // 关闭动画会先撤销上层指针锁；阻止本层点击被底层抽屉延迟判成外部点击。
+        event.stopPropagation();
+      }}
     >
       {layoutAlertDialogChildren(children)}
     </AlertDialogPrimitive.Content>

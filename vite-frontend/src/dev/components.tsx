@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AppContent } from "@/app/app-content";
-import { AlertTriangle, MoreHorizontal } from "lucide-react";
+import { AlertTriangle, ExternalLink, MoreHorizontal, QrCode } from "lucide-react";
 import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
 import { ConfirmProvider } from "@/components/patterns/confirm-dialog";
 import { useConfirm } from "@/hooks/use-confirm";
@@ -93,6 +93,8 @@ function Preview() {
   const [saving, setSaving] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [confirmResult, setConfirmResult] = useState("");
   const [diagnosis, setDiagnosis] = useState(false);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
@@ -286,6 +288,23 @@ function Preview() {
             }
           />
         </Section>
+        <Section title="单行订阅链接共享验收">
+          <CodeBlock
+            singleLine
+            code="https://example.invalid/subscribe/very-long-profile-token-for-shared-preview?format=clash&profile=example-long-profile-name"
+            label="复制共享预览订阅链接"
+            trailingActions={
+              <>
+                <Button variant="ghost" size="icon-sm" aria-label="打开共享预览链接">
+                  <ExternalLink />
+                </Button>
+                <Button variant="ghost" size="icon-sm" aria-label="显示共享预览二维码">
+                  <QrCode />
+                </Button>
+              </>
+            }
+          />
+        </Section>
         <Section title="浮层与反馈">
           <div className="flex flex-wrap gap-2">
             <Button
@@ -349,12 +368,36 @@ function Preview() {
             setSheet(false);
           }}
           submitText="保存转发"
+          footerActions={
+            <Button
+              variant="danger"
+              onClick={async () => {
+                const accepted = await confirm({
+                  title: "共享删除确认",
+                  description: "仅验证确认层，不执行删除",
+                  requireText: "preview-user",
+                  confirmText: "删除预览资源",
+                  tone: "danger",
+                });
+                setConfirmResult(accepted ? "已确认" : "已取消");
+              }}
+            >
+              打开抽屉内确认
+            </Button>
+          }
         >
           <FormSection title="基本信息">
             {" "}
             <FormField label="名称" required>
-              <Input onChange={() => setDirty(true)} />
+              <Input
+                value={draft}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  setDirty(true);
+                }}
+              />
             </FormField>
+            <p role="status">{confirmResult}</p>
           </FormSection>
           {Array.from({ length: 12 }, (_, index) => (
             <FormSection key={index} title={`配置分区 ${index + 1}`}>

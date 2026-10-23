@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
-export function CopyButton({ text, label = "复制" }: { text: string; label?: string }) {
+export function CopyButton({
+  text,
+  label = "复制",
+  iconOnly = false,
+}: {
+  text: string;
+  label?: string;
+  iconOnly?: boolean;
+}) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -18,12 +26,19 @@ export function CopyButton({ text, label = "复制" }: { text: string; label?: s
   }
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      <Button type="button" variant="ghost" size="sm" onClick={copy}>
+      <Button
+        type="button"
+        variant="ghost"
+        size={iconOnly ? "icon-sm" : "sm"}
+        aria-label={iconOnly ? label : undefined}
+        title={state === "copied" ? "已复制" : label}
+        onClick={copy}
+      >
         {state === "copied" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-        {state === "copied" ? "已复制" : label}
+        {!iconOnly && (state === "copied" ? "已复制" : label)}
       </Button>
       <span role="status" className="text-caption text-mute">
-        {state === "failed" ? "请手动选择复制" : ""}
+        {state === "failed" ? "请手动选择复制" : iconOnly && state === "copied" ? "已复制" : ""}
       </span>
     </span>
   );
