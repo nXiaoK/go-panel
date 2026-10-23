@@ -28,6 +28,13 @@ var publicConfigNames = map[string]struct{}{
 	"app_name": {},
 }
 
+// isInternalConfigName 保护凭据和一次性迁移标记，通用配置读写不能绕过专用接口。
+func isInternalConfigName(name string) bool {
+	name = strings.TrimSpace(name)
+	return isR2BackupConfigName(name) || name == subAPIKeyConfigName ||
+		(strings.HasPrefix(name, "subscription_") && strings.HasSuffix(name, "_backfilled"))
+}
+
 func isPublicConfigName(name string) bool {
 	_, ok := publicConfigNames[strings.TrimSpace(name)]
 	return ok
@@ -48,9 +55,8 @@ func getConfigs(includeSensitive bool) result.R {
 	model.DB.Find(&list)
 	m := make(map[string]string, len(list)+1)
 	for _, c := range list {
-		// Cloudflare R2 配置含加密凭据和内部运行状态，只能通过专用脱敏接口读取，
-		// 即使管理员也不能从通用键值接口取得密文或把内部字段展示为高级配置。
-		if isR2BackupConfigName(c.Name) {
+		// 内部凭据和迁移标记只能通过专用接口维护，即使管理员也不能在高级配置中读取。
+		if isInternalConfigName(c.Name) {
 			continue
 		}
 		if !includeSensitive && !isPublicConfigName(c.Name) {
@@ -161,8 +167,8 @@ func UpdateConfigs(configMap map[string]string) result.R {
 		if name == "" {
 			continue
 		}
-		if isR2BackupConfigName(name) {
-			return result.Err("Cloudflare R2 备份配置只能通过站点备份中的专用设置修改")
+		if isInternalConfigName(name) {
+			return result.Err("该配置项由系统内部维护，不能通过通用配置修改")
 		}
 		if name == allowInsecureNodeDownloadsEnvOverrideName {
 			return result.Err("环境变量覆盖状态为只读字段，不能直接更新")
@@ -200,8 +206,8 @@ func UpdateConfig(name, value string) result.R {
 	if value == "" {
 		return result.Err("配置值不能为空")
 	}
-	if isR2BackupConfigName(name) {
-		return result.Err("Cloudflare R2 备份配置只能通过站点备份中的专用设置修改")
+	if isInternalConfigName(name) {
+		return result.Err("该配置项由系统内部维护，不能通过通用配置修改")
 	}
 	if name == allowInsecureNodeDownloadsEnvOverrideName {
 		return result.Err("环境变量覆盖状态为只读字段，不能直接更新")

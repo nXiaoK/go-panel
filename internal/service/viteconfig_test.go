@@ -26,8 +26,8 @@ func TestConfigReadsFilterSensitiveValuesForNonAdmins(t *testing.T) {
 	}
 
 	adminConfigs := GetConfigsForUser(1).Data.(map[string]string)
-	if adminConfigs["subscription_api_key"] != "secret-key" {
-		t.Fatalf("admin config should include subscription_api_key, got %#v", adminConfigs)
+	if _, ok := adminConfigs["subscription_api_key"]; ok {
+		t.Fatalf("admin config leaked internal subscription_api_key: %#v", adminConfigs)
 	}
 
 	userConfigs := GetConfigsForUser(normalUser.ID).Data.(map[string]string)
