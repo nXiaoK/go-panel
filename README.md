@@ -125,6 +125,8 @@ docker compose -f compose.yml -f compose.update.yml up -d
 
 GOST 节点 `1.2.7` 将内置 gRPC 升至 `v1.83.2`，修复 GO-2026-6443（缺失 authority/Host 引发服务端崩溃）和 GO-2026-6348（HTTP/2 DATA 帧碎片导致内存耗尽）。`go-gost/go.mod` 与 `go-gost/x/go.mod` 分别固定依赖基线，必须同步维护并独立扫描；仅更新面板不会替换节点二进制，发布后需在节点管理中升级 GOST 节点至 `1.2.7` 或更高版本。
 
+GOST 节点 `1.2.8` 与 nftables 节点 `nftables-go-1.3.14` 使用 Go 1.26.10 和 `golang.org/x/net v0.60.0` 重建，修复网络服务、HTTP/2 处理和证书校验的已知安全问题；三个模块仅同步该安全依赖所需的加密、系统调用、文本和构建工具版本。面板最新版本与节点上报版本已同步递增，发布后仍需在节点管理中升级现有节点，才会替换旧二进制；仅升级面板无法修复远端节点。
+
 节点安装和升级默认要求 HTTPS。公网 HTTP 可能泄露节点密钥并允许程序被篡改，`ALLOW_INSECURE_NODE_DOWNLOADS=true` 只应在明确隔离的临时升级窗口使用。
 
 中国大陆节点安装 `gost` 或 nftables Agent 时不会直接访问 GitHub：脚本和节点程序均从面板地址下载。订阅服务器脚本安装 Xray、sing-box 等上游组件时仍需要 GitHub；可在“系统配置 → GitHub 下载代理”填写可信的 HTTPS 全链接代理前缀。该代理不会修改 APT/DNF/APK 软件源，系统包下载仍应使用服务器所在地区可达且可信的发行版镜像。下载代理能够替换可执行文件，禁止使用来源不明的公共服务。
@@ -160,22 +162,22 @@ nftables 模式安装、远程组件升级和规则刷新都会写入 `/etc/sysc
 
 ## 本地开发
 
-需要 Go 1.26.7、Node.js 22 和 npm：
+需要 Go 1.26.10、Node.js 22 和 npm。Go 版本与三个模块、CI 和 Docker 保持一致；该补丁版本修复网络服务和证书校验漏洞，降级会恢复已知安全风险。下面显式指定工具链，避免系统 Go 版本影响验证结果：
 
 ```bash
 npm ci --prefix vite-frontend
 npm run build --prefix vite-frontend
 bash ./scripts/sync-web-dist.sh
-go test ./...
-go run .
+GOTOOLCHAIN=go1.26.10 go test ./...
+GOTOOLCHAIN=go1.26.10 go run .
 ```
 
 完整验证入口：
 
 ```bash
-./scripts/verify.sh
-RUN_RACE=1 ./scripts/verify.sh
-RUN_PACKAGING=1 ./scripts/verify.sh
+GOTOOLCHAIN=go1.26.10 ./scripts/verify.sh
+GOTOOLCHAIN=go1.26.10 RUN_RACE=1 ./scripts/verify.sh
+GOTOOLCHAIN=go1.26.10 RUN_PACKAGING=1 ./scripts/verify.sh
 ```
 
 节点产物仅在本地调试时需要手工生成：

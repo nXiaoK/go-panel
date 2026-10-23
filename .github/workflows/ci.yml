@@ -56,8 +56,8 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
-          # 该版本同时用于主程序、节点工具和 Docker 构建，升级时必须三处一起修改。
-          go-version: "1.26.7"
+          # 固定 1.26.10 修复网络服务和证书校验漏洞；主程序、节点工具和 Docker 必须同步，降级会恢复已知安全风险。
+          go-version: "1.26.10"
           cache-dependency-path: |
             go.sum
             go-gost/go.sum
@@ -192,7 +192,8 @@ jobs:
       # setup-go v6 使用 Node.js 24；Go 安全补丁版本由下方显式固定。
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26.7"
+          # Release 必须使用与测试、Docker 相同的安全补丁版本，避免发布产物重新引入已知漏洞。
+          go-version: "1.26.10"
           cache-dependency-path: |
             go.sum
             go-gost/go.sum
