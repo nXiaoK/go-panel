@@ -261,6 +261,12 @@ func (p *pendingRequest) deliver(res GostResult) {
 // sendTimeout 等待节点响应的超时时间（与 Java future.get(10s) 一致）
 const sendTimeout = 10 * time.Second
 
+// DefaultSendTimeout 供 service 计算诊断等串行命令的最坏耗时，必须与 SendMsg 实际等待一致。
+const DefaultSendTimeout = sendTimeout
+
+// MsgResponseTimeout 是等待节点回包超时时的固定结果文案；调用方应比较该常量而不是复制字面量。
+const MsgResponseTimeout = "等待响应超时"
+
 // SendMsg 向节点发送命令并等待响应（对应 Java WebSocketServer.send_msg）。
 // 消息格式 {type, data, requestId}，节点回包带 requestId。
 func (h *Hub) SendMsg(nodeID int64, data interface{}, msgType string) GostResult {
@@ -329,7 +335,7 @@ func (h *Hub) sendMsg(nodeID int64, data interface{}, msgType string, timeout *t
 		return res
 	case <-timer.C:
 		log.Printf("节点 %d 响应超时", nodeID)
-		return GostResult{Msg: "等待响应超时", OutcomeUnknown: true}
+		return GostResult{Msg: MsgResponseTimeout, OutcomeUnknown: true}
 	}
 }
 

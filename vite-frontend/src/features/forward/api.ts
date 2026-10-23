@@ -1,4 +1,4 @@
-import { apiPost, type RequestOptions } from "@/lib/api/client";
+import { apiPost, diagnosisRequestTimeoutMs, type RequestOptions } from "@/lib/api/client";
 import type {
   CompleteForwardRule,
   DiagnosisResult,
@@ -29,7 +29,7 @@ export const diagnoseForward = (
   forwardId: number,
   opts?: RequestOptions,
 ): Promise<DiagnosisResult> =>
-  apiPost("/forward/diagnose", { forwardId }, { ...opts, timeoutMs: 95_000 });
+  apiPost("/forward/diagnose", { forwardId }, { ...opts, timeoutMs: diagnosisRequestTimeoutMs });
 export const updateForwardOrder = (
   data: { forwards: Array<{ id: number; inx: number }> },
   opts?: RequestOptions,

@@ -162,7 +162,8 @@ func TestStaticAssetNegotiationAndCaching(t *testing.T) {
 	if out.Code != 200 || out.Header().Get("Content-Encoding") != "" || out.Body.String() != "body {}" || !strings.HasPrefix(out.Header().Get("Content-Type"), "text/css") {
 		t.Fatalf("fallback=%d %s %s", out.Code, out.Header(), out.Body.String())
 	}
-	for _, path := range []string{"/assets/missing.js", "/assets/missing.js.gz"} {
+	// 已存在的旁路文件也不能被直接下载，否则会以 octet-stream 加一年 immutable 缓存返回压缩字节。
+	for _, path := range []string{"/assets/missing.js", "/assets/missing.js.gz", "/assets/app-123.js.br", "/assets/app-123.js.gz"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("Accept-Encoding", "br,gzip")
 		out := httptest.NewRecorder()
@@ -181,7 +182,7 @@ func TestHTMLContentSecurityPolicyModesAndResponseScope(t *testing.T) {
 		"assets/font.woff2": {Data: []byte("font")},
 		"favicon.ico":       {Data: []byte("icon")},
 	}
-	const expectedPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+	const expectedPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; report-uri /api/v1/csp-report; report-to csp-endpoint"
 	for _, mode := range []string{"", "report-only", "enforce", "off"} {
 		t.Run("mode="+mode, func(t *testing.T) {
 			gin.SetMode(gin.TestMode)
@@ -200,6 +201,14 @@ func TestHTMLContentSecurityPolicyModesAndResponseScope(t *testing.T) {
 						if got := out.Header().Get(name); got != want {
 							t.Fatalf("%s=%q want %q", name, got, want)
 						}
+					}
+					// 报告端点只随启用的 CSP 一起下发，off 模式和非 HTML 响应不得出现。
+					wantEndpoints := ""
+					if isHTML && mode != "off" {
+						wantEndpoints = `csp-endpoint="/api/v1/csp-report"`
+					}
+					if got := out.Header().Get("Reporting-Endpoints"); got != wantEndpoints {
+						t.Fatalf("Reporting-Endpoints=%q want %q", got, wantEndpoints)
 					}
 					if isHTML && (out.Code != http.StatusOK || out.Body.String() != string(files["index.html"].Data) || !strings.HasPrefix(out.Header().Get("Content-Type"), "text/html")) {
 						t.Fatalf("HTML response=%d %s %q", out.Code, out.Header(), out.Body.String())

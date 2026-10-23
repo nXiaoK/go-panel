@@ -28,6 +28,7 @@ services:
       CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:?必须在 .env 中设置面板访问来源}
       # HTML CSP 首版默认 report-only 仅报告，观察一个版本后显式设 enforce 才拦截违规资源。
       # off 会失去 CSP 纵深防护；非法值拒绝启动，API/订阅/静态资源不发送 CSP。
+      # 违规报告写入容器日志“CSP 违规报告”；观察期内确认无违规后再显式设 enforce。
       CSP_MODE: ${CSP_MODE:-report-only}
       # 仅填写真正终止 TLS/反向代理请求的 CIDR；空值时不信任任何转发头。
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}

@@ -64,6 +64,11 @@ func enforceExitConfigPolicy(cu CurrentUser, tunnel *model.Tunnel, existing *mod
 	}
 	const denied = "普通用户不能自定义出口节点"
 	if existing == nil || existing.TunnelID != tunnel.ID {
+		// 非默认模式或调度策略同样属于自定义出口；显式拒绝而不是静默降级，便于调用方发现请求未按预期执行。
+		if normalizeExitMode(req.mode) != exitModeSingle ||
+			(strings.TrimSpace(req.strategy) != "" && normalizeExitStrategy(req.strategy) != exitStrategyFIFO) {
+			return denied
+		}
 		for _, member := range req.members {
 			if member.OutNodeID != tunnel.OutNodeID {
 				return denied

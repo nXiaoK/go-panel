@@ -495,10 +495,19 @@ func performTcpPing(node *model.Node, targetIP string, port int, description str
 
 // DiagnoseTunnel 隧道诊断
 func DiagnoseTunnel(tunnelID int64) result.R {
-	return diagnoseTunnelWithPing(tunnelID, performTcpPing)
+	return diagnoseTunnelRun(tunnelID, performTcpPing, nil)
+}
+
+// DiagnoseTunnelWithBudget 在下发探测前回调最坏耗时，供 handler 延长写期限。
+func DiagnoseTunnelWithBudget(tunnelID int64, onBudget diagnosisBudgetFunc) result.R {
+	return diagnoseTunnelRun(tunnelID, performTcpPing, onBudget)
 }
 
 func diagnoseTunnelWithPing(tunnelID int64, ping diagnosisPingFunc) result.R {
+	return diagnoseTunnelRun(tunnelID, ping, nil)
+}
+
+func diagnoseTunnelRun(tunnelID int64, ping diagnosisPingFunc, onBudget diagnosisBudgetFunc) result.R {
 	var tunnel model.Tunnel
 	if err := model.DB.First(&tunnel, tunnelID).Error; err != nil {
 		return result.Err("隧道不存在")
@@ -573,11 +582,15 @@ func diagnoseTunnelWithPing(tunnelID int64, ping diagnosisPingFunc) result.R {
 	if tunnel.Type != tunnelTypePortForward {
 		tunnelTypeName = "隧道转发"
 	}
+	results, err := runDiagnosisProbesWithBudget(probes, ping, onBudget)
+	if err != nil {
+		return result.Err(err.Error())
+	}
 	return result.Ok(map[string]interface{}{
 		"tunnelId":   tunnelID,
 		"tunnelName": tunnel.Name,
 		"tunnelType": tunnelTypeName,
-		"results":    runDiagnosisProbes(probes, ping),
+		"results":    results,
 		"timestamp":  time.Now().UnixMilli(),
 	})
 }

@@ -119,8 +119,8 @@ func main() {
 	log := xlogger.NewLogger()
 	logger.SetDefault(log)
 
-	// 面板节点版本与 latestGostNodeVersion 同步；1.2.8 包含 Go 1.26.10 和 x/net v0.60.0 的网络/证书安全修复。
-	wsReporter, err := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, "1.2.8")
+	// 面板节点版本与 latestGostNodeVersion 同步；1.2.9 只读命令不再重写 gost.json，1.2.8 起包含 Go 1.26.10 安全修复。
+	wsReporter, err := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, "1.2.9")
 	if err != nil {
 		fmt.Printf("❌ WebSocket 面板地址无效: %v\n", err)
 		os.Exit(1)

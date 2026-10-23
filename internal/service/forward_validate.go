@@ -170,6 +170,12 @@ func checkUserPermissionsDB(db *gorm.DB, cu CurrentUser, tunnel *model.Tunnel, e
 	return permissionResult{limiter: ut.SpeedID, userTunnel: &ut}
 }
 
+// 授权规则中与提示主语相关的两条文案；管理员替他人操作时由 adminSubjectReason 改写主语。
+const (
+	msgNoTunnelGrant      = "你没有该隧道权限"
+	msgTunnelGrantExpired = "该隧道权限已到期"
+)
+
 // userTunnelUnavailableReason 只判断账号和隧道授权的状态、有效期及流量，
 // 不访问数据库，也不包含转发数量配额；列表提示与提交校验共用同一规则。
 func userTunnelUnavailableReason(user *model.User, grant *model.UserTunnel, now int64) string {
@@ -183,13 +189,13 @@ func userTunnelUnavailableReason(user *model.User, grant *model.UserTunnel, now 
 		return "当前账号已到期"
 	}
 	if grant == nil {
-		return "你没有该隧道权限"
+		return msgNoTunnelGrant
 	}
 	if grant.Status != 1 {
 		return "隧道被禁用"
 	}
 	if grant.ExpTime != nil && *grant.ExpTime <= now {
-		return "该隧道权限已到期"
+		return msgTunnelGrantExpired
 	}
 	if totalFlowBytes(user.InFlow, user.OutFlow) >= flowLimitBytes(user.Flow) {
 		return "用户总流量已用完"
@@ -198,6 +204,18 @@ func userTunnelUnavailableReason(user *model.User, grant *model.UserTunnel, now 
 		return "该隧道流量已用完"
 	}
 	return ""
+}
+
+// adminSubjectReason 把面向本人的授权提示改写为管理员视角，规则本身仍只有 userTunnelUnavailableReason 一份。
+func adminSubjectReason(msg string) string {
+	switch msg {
+	case msgNoTunnelGrant:
+		return "用户没有该隧道权限"
+	case msgTunnelGrantExpired:
+		return "用户的该隧道权限已到期"
+	default:
+		return msg
+	}
 }
 
 // checkForwardQuota 转发数量配额检查

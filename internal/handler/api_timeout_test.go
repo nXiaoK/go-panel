@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/nXiaoK/go-panel/internal/service"
 )
 
 type deadlineCaptureWriter struct {
@@ -122,5 +125,20 @@ func TestExtendRequestDeadlinesRealHTTP(t *testing.T) {
 				t.Fatalf("response=%q error=%v", body, err)
 			}
 		})
+	}
+}
+
+func TestDiagnosisDeadlineExtenderUsesWorstCase(t *testing.T) {
+	w := &deadlineCaptureWriter{ResponseWriter: httptest.NewRecorder()}
+	c, _ := gin.CreateTestContext(w)
+	before := time.Now()
+	diagnosisDeadlineExtender(c, "转发")(40 * time.Second)
+	want := service.DiagnosisResponseTimeout(40 * time.Second)
+	if got := w.deadline.Sub(before); got < want || got > want+time.Second {
+		t.Fatalf("write deadline offset=%v, want about %v", got, want)
+	}
+	diagnosisDeadlineExtender(c, "转发")(time.Hour)
+	if got := w.deadline.Sub(before); got > 5*time.Minute+time.Second {
+		t.Fatalf("deadline not clamped: %v", got)
 	}
 }

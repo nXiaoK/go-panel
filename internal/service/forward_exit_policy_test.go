@@ -83,8 +83,8 @@ func TestRegularUserCreateUsesTunnelDefaultExit(t *testing.T) {
 			fx := setupForwardExitPolicyFixture(t)
 			req := dto.ForwardDto{Name: "default-exit", TunnelID: fx.tunnel.ID, RemoteAddr: "198.51.100.10:443"}
 			if explicitDefault {
-				req.ExitMode = exitModeManual
-				req.ExitStrategy = exitStrategyRand
+				req.ExitMode = exitModeSingle
+				req.ExitStrategy = exitStrategyFIFO
 				req.ExitMembers = []dto.ForwardExitMemberDto{{OutNodeID: fx.tunnel.OutNodeID, Active: true, Weight: 9}}
 			}
 			if res := CreateForward(fx.user, req); res.Code != 0 {
@@ -98,6 +98,34 @@ func TestRegularUserCreateUsesTunnelDefaultExit(t *testing.T) {
 				t.Fatalf("default exit config=%s/%s", forward.ExitMode, forward.ExitStrategy)
 			}
 			assertForwardExitPolicyMembers(t, forward.ID, []dto.ForwardExitMemberDto{{OutNodeID: fx.tunnel.OutNodeID, Active: true, Weight: 1}})
+		})
+	}
+}
+
+func TestRegularUserCreateRejectsNonDefaultExitModeOrStrategy(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode, strategy string
+		members              bool
+	}{
+		{"balance without members", exitModeBalance, "", false},
+		{"manual with default exit", exitModeManual, "", true},
+		{"balance with default exit", exitModeBalance, exitStrategyRound, true},
+		{"single with round strategy", exitModeSingle, exitStrategyRound, false},
+		{"empty mode with hash strategy", "", exitStrategyHash, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := setupForwardExitPolicyFixture(t)
+			req := dto.ForwardDto{Name: "non-default", TunnelID: fx.tunnel.ID, RemoteAddr: "198.51.100.10:443", ExitMode: tc.mode, ExitStrategy: tc.strategy}
+			if tc.members {
+				req.ExitMembers = []dto.ForwardExitMemberDto{{OutNodeID: fx.tunnel.OutNodeID, Active: true}}
+			}
+			if res := CreateForward(fx.user, req); res.Code == 0 || res.Msg != "普通用户不能自定义出口节点" {
+				t.Fatalf("CreateForward=%+v, want explicit rejection", res)
+			}
+			var count int64
+			if err := model.DB.Model(&model.Forward{}).Count(&count).Error; err != nil || count != 0 {
+				t.Fatalf("rejected create wrote forwards: count=%d err=%v", count, err)
+			}
 		})
 	}
 }
@@ -281,6 +309,56 @@ func TestRegularUserChangingTunnelUsesNewDefaultExit(t *testing.T) {
 				t.Fatalf("change tunnel=%+v", res)
 			}
 			assertForwardExitPolicyMembers(t, forward.ID, []dto.ForwardExitMemberDto{{OutNodeID: fx.other.ID, Active: true, Weight: 1}})
+		})
+	}
+}
+
+func TestAdminMovingUserForwardUsesSharedGrantRules(t *testing.T) {
+	expired := time.Now().Add(-time.Hour).UnixMilli()
+	future := time.Now().Add(time.Hour).UnixMilli()
+	for _, tc := range []struct {
+		name  string
+		grant *model.UserTunnel
+		want  string
+	}{
+		{"missing grant", nil, "用户没有该隧道权限"},
+		{"disabled grant", &model.UserTunnel{Flow: 100, Num: 10, ExpTime: &future, Status: 0}, "隧道被禁用"},
+		{"expired grant", &model.UserTunnel{Flow: 100, Num: 10, ExpTime: &expired, Status: 1}, "用户的该隧道权限已到期"},
+		{"exhausted grant", &model.UserTunnel{Flow: 1, Num: 10, ExpTime: &future, Status: 1, InFlow: 1 << 30}, "该隧道流量已用完"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := setupForwardExitPolicyFixture(t)
+			forward := createPausedForwardForExitPolicy(t, fx)
+			newTunnel := fx.tunnel
+			newTunnel.ID = 0
+			newTunnel.Name = "admin-move-target"
+			if err := model.DB.Create(&newTunnel).Error; err != nil {
+				t.Fatal(err)
+			}
+			if tc.grant != nil {
+				grant := *tc.grant
+				grant.UserID, grant.TunnelID = fx.user.UserID, newTunnel.ID
+				if err := model.DB.Create(&grant).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			admin := CurrentUser{UserID: fx.user.UserID + 1000, RoleID: adminRoleID, UserName: "admin"}
+			res := UpdateForward(admin, dto.ForwardUpdateDto{ID: forward.ID, Name: forward.Name, TunnelID: newTunnel.ID, RemoteAddr: forward.RemoteAddr})
+			if res.Code == 0 || res.Msg != tc.want {
+				t.Fatalf("UpdateForward=%+v, want %q", res, tc.want)
+			}
+			// 与普通用户提交使用同一规则：本人视角的提示只在主语上不同。
+			var user model.User
+			if err := model.DB.First(&user, fx.user.UserID).Error; err != nil {
+				t.Fatal(err)
+			}
+			var grant *model.UserTunnel
+			if tc.grant != nil {
+				grant = getUserTunnel(fx.user.UserID, newTunnel.ID)
+			}
+			if got := adminSubjectReason(userTunnelUnavailableReason(&user, grant, time.Now().UnixMilli())); got != tc.want {
+				t.Fatalf("shared rule=%q, want %q", got, tc.want)
+			}
 		})
 	}
 }

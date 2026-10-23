@@ -28,8 +28,8 @@ const (
 	localPanelBaseURLGostMinVersion = "1.2.6"
 	// nftables-go 1.3.4 起，Agent 在升级时会忽略命令中的可疑地址并优先使用本机持久配置。
 	localPanelBaseURLNftMinVersion = "nftables-go-1.3.4"
-	// GOST 1.2.8 下发 Go 1.26.10 和 x/net v0.60.0 的网络/证书安全修复；与节点上报版本同步，使旧节点可升级。
-	latestGostNodeVersion = "1.2.8"
+	// GOST 1.2.9 停止在 TcpPing 等只读命令后重写 gost.json（1.2.8 起含 Go 1.26.10 安全修复）；与节点上报版本同步，使旧节点可升级。
+	latestGostNodeVersion = "1.2.9"
 	// nftables-go 1.3.14 下发 Go 1.26.10 和 x/net v0.60.0 的网络/证书安全修复，保持现有规则兼容行为。
 	// 必须与 nft_agent 上报版本同步递增，否则同版本升级会被拒绝，旧规则工具无法替换。
 	latestNftNodeVersion = "nftables-go-1.3.14"
@@ -172,7 +172,7 @@ func checkNodeStatusWithTimeout(nodeID int64, timeout time.Duration) result.R {
 	if check.Responsive {
 		check.RoundTripMs = time.Since(start).Milliseconds()
 		check.Message = "节点连接正常，已收到命令响应"
-	} else if res.Msg == "等待响应超时" {
+	} else if res.Msg == ws.MsgResponseTimeout {
 		check.Message = fmt.Sprintf("已连接但 %g 秒内无响应", timeout.Seconds())
 	} else {
 		check.Message = "节点检测未收到响应：" + res.Msg

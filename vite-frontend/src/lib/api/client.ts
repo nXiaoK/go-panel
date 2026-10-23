@@ -30,6 +30,10 @@ declare module "axios" {
   }
 }
 
+// 诊断后端按“同节点串行 × 每条 10 秒”计算写期限，最长 5 分钟（service.maxDiagnosisResponseTimeout）；
+// 前端额外预留 5 秒网络与解析时间，必须晚于服务端期限，避免先于后端放弃请求。
+export const diagnosisRequestTimeoutMs = 305_000;
+
 export function computeBaseURL(): string {
   return currentPanelEndpoint().apiBase;
 }

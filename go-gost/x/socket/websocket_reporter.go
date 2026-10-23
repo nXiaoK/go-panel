@@ -491,6 +491,18 @@ func (w *WebSocketReporter) handleReceivedMessage(messageType int, message []byt
 	}
 }
 
+// commandPersistsConfig 判断命令处理后是否需要落盘：TcpPing 只读，未知命令没有执行任何修改。
+func commandPersistsConfig(commandType string) bool {
+	switch commandType {
+	case "AddService", "UpdateService", "DeleteService", "PauseService", "ResumeService", "ReconcileManagedRuntime",
+		"AddChains", "UpdateChains", "DeleteChains", "AddLimiters", "UpdateLimiters", "DeleteLimiters",
+		"SetProtocol", "UpgradeNode":
+		return true
+	default:
+		return false
+	}
+}
+
 // routeCommand 路由命令到对应的处理函数
 func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
 	jsonBytes, errs := json.Marshal(cmd)
@@ -573,13 +585,15 @@ func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
 		response.Type = "UnknownCommandResponse"
 	}
 
-	// 发送响应
-	if err != nil {
+	// 发送响应；只读诊断和未知命令不改动运行配置，不能重写 gost.json。
+	// saveConfig 以截断方式重写文件，每次面板“检测状态”或诊断都写盘会放大断电时配置损坏的风险。
+	if commandPersistsConfig(cmd.Type) {
 		saveConfig()
+	}
+	if err != nil {
 		response.Success = false
 		response.Message = err.Error()
 	} else {
-		saveConfig()
 		response.Success = true
 		response.Message = "OK"
 	}

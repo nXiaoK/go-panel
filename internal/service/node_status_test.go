@@ -151,6 +151,10 @@ func TestCheckNodeStatusRoundTrip(t *testing.T) {
 					if outcome != "response" && got.RoundTripMs != 0 {
 						t.Fatalf("timeout has round trip: %+v", got)
 					}
+					// 超时文案依赖 ws.MsgResponseTimeout 常量；若 hub 文案变化，此处必须仍识别为“无响应”。
+					if outcome == "timeout" && !strings.HasPrefix(got.Message, "已连接但") {
+						t.Fatalf("timeout message=%q", got.Message)
+					}
 				case <-time.After(time.Second):
 					t.Fatal("status check exceeded injected timeout")
 				}

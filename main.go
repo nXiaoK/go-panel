@@ -73,6 +73,10 @@ func main() {
 
 	handler.Register(r, cfg.CorsAllowOrigin, cfg.AllowLegacyNftReports)
 	web.Register(r, cfg.CSPMode)
+	if cfg.CSPMode == "" || cfg.CSPMode == "report-only" {
+		// 仅报告模式不拦截任何资源；提醒运维在实际部署中观察日志，确认无违规后再手动切换 enforce。
+		log.Printf("CSP 处于 report-only 观察模式：违规只记录为“CSP 违规报告”日志、不会拦截；确认无违规后设置 CSP_MODE=enforce")
+	}
 
 	build := buildinfo.Current()
 	log.Printf("go-panel %s (%s) 启动，监听 %s，数据库 %s", build.Version, build.Commit, cfg.ListenAddr, cfg.DBPath)

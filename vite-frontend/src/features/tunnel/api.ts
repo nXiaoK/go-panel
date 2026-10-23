@@ -1,4 +1,4 @@
-import { apiPost, type RequestOptions } from "@/lib/api/client";
+import { apiPost, diagnosisRequestTimeoutMs, type RequestOptions } from "@/lib/api/client";
 import type {
   DiagnosisResult,
   SpeedTestRequest,
@@ -20,9 +20,8 @@ export const getTunnelList = async (opts?: RequestOptions): Promise<Tunnel[]> =>
 };
 export const deleteTunnel = (id: number, opts?: RequestOptions): Promise<string> =>
   apiPost("/tunnel/delete", { id }, opts);
-// 诊断后端写期限为 90 秒，额外预留 5 秒网络与解析时间。
 export const diagnoseTunnel = (tunnelId: number, opts?: RequestOptions): Promise<DiagnosisResult> =>
-  apiPost("/tunnel/diagnose", { tunnelId }, { ...opts, timeoutMs: 95_000 });
+  apiPost("/tunnel/diagnose", { tunnelId }, { ...opts, timeoutMs: diagnosisRequestTimeoutMs });
 // 与后端归一化一致：默认 10 秒、上限 120 秒，额外预留 50 秒，晚于服务端 45 秒余量。
 export const speedTestTunnel = (
   data: SpeedTestRequest,

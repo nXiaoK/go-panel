@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nXiaoK/go-panel/internal/middleware"
 )
 
 //go:embed all:dist
@@ -34,6 +35,12 @@ func registerFS(r *gin.Engine, sub fs.FS, cspMode string) {
 		// API/WS 路径不回退到前端
 		if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/flow") || strings.HasPrefix(path, "/system-info") {
 			c.JSON(http.StatusNotFound, gin.H{"code": -1, "msg": "not found"})
+			return
+		}
+
+		// 预压缩旁路文件只经内容协商返回；直接请求会得到无 Content-Encoding 的二进制并被长期缓存，按不存在处理。
+		if strings.HasPrefix(path, "/assets/") && (strings.HasSuffix(path, ".br") || strings.HasSuffix(path, ".gz")) {
+			c.String(http.StatusNotFound, "404 page not found")
 			return
 		}
 
@@ -81,7 +88,8 @@ func registerFS(r *gin.Engine, sub fs.FS, cspMode string) {
 // panelContentSecurityPolicy 只信任同源脚本、字体和网络连接；脚本禁止内联。
 // Radix/sonner 仍需内联样式，二维码允许 data:/blob: 图片；备份通过同源 API 获取后用 blob 链接下载。
 // connect-src 的 self 同时约束正式部署的 HTTP API 与同源 WebSocket，禁止生产面板跨域连接。
-const panelContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+// report-uri 兼容 Firefox/旧版浏览器，report-to 配合 Reporting-Endpoints 供 Chromium 使用；两者都指向同源限流端点。
+const panelContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; report-uri " + middleware.CSPReportPath + "; report-to " + middleware.CSPReportEndpointName
 
 func serveIndex(c *gin.Context, sub fs.FS, cspMode string) {
 	index, err := fs.ReadFile(sub, "index.html")
@@ -95,8 +103,10 @@ func serveIndex(c *gin.Context, sub fs.FS, cspMode string) {
 	case "off":
 	case "enforce":
 		c.Header("Content-Security-Policy", panelContentSecurityPolicy)
+		c.Header("Reporting-Endpoints", middleware.CSPReportEndpointName+`="`+middleware.CSPReportPath+`"`)
 	default:
 		c.Header("Content-Security-Policy-Report-Only", panelContentSecurityPolicy)
+		c.Header("Reporting-Endpoints", middleware.CSPReportEndpointName+`="`+middleware.CSPReportPath+`"`)
 	}
 	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, "text/html; charset=utf-8", index)

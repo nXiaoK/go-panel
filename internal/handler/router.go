@@ -23,6 +23,9 @@ func Register(r *gin.Engine, corsAllowOrigin string, allowLegacyNftReports bool)
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	// CSP 违规报告：浏览器匿名提交，无鉴权；按来源和全站限流，只写入脱敏日志。
+	r.POST(middleware.CSPReportPath, cspReport)
+
 	// WebSocket（节点 + 管理员）
 	r.GET("/system-info", func(c *gin.Context) {
 		ws.HandleSystemInfo(c.Writer, c.Request)

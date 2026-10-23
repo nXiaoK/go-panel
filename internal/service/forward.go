@@ -405,27 +405,10 @@ func updateForwardInternalWithFreshCurrent(req dto.ForwardUpdateDto, opUserID in
 				if err := model.DB.First(&originalUser, existForward.UserID).Error; err != nil {
 					return result.Err("用户不存在")
 				}
-				if !isActiveUserStatus(originalUser.Status) {
-					return result.Err("用户已到期或被禁用")
-				}
-				if originalUser.ExpTime != nil && *originalUser.ExpTime <= time.Now().UnixMilli() {
-					return result.Err("当前账号已到期")
-				}
+				// 与普通用户提交、隧道列表共用同一纯函数，避免管理员路径的授权规则与之漂移。
 				ut := getUserTunnel(existForward.UserID, tunnel.ID)
-				if ut == nil {
-					return result.Err("用户没有该隧道权限")
-				}
-				if ut.Status != 1 {
-					return result.Err("隧道被禁用")
-				}
-				if ut.ExpTime != nil && *ut.ExpTime <= time.Now().UnixMilli() {
-					return result.Err("用户的该隧道权限已到期")
-				}
-				if totalFlowBytes(originalUser.InFlow, originalUser.OutFlow) >= flowLimitBytes(originalUser.Flow) {
-					return result.Err("用户总流量已用完")
-				}
-				if totalFlowBytes(ut.InFlow, ut.OutFlow) >= flowLimitBytes(ut.Flow) {
-					return result.Err("该隧道流量已用完")
+				if msg := userTunnelUnavailableReason(&originalUser, ut, time.Now().UnixMilli()); msg != "" {
+					return result.Err(adminSubjectReason(msg))
 				}
 				if msg := checkForwardQuota(existForward.UserID, tunnel.ID, ut, &originalUser, &req.ID); msg != "" {
 					return result.Err("用户" + msg)
@@ -860,10 +843,15 @@ func changeForwardStatus(cu CurrentUser, id int64, targetStatus int, operation s
 }
 
 func DiagnoseForward(cu CurrentUser, id int64) result.R {
-	return diagnoseForwardWithPing(cu, id, performTcpPing)
+	return diagnoseForwardRun(cu, id, performTcpPing, nil)
 }
 
-func diagnoseForwardWithPing(cu CurrentUser, id int64, ping diagnosisPingFunc) result.R {
+// DiagnoseForwardWithBudget 在下发探测前回调最坏耗时，供 handler 按目标数量延长写期限。
+func DiagnoseForwardWithBudget(cu CurrentUser, id int64, onBudget diagnosisBudgetFunc) result.R {
+	return diagnoseForwardRun(cu, id, performTcpPing, onBudget)
+}
+
+func diagnoseForwardRun(cu CurrentUser, id int64, ping diagnosisPingFunc, onBudget diagnosisBudgetFunc) result.R {
 	forward := validateForwardExists(id, cu.UserID, cu.RoleID)
 	if forward == nil {
 		return result.Err("转发不存在")
@@ -940,11 +928,15 @@ func diagnoseForwardWithPing(cu CurrentUser, id int64, ping diagnosisPingFunc) r
 	if tunnel.Type != tunnelTypePortForward {
 		tunnelTypeName = "隧道转发"
 	}
+	results, err := runDiagnosisProbesWithBudget(probes, ping, onBudget)
+	if err != nil {
+		return result.Err(err.Error())
+	}
 	return result.Ok(map[string]interface{}{
 		"forwardId":   id,
 		"forwardName": forward.Name,
 		"tunnelType":  tunnelTypeName,
-		"results":     runDiagnosisProbes(probes, ping),
+		"results":     results,
 		"timestamp":   time.Now().UnixMilli(),
 	})
 }

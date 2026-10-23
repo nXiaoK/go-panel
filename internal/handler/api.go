@@ -20,10 +20,6 @@ const (
 	// speedTestResponseGrace 为启动 iperf3（最多 5 秒）、客户端收尾（20 秒）及网络调度保留余量。
 	// 仅在钳制后的测速时长上追加，避免用户输入无限延长连接占用。
 	speedTestResponseGrace = 45 * time.Second
-	// diagnosisResponseTimeout 只覆盖诊断：单个节点命令最多等待 10 秒，最多 4 路并发，
-	// 为常见多目标的多批检查及响应序列化保留 90 秒，不放宽其他 API 的全局期限。
-	// 目标总数现无上限，极大量目标仍可能超过窗口；这里不改变既有目标或出口语义。
-	diagnosisResponseTimeout = 90 * time.Second
 	// backupTransferTimeout 只覆盖最大 256 MB 的备份；512 KB/s 上传约需 8.5 分钟，
 	// 额外时间留给数据库快照/校验。恢复仍受上传大小限制，慢连接最多占用 10 分钟。
 	backupTransferTimeout = 10 * time.Minute
@@ -208,6 +204,16 @@ func extendRequestDeadlines(w http.ResponseWriter, now time.Time, read, write ti
 	return errors.Join(readErr, writeErr)
 }
 
+// diagnosisDeadlineExtender 在探测开始前按最坏耗时（同节点串行 × 每条 10 秒）延长写期限，
+// 上限由 service.DiagnosisResponseTimeout 钳制，避免固定 90 秒窗口截断多目标诊断。
+func diagnosisDeadlineExtender(c *gin.Context, kind string) func(time.Duration) {
+	return func(worstCase time.Duration) {
+		if err := extendRequestDeadlines(c.Writer, time.Now(), 0, service.DiagnosisResponseTimeout(worstCase)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			log.Printf("延长%s诊断响应写期限失败：%v", kind, err)
+		}
+	}
+}
+
 // nftConfig nft 节点拉取规则（X-Node-Secret 头或 ?secret= 鉴权）
 func nftConfig(c *gin.Context) {
 	secret := nodeSecret(c)
@@ -257,10 +263,7 @@ func diagnoseTunnel(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := extendRequestDeadlines(c.Writer, time.Now(), 0, diagnosisResponseTimeout); err != nil && !errors.Is(err, http.ErrNotSupported) {
-		log.Printf("延长隧道诊断响应写期限失败：%v", err)
-	}
-	c.JSON(http.StatusOK, service.DiagnoseTunnel(id))
+	c.JSON(http.StatusOK, service.DiagnoseTunnelWithBudget(id, diagnosisDeadlineExtender(c, "隧道")))
 }
 
 func speedTestTunnel(c *gin.Context) {
@@ -393,10 +396,7 @@ func diagnoseForward(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := extendRequestDeadlines(c.Writer, time.Now(), 0, diagnosisResponseTimeout); err != nil && !errors.Is(err, http.ErrNotSupported) {
-		log.Printf("延长转发诊断响应写期限失败：%v", err)
-	}
-	c.JSON(http.StatusOK, service.DiagnoseForward(currentUser(c), id))
+	c.JSON(http.StatusOK, service.DiagnoseForwardWithBudget(currentUser(c), id, diagnosisDeadlineExtender(c, "转发")))
 }
 
 func updateForwardOrder(c *gin.Context) {

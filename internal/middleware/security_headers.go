@@ -6,6 +6,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// CSPReportPath 是同源 CSP 违规报告端点：handler 注册接收路由，web 在 HTML 的 CSP 中引用。
+const CSPReportPath = "/api/v1/csp-report"
+
+// CSPReportEndpointName 是 Reporting-Endpoints 中的端点名，report-to 指令必须使用同一名称。
+const CSPReportEndpointName = "csp-endpoint"
+
 // SecurityHeaders 为所有响应设置基础安全头；此阶段不启用 CSP 或 HSTS，
 // 避免影响现有前端资源与 HTTP 内网部署。HSTS 应由 HTTPS 反向代理按域名配置。
 func SecurityHeaders() gin.HandlerFunc {

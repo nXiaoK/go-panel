@@ -52,21 +52,21 @@ describe("long request deadlines", () => {
     );
   });
 
-  it("allows both diagnosis calls to finish after the 90 second server window", async () => {
+  it("keeps both diagnosis calls beyond the five minute server window", async () => {
     await diagnoseForward(2);
     await diagnoseTunnel(3);
     expect(adapter).toHaveBeenCalledWith(
       expect.objectContaining({
         url: "/forward/diagnose",
         data: JSON.stringify({ forwardId: 2 }),
-        timeout: 95_000,
+        timeout: 305_000,
       }),
     );
     expect(adapter).toHaveBeenCalledWith(
       expect.objectContaining({
         url: "/tunnel/diagnose",
         data: JSON.stringify({ tunnelId: 3 }),
-        timeout: 95_000,
+        timeout: 305_000,
       }),
     );
   });
