@@ -3,14 +3,7 @@ import { createElement, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InternalAxiosRequestConfig } from "axios";
-import {
-  ApiError,
-  apiPost,
-  apiGet,
-  apiDownload,
-  apiUpload,
-  setPanelAddress,
-} from "../src/lib/api/client";
+import { ApiError, apiPost, apiGet, apiDownload, apiUpload } from "../src/lib/api/client";
 const adapter = vi.hoisted(() => vi.fn());
 vi.mock("axios", async (importOriginal) => {
   const actual = await importOriginal<typeof import("axios")>();
@@ -97,17 +90,21 @@ describe("unified API client", () => {
     respond(blob, { "content-disposition": disposition });
     await expect(apiDownload("/backup")).resolves.toEqual({ blob, filename });
   });
-  it("reads endpoint and token for each request", async () => {
+  it("ignores legacy panel addresses and reads the token for each request", async () => {
     respond({ code: 0, data: null });
-    setPanelAddress("https://first.example");
+    localStorage.setItem("panel_address", "https://first.example");
     localStorage.setItem("token", "one");
     await apiPost("/test");
-    setPanelAddress("https://second.example");
+    localStorage.setItem("panel_address", "https://second.example");
     localStorage.setItem("token", "two");
     await apiPost("/test");
-    expect(adapter.mock.calls[0][0]).toMatchObject({ baseURL: "https://first.example/api/v1/" });
+    expect(adapter.mock.calls[0][0]).toMatchObject({
+      baseURL: `${window.location.origin}/api/v1/`,
+    });
     expect(adapter.mock.calls[0][0].headers.Authorization).toBe("one");
-    expect(adapter.mock.calls[1][0]).toMatchObject({ baseURL: "https://second.example/api/v1/" });
+    expect(adapter.mock.calls[1][0]).toMatchObject({
+      baseURL: `${window.location.origin}/api/v1/`,
+    });
     expect(adapter.mock.calls[1][0].headers.Authorization).toBe("two");
   });
   it("forwards AbortSignal and cancels the pending transport", async () => {

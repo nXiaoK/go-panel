@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { LoginPage } from "@/features/auth/page";
-
+import { LoginPage } from "@/features/auth/login-page";
+import { redirectAuthenticated } from "@/features/auth/guard";
+import { parseLoginSearch } from "@/features/auth/login-search";
 export const Route = createFileRoute("/login")({
-  // 仅接受会话失效和账号禁用两个提示原因；未提供或未知值时沿用普通登录界面。
-  validateSearch: (search: Record<string, unknown>): { reason?: "expired" | "disabled" } =>
-    search.reason === "expired" || search.reason === "disabled" ? { reason: search.reason } : {},
+  beforeLoad: redirectAuthenticated,
+  validateSearch: parseLoginSearch,
   head: () => ({ meta: [{ title: "登录" }] }),
   component: LoginPage,
 });

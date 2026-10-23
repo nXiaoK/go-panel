@@ -2,25 +2,6 @@
 // 旧值/次数不再存在时必须移除对应项，不能保留可回填额度。
 // owner 是负责清理的任务，U12 必须删除全部允许项并将计数归零。
 export const legacyViolations = {
-  "src/components/app-sidebar.tsx": {
-    owner: "U03",
-    values: {
-      "text-[10px]": 3,
-    },
-  },
-  "src/components/app-topbar.tsx": {
-    owner: "U03",
-    values: {
-      "text-[10px]": 3,
-      "text-[11px]": 2,
-    },
-  },
-  "src/features/auth/page.tsx": {
-    owner: "U03",
-    values: {
-      "text-[11px]": 1,
-    },
-  },
   "src/features/config/page.tsx": {
     owner: "U11",
     values: {
@@ -112,12 +93,6 @@ export const legacyViolations = {
       "amber-500": 2,
       "amber-700": 1,
       "amber-300": 1,
-    },
-  },
-  "src/features/system/components/system-update-dialog.tsx": {
-    owner: "U03",
-    values: {
-      "text-[11px]": 1,
     },
   },
   "src/features/tunnel/page.tsx": {

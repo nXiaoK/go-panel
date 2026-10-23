@@ -7,6 +7,7 @@ import { checkPanelUpdate, getConfigs, getSystemStatus, getSystemVersion } from 
 import { configureSessionForTest } from "@/lib/session";
 import { ApiError } from "@/lib/api/client";
 import type { BuildInfo, PanelUpdateStatus } from "@/lib/types";
+import { PanelStatusProvider } from "@/features/system/panel-status";
 import { AppSidebar } from "./app-sidebar";
 
 vi.mock("@/lib/api", () => ({
@@ -30,10 +31,11 @@ vi.mock("@/components/ui/sidebar", () => {
     SidebarGroupContent: Container,
     SidebarGroupLabel: Container,
     SidebarHeader: Container,
+    SidebarTrigger: () => <button>切换侧栏</button>,
     SidebarMenu: Container,
     SidebarMenuButton: Container,
     SidebarMenuItem: Container,
-    useSidebar: () => ({ state: "expanded" }),
+    useSidebar: () => ({ state: "expanded", isMobile: false, setOpenMobile: vi.fn() }),
   };
 });
 vi.mock("@/features/system/components/system-update-dialog", () => ({
@@ -72,6 +74,7 @@ afterEach(() => {
   cleanup();
   client.clear();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -82,7 +85,9 @@ async function showSidebar(role: number, forcePassword = false) {
   await act(async () => {
     render(
       <QueryClientProvider client={client}>
-        <AppSidebar />
+        <PanelStatusProvider>
+          <AppSidebar />
+        </PanelStatusProvider>
       </QueryClientProvider>,
     );
   });
@@ -99,10 +104,10 @@ describe("sidebar version and process status", () => {
     });
     expect(getSystemVersion).not.toHaveBeenCalled();
     expect(checkPanelUpdate).not.toHaveBeenCalled();
-    expect(getSystemStatus).toHaveBeenCalledOnce();
+    expect(getSystemStatus).not.toHaveBeenCalled();
     expect(screen.queryByText("v1.2.3")).toBeNull();
     expect(screen.queryByText("管理员升级提示")).toBeNull();
-    expect(screen.getByText(/面板已运行/)).toBeTruthy();
+    expect(screen.queryByText(/面板已运行/)).toBeNull();
   });
 
   it("keeps administrator version, update dialog and half-hour polling", async () => {
@@ -132,8 +137,8 @@ describe("sidebar version and process status", () => {
 
   it("keeps a successful status online when site configuration fails", async () => {
     vi.mocked(getConfigs).mockRejectedValue(new Error("config unavailable"));
-    await showSidebar(1);
-    expect(screen.getByText("系统运行中")).toBeTruthy();
+    await showSidebar(0);
+    expect(screen.getByText("正常")).toBeTruthy();
     expect(screen.queryByText("连接异常")).toBeNull();
   });
 
@@ -143,8 +148,57 @@ describe("sidebar version and process status", () => {
       if (failure === "rejected")
         vi.mocked(getSystemStatus).mockRejectedValue(new Error("offline"));
       else vi.mocked(getSystemStatus).mockRejectedValue(new ApiError("offline", -1));
-      await showSidebar(1);
+      await showSidebar(0);
+      expect(screen.queryByText("连接异常")).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_010);
+      });
       expect(screen.getByText("连接异常")).toBeTruthy();
+      expect(getSystemStatus).toHaveBeenCalledTimes(2);
+      vi.mocked(getSystemStatus).mockResolvedValue({
+        startedAt: Date.now() - 1000,
+        uptimeSeconds: 1,
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_010);
+      });
+      expect(screen.queryByText("连接异常")).toBeNull();
     },
   );
+  it("管理员每60秒轮询，隐藏时暂停，重新可见后恢复", async () => {
+    await showSidebar(0);
+    expect(getSystemStatus).toHaveBeenCalledOnce();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(getSystemStatus).toHaveBeenCalledTimes(2);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(getSystemStatus).toHaveBeenCalledTimes(2);
+    vi.restoreAllMocks();
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(vi.mocked(getSystemStatus).mock.calls.length).toBeGreaterThan(2);
+  });
+  it("管理员仅显示8个业务入口，普通用户显示控制台/我的转发/账户", async () => {
+    await showSidebar(0);
+    expect(screen.getAllByRole("link")).toHaveLength(8);
+    cleanup();
+    client.clear();
+    await showSidebar(1);
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "控制台",
+      "我的转发",
+      "账户",
+    ]);
+  });
 });

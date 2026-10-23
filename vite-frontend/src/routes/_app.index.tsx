@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Dashboard } from "@/features/dashboard/page";
 
 export const Route = createFileRoute("/_app/")({
+  staticData: { title: "控制台" },
   head: () => ({
     meta: [
       { title: "控制台" },

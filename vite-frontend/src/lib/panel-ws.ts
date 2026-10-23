@@ -2,7 +2,7 @@ import { currentPanelEndpoint, resolvePanelEndpoint } from "@/lib/panel-endpoint
 
 export function buildPanelWsUrlFromBase(base: string): string {
   return resolvePanelEndpoint({
-    stored: base,
+    env: base,
     origin: base,
     pageProtocol: base.startsWith("https") ? "https:" : "http:",
   }).wsURL();

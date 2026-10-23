@@ -1,15 +1,28 @@
 import { getSystemStatus } from "@/lib/api";
 import { resourceKeys, useBusinessEnabled } from "@/lib/query-keys";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 export const systemKeys = resourceKeys.system;
 
 export function useSystemStatus() {
-  // 保持侧栏既有访问：后端按角色返回公开品牌配置/进程时长；版本、升级仍由管理员专用接口保护。
-  const enabled = useBusinessEnabled();
+  // 仅管理员查询进程状态；60 秒轮询，隐藏页暂停，恢复后由下一次轮询继续。
+  const businessEnabled = useBusinessEnabled(true);
+  const [visible, setVisible] = useState(
+    () => typeof document === "undefined" || document.visibilityState !== "hidden",
+  );
+  useEffect(() => {
+    const update = () => setVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
   return useQuery({
     queryKey: systemKeys.status(),
     queryFn: ({ signal }) => getSystemStatus({ signal }),
-    enabled,
+    enabled: businessEnabled && visible,
+    retry: false,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
   });
 }
 
