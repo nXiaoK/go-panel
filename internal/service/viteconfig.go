@@ -2,12 +2,14 @@ package service
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"path"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -22,6 +24,8 @@ const (
 	allowInsecureNodeDownloadsEnvOverrideName = "allow_insecure_node_downloads_env_override"
 	// GitHub 下载代理仅传给订阅服务器脚本；空值保持直连，非空值必须是可信的 HTTPS 全链接代理前缀。
 	githubDownloadProxyConfigName = "github_download_proxy"
+	// 外网诊断目标为空时兼容 www.google.com:443；只影响参考探测，不改变隧道链路。
+	diagnoseInternetProbeConfigName = "diagnose_internet_probe"
 )
 
 var publicConfigNames = map[string]struct{}{
@@ -125,6 +129,15 @@ func normalizeConfigValue(name, value string) (string, error) {
 		return normalized, nil
 	case githubDownloadProxyConfigName:
 		return normalizeGitHubDownloadProxy(value)
+	case diagnoseInternetProbeConfigName:
+		normalized := strings.TrimSpace(value)
+		if normalized == "" {
+			return "", nil
+		}
+		if _, _, err := parseInternetProbe(normalized); err != nil {
+			return "", err
+		}
+		return normalized, nil
 	default:
 		return value, nil
 	}
@@ -203,7 +216,7 @@ func UpdateConfig(name, value string) result.R {
 	if name == "" {
 		return result.Err("配置名称不能为空")
 	}
-	if value == "" {
+	if value == "" && name != diagnoseInternetProbeConfigName {
 		return result.Err("配置值不能为空")
 	}
 	if isInternalConfigName(name) {
@@ -248,4 +261,22 @@ func DeleteConfig(name string) result.R {
 		return result.Err("配置删除失败")
 	}
 	return result.OkMsg("配置删除成功")
+}
+
+// parseInternetProbe 接受 host:port（IPv6 需方括号），限制端口并拒绝主机空白，避免下发无效诊断目标。
+func parseInternetProbe(value string) (string, int, error) {
+	host, rawPort, err := net.SplitHostPort(value)
+	port, portErr := strconv.Atoi(rawPort)
+	if err != nil || host == "" || strings.ContainsFunc(host, unicode.IsSpace) || portErr != nil || port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("外网探测目标必须为 host:port，host 不能为空或包含空白，端口范围为 1–65535")
+	}
+	return host, port, nil
+}
+
+func diagnosisInternetProbe() (string, int) {
+	// 空值保持原来的目标；外部备份或旧库中的非法值也安全回退，不向节点下发非法地址。
+	if host, port, err := parseInternetProbe(strings.TrimSpace(GetConfigValue(diagnoseInternetProbeConfigName))); err == nil {
+		return host, port
+	}
+	return "www.google.com", 443
 }

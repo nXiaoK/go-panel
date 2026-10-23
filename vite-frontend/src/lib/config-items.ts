@@ -48,6 +48,16 @@ export function resolveInsecureDownloadNoticeState(
 
 export const keyConfigMeta: KeyConfigMeta[] = [
   {
+    // 空值沿用 www.google.com:443；只用于参考探测，不改变实际转发路径。
+    name: "diagnose_internet_probe",
+    label: "外网诊断目标",
+    placeholder: "www.google.com:443",
+    description:
+      "使用 host:port，端口范围 1–65535，IPv6 地址需用方括号。留空使用 www.google.com:443；外网探测仅供参考，受节点所在网络环境影响，不计入链路诊断结论。",
+    type: "input",
+    defaultValue: "",
+  },
+  {
     name: "ip",
     label: "面板公网地址",
     placeholder: "panel.example.com:6365 或 http://1.2.3.4:6365",

@@ -1,3 +1,4 @@
+import { diagnosisStatus, diagnosisSummary, internetProbeNotice } from "@/lib/diagnosis";
 import type { TunnelWrite } from "@/lib/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -688,6 +689,9 @@ function TunnelPage() {
               <div className="text-sm text-muted-foreground">
                 <span className="font-mono">{diagResult.tunnelName}</span> · {diagResult.tunnelType}
               </div>
+              <p role="status" className="text-sm">
+                {diagnosisSummary(diagResult.results ?? [])}
+              </p>
               <div className="space-y-2">
                 {diagResult.results?.map((r, i) => (
                   <div
@@ -695,13 +699,20 @@ function TunnelPage() {
                     className={`rounded-md border p-3 text-sm ${
                       r.success
                         ? "border-emerald-500/30 bg-emerald-500/5"
-                        : "border-destructive/40 bg-destructive/5"
+                        : r.advisory
+                          ? "border-warning/40 bg-warning/5"
+                          : "border-destructive/40 bg-destructive/5"
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="font-medium">{r.description}</div>
-                      <Badge variant={r.success ? "default" : "destructive"}>
-                        {r.success ? "通过" : "失败"}
+                      <Badge
+                        variant={r.success ? "default" : r.advisory ? "outline" : "destructive"}
+                        className={
+                          !r.success && r.advisory ? "border-warning/40 text-warning" : undefined
+                        }
+                      >
+                        {diagnosisStatus(r)}
                       </Badge>
                     </div>
                     <div className="mt-1 font-mono text-[11px] text-muted-foreground">
@@ -710,6 +721,11 @@ function TunnelPage() {
                       {typeof r.averageTime === "number" && ` · ${r.averageTime}ms`}
                       {typeof r.packetLoss === "number" && ` · 丢包 ${r.packetLoss}%`}
                     </div>
+                    {r.advisory && (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {internetProbeNotice}
+                      </div>
+                    )}
                     {r.message && (
                       <div className="mt-1 text-[12px] text-muted-foreground">{r.message}</div>
                     )}

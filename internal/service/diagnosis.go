@@ -19,6 +19,7 @@ type diagnosisProbe struct {
 	description string
 	count       int
 	timeoutMs   int
+	advisory    bool
 }
 
 // runDiagnosisProbes 先按展示顺序分配结果位置，再由有限 worker 执行；
@@ -36,6 +37,7 @@ func runDiagnosisProbes(probes []diagnosisProbe, ping diagnosisPingFunc) []Diagn
 			for index := range jobs {
 				probe := &probes[index]
 				results[index] = ping(&probe.node, probe.targetIP, probe.port, probe.description, probe.count, probe.timeoutMs)
+				results[index].Advisory = probe.advisory
 			}
 		})
 	}

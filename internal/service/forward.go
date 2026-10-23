@@ -886,7 +886,7 @@ func diagnoseForwardWithPing(cu CurrentUser, id int64, ping diagnosisPingFunc) r
 			if targetIP == "" || targetPort == -1 {
 				return result.Err("无法解析目标地址: " + remote)
 			}
-			probes = append(probes, diagnosisProbe{inNode, targetIP, targetPort, "转发->目标", 2, 3000})
+			probes = append(probes, diagnosisProbe{node: inNode, targetIP: targetIP, port: targetPort, description: "转发->目标", count: 2, timeoutMs: 3000})
 		}
 	} else {
 		member := activeForwardExitMember(forward, &tunnel)
@@ -905,15 +905,15 @@ func diagnoseForwardWithPing(cu CurrentUser, id int64, ping diagnosisPingFunc) r
 			if member.RelayPort <= 0 || member.OutPort <= 0 {
 				return result.Err("三节点转发端口配置不完整")
 			}
-			probes = append(probes, diagnosisProbe{inNode, relayNode.ServerIP, member.RelayPort, "入口->中继", 1, 2500})
-			probes = append(probes, diagnosisProbe{relayNode, outNode.ServerIP, member.OutPort, "中继->出口", 1, 2500})
+			probes = append(probes, diagnosisProbe{node: inNode, targetIP: relayNode.ServerIP, port: member.RelayPort, description: "入口->中继", count: 1, timeoutMs: 2500})
+			probes = append(probes, diagnosisProbe{node: relayNode, targetIP: outNode.ServerIP, port: member.OutPort, description: "中继->出口", count: 1, timeoutMs: 2500})
 			for _, remote := range remoteAddresses {
 				targetIP := extractHost(remote)
 				targetPort := extractPort(remote)
 				if targetIP == "" || targetPort == -1 {
 					return result.Err("无法解析目标地址: " + remote)
 				}
-				probes = append(probes, diagnosisProbe{outNode, targetIP, targetPort, "出口->目标", 1, 2500})
+				probes = append(probes, diagnosisProbe{node: outNode, targetIP: targetIP, port: targetPort, description: "出口->目标", count: 1, timeoutMs: 2500})
 			}
 		} else {
 			// 两节点链路入口->出口：优先测 forward 的 OutPort；缺失时回退测 SSH 22。
@@ -924,14 +924,14 @@ func diagnoseForwardWithPing(cu CurrentUser, id int64, ping diagnosisPingFunc) r
 			} else {
 				desc = "入口->出口(无出口端口,默认测SSH 22)"
 			}
-			probes = append(probes, diagnosisProbe{inNode, outNode.ServerIP, outPort, desc, 2, 3000})
+			probes = append(probes, diagnosisProbe{node: inNode, targetIP: outNode.ServerIP, port: outPort, description: desc, count: 2, timeoutMs: 3000})
 			for _, remote := range remoteAddresses {
 				targetIP := extractHost(remote)
 				targetPort := extractPort(remote)
 				if targetIP == "" || targetPort == -1 {
 					return result.Err("无法解析目标地址: " + remote)
 				}
-				probes = append(probes, diagnosisProbe{outNode, targetIP, targetPort, "出口->目标", 2, 3000})
+				probes = append(probes, diagnosisProbe{node: outNode, targetIP: targetIP, port: targetPort, description: "出口->目标", count: 2, timeoutMs: 3000})
 			}
 		}
 	}

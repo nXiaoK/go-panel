@@ -242,3 +242,29 @@ func TestAdminConfigListIncludesReadOnlyHTTPEnvironmentOverride(t *testing.T) {
 		t.Fatalf("admin environment override=%q after reset, want false", adminConfigs[allowInsecureNodeDownloadsEnvOverrideName])
 	}
 }
+
+func TestDiagnoseInternetProbeConfigValidation(t *testing.T) {
+	if err := model.Init(filepath.Join(t.TempDir(), "panel.db")); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = model.Close() })
+	for _, value := range []string{"missing-port", ":443", "host:0", "host:65536", "host:abc", "ho st:443", "ho\tst:443", "ho\u2003st:443", "2001:db8::1:443"} {
+		if res := UpdateConfig(diagnoseInternetProbeConfigName, value); res.Code == 0 {
+			t.Fatalf("accepted invalid %q", value)
+		}
+		if res := UpdateConfigs(map[string]string{"must_not_save": "value", diagnoseInternetProbeConfigName: value}); res.Code == 0 {
+			t.Fatalf("batch accepted %q", value)
+		}
+		if GetConfigValue("must_not_save") != "" {
+			t.Fatal("invalid batch partially saved")
+		}
+	}
+	for _, value := range []string{"example.com:1", "example.com:65535", "[2001:db8::1]:443", "127.0.0.1:8443", ""} {
+		if res := UpdateConfig(diagnoseInternetProbeConfigName, value); res.Code != 0 {
+			t.Fatalf("rejected %q: %+v", value, res)
+		}
+		if got := GetConfigValue(diagnoseInternetProbeConfigName); got != value {
+			t.Fatalf("saved=%q want %q", got, value)
+		}
+	}
+}

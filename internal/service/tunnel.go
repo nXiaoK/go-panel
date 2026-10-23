@@ -426,12 +426,14 @@ func UserTunnelList(userID int64, roleID int) result.R {
 
 // DiagnosisResult 诊断结果
 type DiagnosisResult struct {
-	NodeID      int64   `json:"nodeId"`
-	NodeName    string  `json:"nodeName"`
-	TargetIP    string  `json:"targetIp"`
-	TargetPort  int     `json:"targetPort"`
-	Description string  `json:"description"`
-	Success     bool    `json:"success"`
+	NodeID      int64  `json:"nodeId"`
+	NodeName    string `json:"nodeName"`
+	TargetIP    string `json:"targetIp"`
+	TargetPort  int    `json:"targetPort"`
+	Description string `json:"description"`
+	Success     bool   `json:"success"`
+	// 外网探测受节点网络环境影响，只作参考，不计入链路诊断结论。
+	Advisory    bool    `json:"advisory"`
 	Message     string  `json:"message"`
 	AverageTime float64 `json:"averageTime"`
 	PacketLoss  float64 `json:"packetLoss"`
@@ -506,9 +508,10 @@ func diagnoseTunnelWithPing(tunnelID int64, ping diagnosisPingFunc) result.R {
 		return result.Err("入口节点不存在")
 	}
 
+	internetHost, internetPort := diagnosisInternetProbe()
 	var probes []diagnosisProbe
 	if tunnel.Type == tunnelTypePortForward {
-		probes = append(probes, diagnosisProbe{inNode, "www.google.com", 443, "入口->外网", 2, 3000})
+		probes = append(probes, diagnosisProbe{node: inNode, targetIP: internetHost, port: internetPort, description: "入口->外网", count: 2, timeoutMs: 3000, advisory: true})
 	} else {
 		var outNode model.Node
 		if err := model.DB.First(&outNode, tunnel.OutNodeID).Error; err != nil {
@@ -553,16 +556,16 @@ func diagnoseTunnelWithPing(tunnelID int64, ping diagnosisPingFunc) result.R {
 				secondDesc += "(未检测到转发,默认测SSH 22)"
 			}
 			// 三段链路可独立检查；统一限并发执行，并保留入口、中继、出口的展示顺序。
-			probes = append(probes, diagnosisProbe{inNode, relayNode.ServerIP, relayPort, firstDesc, 1, 2500})
-			probes = append(probes, diagnosisProbe{relayNode, outNode.ServerIP, outPort, secondDesc, 1, 2500})
-			probes = append(probes, diagnosisProbe{outNode, "www.google.com", 443, "出口->外网", 1, 2500})
+			probes = append(probes, diagnosisProbe{node: inNode, targetIP: relayNode.ServerIP, port: relayPort, description: firstDesc, count: 1, timeoutMs: 2500})
+			probes = append(probes, diagnosisProbe{node: relayNode, targetIP: outNode.ServerIP, port: outPort, description: secondDesc, count: 1, timeoutMs: 2500})
+			probes = append(probes, diagnosisProbe{node: outNode, targetIP: internetHost, port: internetPort, description: "出口->外网", count: 1, timeoutMs: 2500, advisory: true})
 		} else {
 			desc := "入口->出口"
 			if !hasActiveForward {
 				desc = "入口->出口(未检测到转发,默认测SSH 22)"
 			}
-			probes = append(probes, diagnosisProbe{inNode, outNode.ServerIP, outPort, desc, 2, 3000})
-			probes = append(probes, diagnosisProbe{outNode, "www.google.com", 443, "出口->外网", 2, 3000})
+			probes = append(probes, diagnosisProbe{node: inNode, targetIP: outNode.ServerIP, port: outPort, description: desc, count: 2, timeoutMs: 3000})
+			probes = append(probes, diagnosisProbe{node: outNode, targetIP: internetHost, port: internetPort, description: "出口->外网", count: 2, timeoutMs: 3000, advisory: true})
 		}
 	}
 
