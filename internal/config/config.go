@@ -33,6 +33,9 @@ type Config struct {
 	DBPath string
 	// CORS 允许的来源（逗号分隔），空值表示 *
 	CorsAllowOrigin string
+	// HTML 内容安全策略：默认 report-only 仅报告，enforce 强制阻止违规资源，off 关闭此层 XSS 防护。
+	// 只允许这三个值；API、静态资源和订阅不发送 CSP，非法值必须拒绝启动。
+	CSPMode string
 	// 是否允许后端访问 GitHub Releases 检查稳定版更新；失败不会影响面板运行
 	UpdateCheckEnabled bool
 	// 更新来源仓库，格式必须为 owner/repository
@@ -115,6 +118,7 @@ func Load() *Config {
 		TrustedProxies:             getenvList("TRUSTED_PROXIES"),
 		DBPath:                     getenv("DB_PATH", "data/flux-panel.db"),
 		CorsAllowOrigin:            getenv("CORS_ALLOW_ORIGIN", ""),
+		CSPMode:                    strings.TrimSpace(getenv("CSP_MODE", "report-only")),
 		UpdateCheckEnabled:         getenvBoolDefault("UPDATE_CHECK_ENABLED", true),
 		UpdateRepository:           getenv("UPDATE_REPOSITORY", "nXiaoK/go-panel"),
 		UpdateCheckInterval:        getenvDuration("UPDATE_CHECK_INTERVAL", 6*time.Hour, 5*time.Minute, 7*24*time.Hour),
@@ -149,4 +153,15 @@ func (c Config) ValidateJWTLifetime() error {
 		return fmt.Errorf("JWT_TTL 必须在 1h–2160h 之间")
 	}
 	return nil
+}
+
+// ValidateCSPMode 拒绝拼写错误，防止配置错误静默关闭 HTML 内容安全策略。
+// 空值按默认 report-only 处理，兼容手动构造的配置和只填写空白的环境变量。
+func (c Config) ValidateCSPMode() error {
+	switch c.CSPMode {
+	case "", "report-only", "enforce", "off":
+		return nil
+	default:
+		return fmt.Errorf("CSP_MODE 必须为 report-only、enforce 或 off")
+	}
 }

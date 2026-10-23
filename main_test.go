@@ -320,3 +320,15 @@ func TestInitializeRuntimeSecurityRejectsInvalidJWTLifetimeBeforeInitialization(
 		t.Fatalf("err=%v initialized=%v", err, initialized)
 	}
 }
+
+func TestInvalidCSPModeRejectedBeforeRuntimeInitialization(t *testing.T) {
+	cfg := &config.Config{CSPMode: "typo"}
+	initialized := false
+	err := initializeRuntimeSecurity(cfg, iotest.ErrReader(errors.New("must not read")), func(string) { initialized = true })
+	if err == nil || !strings.Contains(err.Error(), "CSP_MODE") {
+		t.Fatalf("error=%v", err)
+	}
+	if initialized || cfg.JwtSecret != "" {
+		t.Fatal("invalid CSP initialized runtime credentials")
+	}
+}

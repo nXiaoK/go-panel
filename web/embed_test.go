@@ -17,7 +17,7 @@ import (
 func TestEmbeddedSPAResponses(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	Register(r)
+	Register(r, "report-only")
 
 	hasIndex := false
 	if sub, err := fs.Sub(distFS, "dist"); err == nil {
@@ -68,7 +68,7 @@ func TestEmbeddedSPAMissingIndexMessage(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	Register(r)
+	Register(r, "report-only")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	if w.Code != http.StatusNotFound {
@@ -101,7 +101,7 @@ func TestStaticAssetNegotiationAndCaching(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(func(c *gin.Context) { c.Header("Vary", "Origin"); c.Next() })
-	registerFS(router, files)
+	registerFS(router, files, "report-only")
 	for _, tc := range []struct {
 		accept, encoding string
 		body             []byte
@@ -171,4 +171,50 @@ func TestStaticAssetNegotiationAndCaching(t *testing.T) {
 			t.Fatalf("missing fallback: %d %q", out.Code, out.Body.String())
 		}
 	}
+}
+
+func TestHTMLContentSecurityPolicyModesAndResponseScope(t *testing.T) {
+	files := fstest.MapFS{
+		"index.html":        {Data: []byte("<!doctype html><html><body>panel</body></html>")},
+		"assets/app.js":     {Data: []byte("console.log('panel')")},
+		"assets/app.css":    {Data: []byte("body {}")},
+		"assets/font.woff2": {Data: []byte("font")},
+		"favicon.ico":       {Data: []byte("icon")},
+	}
+	const expectedPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+	for _, mode := range []string{"", "report-only", "enforce", "off"} {
+		t.Run("mode="+mode, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			router := gin.New()
+			registerFS(router, files, mode)
+			for _, path := range []string{"/", "/index.html", "/node", "/settings/profile", "/api/missing", "/api/v1/sub/render/test", "/flow/missing", "/system-info", "/assets/app.js", "/assets/app.css", "/assets/font.woff2", "/favicon.ico", "/assets/missing.js", "/missing.html"} {
+				t.Run(path, func(t *testing.T) {
+					out := httptest.NewRecorder()
+					router.ServeHTTP(out, httptest.NewRequest(http.MethodGet, path, nil))
+					isHTML := path == "/" || path == "/index.html" || path == "/node" || path == "/settings/profile"
+					for _, name := range []string{"Content-Security-Policy", "Content-Security-Policy-Report-Only"} {
+						want := ""
+						if isHTML && ((mode == "enforce" && name == "Content-Security-Policy") || ((mode == "" || mode == "report-only") && name == "Content-Security-Policy-Report-Only")) {
+							want = expectedPolicy
+						}
+						if got := out.Header().Get(name); got != want {
+							t.Fatalf("%s=%q want %q", name, got, want)
+						}
+					}
+					if isHTML && (out.Code != http.StatusOK || out.Body.String() != string(files["index.html"].Data) || !strings.HasPrefix(out.Header().Get("Content-Type"), "text/html")) {
+						t.Fatalf("HTML response=%d %s %q", out.Code, out.Header(), out.Body.String())
+					}
+				})
+			}
+		})
+	}
+	t.Run("missing index has no CSP", func(t *testing.T) {
+		router := gin.New()
+		registerFS(router, fstest.MapFS{}, "enforce")
+		out := httptest.NewRecorder()
+		router.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/node", nil))
+		if out.Code != http.StatusNotFound || out.Header().Get("Content-Security-Policy") != "" || out.Header().Get("Content-Security-Policy-Report-Only") != "" {
+			t.Fatalf("response=%d %s", out.Code, out.Header())
+		}
+	})
 }

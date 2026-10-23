@@ -159,6 +159,7 @@ nftables 模式安装、远程组件升级和规则刷新都会写入 `/etc/sysc
 | `ADMIN_USERNAME` | `admin_user` | 首次创建管理员使用的用户名 |
 | `ADMIN_PASSWORD` | 空 | 新数据库远程启动时必填；管理员安全建立后可清空 |
 | `CORS_ALLOW_ORIGIN` | 无 | 生产模式必填，多个明确来源用逗号分隔 |
+| `CSP_MODE` | `report-only` | HTML 文档的内容安全策略；仅允许 `report-only`（浏览器报告违规）、`enforce`（强制拦截）、`off`（关闭 CSP 纵深防护），非法值拒绝启动。首版先观察一个版本，确认无违规后显式改为 `enforce`；API、订阅及 JS/CSS 不发送该策略 |
 | `PANEL_BIND` | `0.0.0.0` | 宿主机监听地址，反向代理部署建议 `127.0.0.1` |
 | `PANEL_PORT` | `6365` | 宿主机映射端口 |
 | `GO_PANEL_VERSION` | `latest` | 可固定为具体稳定版本以便回滚 |
@@ -168,6 +169,10 @@ nftables 模式安装、远程组件升级和规则刷新都会写入 `/etc/sysc
 | `ALLOW_INSECURE_NODE_DOWNLOADS` | `false` | 临时允许 HTTP 节点下载，存在泄密和篡改风险 |
 | `ALLOW_LEGACY_NFT_REPORTS` | `false` | 临时兼容旧上报，缺少完整幂等保障 |
 | `VITE_DEV_API_TARGET` | `http://127.0.0.1:6365` | 仅 Vite 本地开发代理的后端目标；生产容器不使用，不能指向不可信服务 |
+
+HTML 内容安全策略只允许同源脚本、字体、API 和 WebSocket，禁止内联脚本及被其他页面嵌入。Radix/sonner 所需的内联样式和二维码的 `data:`/`blob:` 图片仍允许。首次部署保留 `CSP_MODE=report-only`，在实际 HTTPS 域名、反向代理及所用浏览器中检查控制台、节点实时指标、订阅二维码与备份下载；观察一个版本无违规后再设为 `enforce` 并重建容器。`off` 只应用于明确的临时排障，排障后恢复策略；基础安全头不受此开关影响。
+
+当前未配置服务端 CSP 报告采集端点，`report-only` 不会拦截资源。部分 WebKit 版本会提示缺少报告端点且策略无效，不能只依赖单一浏览器的观察结果；观察时应同时使用 Chrome/Firefox，并在实际 Safari 版本上复核。Playwright WebKit 测试不能替代原生 Safari 验收；切换 `enforce` 前仍需确认正式域名、代理与实际浏览器没有违规。
 
 ## 本地开发
 
