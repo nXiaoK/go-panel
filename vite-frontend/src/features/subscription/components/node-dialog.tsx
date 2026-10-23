@@ -1,11 +1,5 @@
-import type { ProxyNodeWrite } from "@/lib/types";
-import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { notify } from "@/lib/notify";
+import { FormField as Field } from "@/components/page";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +7,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -20,9 +16,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { useSubscriptionMutation } from "@/features/subscription/queries";
 import { updateProxyNode } from "@/lib/api";
-import type { ProxyNode } from "@/lib/types";
-import { FormField as Field } from "@/components/page";
+import { notify } from "@/lib/notify";
+import type { ProxyNode, ProxyNodeWrite } from "@/lib/types";
+import { useEffect, useState } from "react";
 
 const emptyNode: ProxyNode = {
   id: 0,
@@ -47,7 +46,7 @@ export function SubscriptionNodeDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing: ProxyNode | null;
-  onSaved: () => void;
+  onSaved?: () => void;
 }) {
   const [form, setForm] = useState<ProxyNode>(emptyNode);
 
@@ -56,12 +55,12 @@ export function SubscriptionNodeDialog({
     setForm(editing ? { ...emptyNode, ...editing } : { ...emptyNode });
   }, [open, editing]);
 
-  const saveMutation = useMutation({
+  const saveMutation = useSubscriptionMutation("subscription.update", {
     mutationFn: (payload: ProxyNodeWrite) => updateProxyNode(payload),
     onSuccess: () => {
       notify.success("节点已保存");
       onOpenChange(false);
-      onSaved();
+      onSaved?.();
     },
     onError: (error: Error) => notify.error(error.message || "节点保存失败"),
   });

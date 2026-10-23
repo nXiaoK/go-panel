@@ -1,10 +1,6 @@
-import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { notify } from "@/lib/notify";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -13,9 +9,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { subscriptionFormatLabels } from "@/features/subscription/model";
+import { useSubscriptionMutation } from "@/features/subscription/queries";
 import { assignProxyNodeProfiles } from "@/lib/api";
+import { notify } from "@/lib/notify";
 import type { ProxyNode, SubscriptionProfile } from "@/lib/types";
-import { subscriptionFormatLabels } from "./formats";
+import { useEffect, useState } from "react";
 
 export function SubscriptionAssignDialog({
   open,
@@ -31,7 +31,7 @@ export function SubscriptionAssignDialog({
   profiles: SubscriptionProfile[];
   /** Profile ids to preselect when the dialog opens. */
   initialProfileIds: number[];
-  onSaved: () => void;
+  onSaved?: () => void;
 }) {
   const [profileIds, setProfileIds] = useState<number[]>([]);
 
@@ -40,13 +40,13 @@ export function SubscriptionAssignDialog({
     setProfileIds(initialProfileIds);
   }, [open, initialProfileIds]);
 
-  const saveMutation = useMutation({
+  const saveMutation = useSubscriptionMutation("subscription.update", {
     mutationFn: ({ nodeId, ids }: { nodeId: number; ids: number[] }) =>
       assignProxyNodeProfiles(nodeId, ids),
     onSuccess: () => {
       notify.success("绑定已更新");
       onOpenChange(false);
-      onSaved();
+      onSaved?.();
     },
     onError: (error: Error) => notify.error(error.message || "绑定失败"),
   });

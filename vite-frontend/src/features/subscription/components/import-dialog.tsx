@@ -1,10 +1,4 @@
-import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { notify } from "@/lib/notify";
-import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +7,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useSubscriptionMutation } from "@/features/subscription/queries";
 import { importProxyNodeLink } from "@/lib/api";
+import { notify } from "@/lib/notify";
+import { Download } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export function SubscriptionImportDialog({
   open,
@@ -22,7 +22,7 @@ export function SubscriptionImportDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSaved: () => void;
+  onSaved?: () => void;
 }) {
   const [link, setLink] = useState("");
 
@@ -30,12 +30,12 @@ export function SubscriptionImportDialog({
     if (open) setLink("");
   }, [open]);
 
-  const importMutation = useMutation({
+  const importMutation = useSubscriptionMutation("subscription.update", {
     mutationFn: (value: string) => importProxyNodeLink(value),
     onSuccess: () => {
       notify.success("节点已导入");
       onOpenChange(false);
-      onSaved();
+      onSaved?.();
     },
     onError: (error: Error) => notify.error(error.message || "导入失败"),
   });

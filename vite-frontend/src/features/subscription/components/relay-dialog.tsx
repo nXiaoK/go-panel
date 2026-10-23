@@ -1,9 +1,5 @@
-import type { RelayWrite } from "@/lib/types";
-import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { notify } from "@/lib/notify";
+import { FormField as Field } from "@/components/page";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -19,10 +16,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useSubscriptionMutation } from "@/features/subscription/queries";
 import { createProxyNodeRelay, previewProxyNodeRelay } from "@/lib/api";
-import { queries } from "@/lib/api/query";
-import type { ProxyNode, RelayMode, SubTunnelOption } from "@/lib/types";
-import { FormField as Field } from "@/components/page";
+import { notify } from "@/lib/notify";
+import { resourceKeys as queries } from "@/lib/query-keys";
+import type { ProxyNode, RelayMode, RelayWrite, SubTunnelOption } from "@/lib/types";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
 type RelayPreview = {
   tunnelName?: string;
@@ -52,7 +52,7 @@ export function SubscriptionRelayDialog({
   onOpenChange: (open: boolean) => void;
   node: ProxyNode | null;
   tunnels: SubTunnelOption[];
-  onSaved: () => void;
+  onSaved?: () => void;
 }) {
   const [form, setForm] = useState<{
     tunnelId: string;
@@ -96,12 +96,12 @@ export function SubscriptionRelayDialog({
   });
   const preview = previewQuery.data ?? null;
 
-  const relayMutation = useMutation({
+  const relayMutation = useSubscriptionMutation("subscription.relay", {
     mutationFn: (payload: RelayWrite) => createProxyNodeRelay(payload),
     onSuccess: () => {
       notify.success("中转已创建");
       onOpenChange(false);
-      onSaved();
+      onSaved?.();
     },
     onError: (error: Error) => notify.error(error.message || "中转创建失败"),
   });

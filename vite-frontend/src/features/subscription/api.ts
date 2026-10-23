@@ -1,13 +1,13 @@
-import { apiPost, type RequestOptions } from "./client";
+import { apiPost, type RequestOptions } from "@/lib/api/client";
 import type {
   Forward,
-  SubscriptionSettings,
   ProxyNode,
   ProxyNodeWrite,
+  RelayPreview,
+  RelayWrite,
   SubscriptionProfile,
   SubscriptionProfileWrite,
-  RelayWrite,
-  RelayPreview,
+  SubscriptionSettings,
 } from "@/lib/types";
 export const getSubscriptionSettings = (opts?: RequestOptions): Promise<SubscriptionSettings> =>
   apiPost("/sub/settings", {}, opts);

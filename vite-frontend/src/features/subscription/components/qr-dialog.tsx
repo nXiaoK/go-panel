@@ -1,8 +1,8 @@
-import { Copy, Loader2 } from "lucide-react";
-import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useSubscriptionQrDataUrl } from "@/lib/subscription-qr";
+import { useSubscriptionQrDataUrl } from "@/features/subscription/qr";
+import { notify } from "@/lib/notify";
+import { Copy, Loader2 } from "lucide-react";
 
 export function SubscriptionQrDialog({
   open,

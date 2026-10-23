@@ -1,14 +1,5 @@
-import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +8,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -24,9 +18,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { subscriptionFormatLabels, subscriptionFormats } from "@/features/subscription/model";
+import { useSubscriptionMutation } from "@/features/subscription/queries";
 import { createSubscriptionProfile, updateSubscriptionProfile } from "@/lib/api";
+import { notify } from "@/lib/notify";
 import type { ProxyNode, SubscriptionFormat, SubscriptionProfile } from "@/lib/types";
-import { subscriptionFormatLabels, subscriptionFormats } from "./formats";
+import { useEffect, useState } from "react";
 
 type TemplateFormat = Exclude<SubscriptionFormat, "v2rayn">;
 
@@ -56,7 +56,7 @@ export function SubscriptionProfileDialog({
   nodes: ProxyNode[];
   /** Node ids to preselect when creating (all) or editing (bound). */
   initialNodeIds: number[];
-  onSaved: () => void;
+  onSaved?: () => void;
 }) {
   const [form, setForm] = useState<SubscriptionProfile>(emptyProfile);
   const [nodeIds, setNodeIds] = useState<number[]>([]);
@@ -75,13 +75,13 @@ export function SubscriptionProfileDialog({
     setTemplateTab(editing.defaultFormat === "v2rayn" ? "surge" : editing.defaultFormat);
   }, [open, editing, initialNodeIds]);
 
-  const saveMutation = useMutation({
+  const saveMutation = useSubscriptionMutation("subscription.update", {
     mutationFn: (payload: SubscriptionProfile & { nodeIds: number[] }) =>
       payload.id ? updateSubscriptionProfile(payload) : createSubscriptionProfile(payload),
     onSuccess: () => {
       notify.success("订阅配置已保存");
       onOpenChange(false);
-      onSaved();
+      onSaved?.();
     },
     onError: (error: Error) => notify.error(error.message || "保存失败"),
   });

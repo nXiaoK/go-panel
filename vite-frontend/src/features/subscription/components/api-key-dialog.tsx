@@ -1,11 +1,4 @@
-import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { notify } from "@/lib/notify";
-import { RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +6,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { useSubscriptionMutation } from "@/features/subscription/queries";
 import { updateSubscriptionApiKey } from "@/lib/api";
+import { notify } from "@/lib/notify";
+import { RefreshCcw } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export function SubscriptionApiKeyDialog({
   open,
@@ -24,7 +24,7 @@ export function SubscriptionApiKeyDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentKey: string;
-  onSaved: () => void;
+  onSaved?: () => void;
 }) {
   const [draft, setDraft] = useState("");
 
@@ -32,12 +32,12 @@ export function SubscriptionApiKeyDialog({
     if (open) setDraft(currentKey);
   }, [open, currentKey]);
 
-  const saveMutation = useMutation({
+  const saveMutation = useSubscriptionMutation("subscription.update", {
     mutationFn: (value: string) => updateSubscriptionApiKey(value),
     onSuccess: () => {
       notify.success("API Key 已更新");
       onOpenChange(false);
-      onSaved();
+      onSaved?.();
     },
     onError: (error: Error) => notify.error(error.message || "更新失败"),
   });
