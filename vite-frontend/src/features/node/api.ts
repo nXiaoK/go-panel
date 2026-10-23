@@ -1,5 +1,5 @@
-import { apiPost, type RequestOptions } from "./client";
-import type { Node, NodeWrite, NodeStatusCheck } from "@/lib/types";
+import { apiPost, type RequestOptions } from "@/lib/api/client";
+import type { Node, NodeStatusCheck, NodeWrite } from "@/lib/types";
 export const createNode = (data: NodeWrite, opts?: RequestOptions): Promise<string> =>
   apiPost("/node/create", data, opts);
 export const updateNode = (data: NodeWrite, opts?: RequestOptions): Promise<string> =>
