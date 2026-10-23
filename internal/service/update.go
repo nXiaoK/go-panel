@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/nXiaoK/go-panel/internal/buildinfo"
 	"github.com/nXiaoK/go-panel/internal/result"
+	"github.com/nXiaoK/go-panel/internal/selfupdate/semver"
 )
 
 const (
@@ -35,6 +35,9 @@ type UpdateRuntimeConfig struct {
 	ImageTag          string
 	ReleaseAPIBaseURL string
 	HTTPClient        *http.Client
+	// RequestRestart 由 main 注入：软更新写好 pending.json 后调用，触发优雅停机并以退出码 75 退出，
+	// 由 supervisor 切换到新版本。为 nil 时表示当前进程不支持自重启。
+	RequestRestart func()
 }
 
 // PanelUpdateStatus 是界面展示版本和更新能力所需的完整、安全视图。
@@ -181,8 +184,8 @@ func checkPanelUpdate(ctx context.Context, force bool) (PanelUpdateStatus, error
 	if err != nil {
 		return base, err
 	}
-	latest := normalizeReleaseVersion(release.TagName)
-	if _, ok := parseStableVersion(latest); !ok {
+	latest := semver.Normalize(release.TagName)
+	if _, ok := semver.Parse(latest); !ok {
 		return base, fmt.Errorf("GitHub 最新 Release 标签 %q 不是稳定语义版本", release.TagName)
 	}
 
@@ -197,9 +200,9 @@ func checkPanelUpdate(ctx context.Context, force bool) (PanelUpdateStatus, error
 		PublishedAt:          strings.TrimSpace(release.PublishedAt),
 		AutoUpdateConfigured: autoUpdateConfigured(config),
 	}
-	if current, ok := parseStableVersion(status.Current.Version); ok {
-		latestVersion, _ := parseStableVersion(latest)
-		status.UpdateAvailable = compareStableVersions(current, latestVersion) < 0
+	if current, ok := semver.Parse(status.Current.Version); ok {
+		latestVersion, _ := semver.Parse(latest)
+		status.UpdateAvailable = semver.Compare(current, latestVersion) < 0
 	}
 
 	updateRuntime.Lock()
@@ -295,54 +298,6 @@ func validRepository(repository string) bool {
 		}
 	}
 	return true
-}
-
-type stableVersion [3]uint64
-
-func normalizeReleaseVersion(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || strings.HasPrefix(raw, "v") {
-		return raw
-	}
-	return "v" + raw
-}
-
-func parseStableVersion(raw string) (stableVersion, bool) {
-	raw = strings.TrimPrefix(strings.TrimSpace(raw), "v")
-	if raw == "" || strings.Contains(raw, "-") {
-		return stableVersion{}, false
-	}
-	if index := strings.IndexByte(raw, '+'); index >= 0 {
-		raw = raw[:index]
-	}
-	parts := strings.Split(raw, ".")
-	if len(parts) != 3 {
-		return stableVersion{}, false
-	}
-	var parsed stableVersion
-	for i, part := range parts {
-		if part == "" {
-			return stableVersion{}, false
-		}
-		value, err := strconv.ParseUint(part, 10, 64)
-		if err != nil {
-			return stableVersion{}, false
-		}
-		parsed[i] = value
-	}
-	return parsed, true
-}
-
-func compareStableVersions(left, right stableVersion) int {
-	for i := range left {
-		if left[i] < right[i] {
-			return -1
-		}
-		if left[i] > right[i] {
-			return 1
-		}
-	}
-	return 0
 }
 
 func safeReleaseURL(repository, tag, raw string) string {

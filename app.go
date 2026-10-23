@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -17,7 +18,10 @@ const shutdownDrainTimeout = 20 * time.Second
 // database. Each hook is injected so tests can verify ordering without
 // starting real components.
 type App struct {
-	Server        *http.Server
+	Server *http.Server
+	// OnListening runs once the listener is bound, before serving starts. The
+	// supervisor uses it as the readiness signal for trial runs.
+	OnListening   func(net.Addr)
 	ShutdownHTTP  func(context.Context) error
 	StopScheduler func()
 	CloseSessions func(reason string)
@@ -26,17 +30,39 @@ type App struct {
 
 	shutdownOnce sync.Once
 	shutdownErr  error
+	doneOnce     sync.Once
+	shutdownDone chan struct{}
+}
+
+// done is closed after Shutdown has drained every component.
+func (a *App) done() chan struct{} {
+	a.doneOnce.Do(func() { a.shutdownDone = make(chan struct{}) })
+	return a.shutdownDone
 }
 
 // Run blocks serving HTTP until the listener fails or Shutdown is called.
-// ErrServerClosed (normal shutdown) is not an error.
+// ErrServerClosed (normal shutdown) is not an error. Serve returns as soon as
+// Shutdown begins, so Run waits for the full drain before returning; otherwise
+// the process would exit mid-shutdown and skip closing the database.
 func (a *App) Run() error {
 	if a.Server == nil {
 		return errors.New("app has no http server")
 	}
-	if err := a.Server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	addr := a.Server.Addr
+	if addr == "" {
+		addr = ":http"
+	}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
 		return err
 	}
+	if a.OnListening != nil {
+		a.OnListening(listener.Addr())
+	}
+	if err := a.Server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	<-a.done()
 	return nil
 }
 
@@ -44,6 +70,7 @@ func (a *App) Run() error {
 // joined; a failing component never skips the remaining cleanup. Idempotent.
 func (a *App) Shutdown(parent context.Context) error {
 	a.shutdownOnce.Do(func() {
+		defer close(a.done())
 		ctx, cancel := context.WithTimeout(parent, shutdownDrainTimeout)
 		defer cancel()
 

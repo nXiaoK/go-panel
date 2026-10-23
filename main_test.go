@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/nXiaoK/go-panel/internal/config"
+	"github.com/nXiaoK/go-panel/internal/selfupdate/protocol"
 )
 
 func TestNewHTTPServerUsesExplicitResourceTimeouts(t *testing.T) {
@@ -331,5 +334,50 @@ func TestInvalidCSPModeRejectedBeforeRuntimeInitialization(t *testing.T) {
 	}
 	if initialized || cfg.JwtSecret != "" {
 		t.Fatal("invalid CSP initialized runtime credentials")
+	}
+}
+
+func TestRunMainVersionJSONReportsCompat(t *testing.T) {
+	var stdout, stderr strings.Builder
+	if code := runMain([]string{"version", "--json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	var report map[string]any
+	if err := json.Unmarshal([]byte(stdout.String()), &report); err != nil {
+		t.Fatalf("version --json is not JSON: %v\n%s", err, stdout.String())
+	}
+	for _, key := range []string{"version", "commit", "buildTime", "goos", "goarch", "runtimeAbi", "schemaEpoch", "minReaderEpoch", "supervisorProtocol", "minUpgradeFrom"} {
+		if _, ok := report[key]; !ok {
+			t.Fatalf("version --json is missing %q: %s", key, stdout.String())
+		}
+	}
+}
+
+func TestRunMainRejectsUnknownArguments(t *testing.T) {
+	for _, args := range [][]string{{"nope"}, {"serve", "extra"}, {"version", "--yaml"}} {
+		var stdout, stderr strings.Builder
+		if code := runMain(args, &stdout, &stderr); code != 2 {
+			t.Fatalf("runMain(%q)=%d, want 2", args, code)
+		}
+		if stderr.Len() == 0 {
+			t.Fatalf("runMain(%q) must explain the usage error on stderr", args)
+		}
+	}
+	var stdout, stderr strings.Builder
+	if code := runMain([]string{"help"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "用法") {
+		t.Fatalf("help exit=%d output=%q", code, stdout.String())
+	}
+}
+
+func TestWaitForStopMapsRestartRequestsToExitCode(t *testing.T) {
+	restart := make(chan struct{}, 1)
+	restart <- struct{}{}
+	if code := waitForStop(context.Background(), restart); code != protocol.ExitRestartRequested {
+		t.Fatalf("restart request exit=%d, want %d", code, protocol.ExitRestartRequested)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if code := waitForStop(ctx, make(chan struct{})); code != 0 {
+		t.Fatalf("signal exit=%d, want 0", code)
 	}
 }

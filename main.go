@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,6 +22,9 @@ import (
 	"github.com/nXiaoK/go-panel/internal/crypto"
 	"github.com/nXiaoK/go-panel/internal/handler"
 	"github.com/nXiaoK/go-panel/internal/model"
+	"github.com/nXiaoK/go-panel/internal/selfupdate/child"
+	"github.com/nXiaoK/go-panel/internal/selfupdate/protocol"
+	"github.com/nXiaoK/go-panel/internal/selfupdate/versioninfo"
 	"github.com/nXiaoK/go-panel/internal/service"
 	"github.com/nXiaoK/go-panel/internal/task"
 	"github.com/nXiaoK/go-panel/internal/ws"
@@ -27,6 +32,75 @@ import (
 )
 
 func main() {
+	os.Exit(runMain(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// runMain 按第一个参数分发子命令并返回进程退出码；无参数时保持历史行为，直接提供面板服务。
+func runMain(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		return runServe()
+	}
+	switch args[0] {
+	case "serve":
+		if len(args) > 1 {
+			fmt.Fprintf(stderr, "serve 不接受额外参数：%s\n", strings.Join(args[1:], " "))
+			return 2
+		}
+		return runServe()
+	case "version":
+		return runVersion(args[1:], stdout, stderr)
+	case "help", "-h", "--help":
+		printUsage(stdout)
+		return 0
+	case "supervise", "update", "migrate-check":
+		fmt.Fprintf(stderr, "子命令 %s 尚未实现\n", args[0])
+		return 2
+	default:
+		fmt.Fprintf(stderr, "未知子命令 %q\n\n", args[0])
+		printUsage(stderr)
+		return 2
+	}
+}
+
+func printUsage(w io.Writer) {
+	fmt.Fprint(w, `用法：go-panel [子命令]
+
+子命令：
+  serve            提供面板服务（无子命令时的默认行为）
+  version [--json] 输出构建版本与兼容信息，不读取配置、不访问数据库和网络
+  help             显示本帮助
+`)
+}
+
+func runVersion(args []string, stdout, stderr io.Writer) int {
+	asJSON := false
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			asJSON = true
+		default:
+			fmt.Fprintf(stderr, "version 不支持参数 %q\n", arg)
+			return 2
+		}
+	}
+	report := versioninfo.Current()
+	if asJSON {
+		if err := json.NewEncoder(stdout).Encode(report); err != nil {
+			fmt.Fprintf(stderr, "输出版本信息失败: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	fmt.Fprintf(stdout, "go-panel %s (%s) 构建于 %s，%s/%s\n", report.Version, report.Commit, report.BuildTime, report.GOOS, report.GOARCH)
+	return 0
+}
+
+// runServe 提供面板服务。返回 0 表示收到停机信号后正常退出，
+// protocol.ExitRestartRequested 表示软更新已就绪、请 supervisor 切换版本。
+func runServe() int {
+	// 必须早于打开数据库等任何文件：只接管 supervisor 真正传入的就绪管道。
+	ready := child.ClaimReadyPipe()
+
 	cfg := config.Load()
 	if err := initializeRuntimeSecurity(cfg, cryptorand.Reader, func(secret string) {
 		crypto.InitJwtWithTTL(secret, cfg.JwtTTL)
@@ -50,7 +124,15 @@ func main() {
 	service.EnsureSubscriptionDefaults()
 	service.ConfigureNodeRuntime(nodeRuntimeConfigFromConfig(cfg))
 	service.ConfigureR2BackupRuntime(r2BackupRuntimeConfigFromConfig(cfg))
-	service.ConfigureUpdateRuntime(updateRuntimeConfigFromConfig(cfg))
+	restartRequested := make(chan struct{}, 1)
+	updateConfig := updateRuntimeConfigFromConfig(cfg)
+	updateConfig.RequestRestart = func() {
+		select {
+		case restartRequested <- struct{}{}:
+		default:
+		}
+	}
+	service.ConfigureUpdateRuntime(updateConfig)
 
 	// 定时任务
 	task.Start()
@@ -83,7 +165,12 @@ func main() {
 	server := newHTTPServer(cfg.ListenAddr, r)
 
 	app := &App{
-		Server:        server,
+		Server: server,
+		OnListening: func(addr net.Addr) {
+			if err := ready.Notify(addr); err != nil {
+				log.Printf("向 supervisor 发送就绪通知失败: %v", err)
+			}
+		},
 		ShutdownHTTP:  server.Shutdown,
 		StopScheduler: task.Stop,
 		CloseSessions: ws.Default.CloseAll,
@@ -91,20 +178,37 @@ func main() {
 		CloseDatabase: model.Close,
 	}
 
-	// SIGINT/SIGTERM 触发优雅停机：先停 HTTP，再停调度、关连接、收尾数据库。
+	// SIGINT/SIGTERM 或软更新重启请求触发优雅停机：先停 HTTP，再停调度、关连接、收尾数据库。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	exitCode := make(chan int, 1)
 	go func() {
-		<-ctx.Done()
+		code := waitForStop(ctx, restartRequested)
 		stop()
-		log.Printf("收到停机信号，开始优雅停机（最多 %s）", shutdownDrainTimeout)
+		if code == protocol.ExitRestartRequested {
+			log.Printf("收到软更新重启请求，开始优雅停机（最多 %s）", shutdownDrainTimeout)
+		} else {
+			log.Printf("收到停机信号，开始优雅停机（最多 %s）", shutdownDrainTimeout)
+		}
 		if err := app.Shutdown(context.Background()); err != nil {
 			log.Printf("停机过程中出现错误: %v", err)
 		}
+		exitCode <- code
 	}()
 
 	if err := app.Run(); err != nil {
 		log.Fatalf("服务启动失败: %v", err)
+	}
+	return <-exitCode
+}
+
+// waitForStop 阻塞到停机信号或重启请求，并返回对应的进程退出码。
+func waitForStop(ctx context.Context, restart <-chan struct{}) int {
+	select {
+	case <-ctx.Done():
+		return 0
+	case <-restart:
+		return protocol.ExitRestartRequested
 	}
 }
 
