@@ -1,4 +1,4 @@
-import { apiPost, type RequestOptions } from "./client";
+import { apiPost, type RequestOptions } from "@/lib/api/client";
 export const getConfigs = (opts?: RequestOptions): Promise<Record<string, string>> =>
   apiPost("/config/list", {}, opts);
 export const getConfigByName = (
