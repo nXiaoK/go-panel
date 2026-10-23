@@ -1,3 +1,4 @@
+import type { SpeedLimitWrite } from "@/lib/types";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -48,7 +49,7 @@ import {
   getTunnelList,
   updateSpeedLimit,
 } from "@/lib/api";
-import { listData, queries, unwrap } from "@/lib/api/query";
+import { queries } from "@/lib/api/query";
 import type { SpeedLimit, Tunnel } from "@/lib/types";
 import { invalidateGlobalSearch } from "@/lib/search-cache";
 import { PageHeader, QueryErrorNotice } from "@/components/page";
@@ -76,11 +77,11 @@ function LimitPage() {
 
   const limitsQuery = useQuery({
     queryKey: queries.limit.list(),
-    queryFn: () => getSpeedLimitList().then(listData<SpeedLimit>),
+    queryFn: ({ signal }) => getSpeedLimitList({ signal }),
   });
   const tunnelsQuery = useQuery({
     queryKey: queries.tunnel.list(),
-    queryFn: () => getTunnelList().then(listData<Tunnel>),
+    queryFn: ({ signal }) => getTunnelList({ signal }),
   });
 
   const limits = useMemo(() => limitsQuery.data ?? [], [limitsQuery.data]);
@@ -93,8 +94,8 @@ function LimitPage() {
   };
 
   const saveMutation = useMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      (form.id ? updateSpeedLimit(payload) : createSpeedLimit(payload)).then(unwrap),
+    mutationFn: (payload: SpeedLimitWrite) =>
+      form.id ? updateSpeedLimit(payload) : createSpeedLimit(payload),
     onSuccess: () => {
       invalidateGlobalSearch("all");
       toast.success(form.id ? "已更新" : "已创建");
@@ -105,7 +106,7 @@ function LimitPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => deleteSpeedLimit(id).then(unwrap),
+    mutationFn: (id: number) => deleteSpeedLimit(id),
     onSuccess: () => {
       invalidateGlobalSearch("all");
       toast.success("已删除");

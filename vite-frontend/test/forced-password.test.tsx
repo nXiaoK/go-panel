@@ -25,7 +25,9 @@ beforeEach(() => {
   localStorage.setItem("token", "secret");
   localStorage.setItem("role_id", "1");
   configureSessionForTest({ storage: localStorage, navigate: vi.fn() });
-  api.package.mockReset().mockResolvedValue({ code: 0, data: { flow: 10, num: 5, used: 1 } });
+  api.package
+    .mockReset()
+    .mockResolvedValue({ userInfo: { flow: 10, num: 5, inFlow: 1024 ** 3, outFlow: 0 } });
 });
 afterEach(cleanup);
 

@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 
 import { initTheme } from "../lib/theme";
 import { Toaster } from "@/components/ui/sonner";
-import { PANEL_ADDRESS_CHANGED_EVENT } from "@/lib/api/network";
+import { PANEL_ADDRESS_CHANGED_EVENT } from "@/lib/api/client";
 import { getGlobalSearchCache } from "@/lib/search-cache";
 import { SESSION_CHANGED_EVENT, SESSION_INVALIDATED_EVENT } from "@/lib/session";
 

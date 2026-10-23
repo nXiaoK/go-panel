@@ -14,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { updateSubscriptionApiKey } from "@/lib/api";
-import { unwrap } from "@/lib/api/query";
 
 export function SubscriptionApiKeyDialog({
   open,
@@ -34,7 +33,7 @@ export function SubscriptionApiKeyDialog({
   }, [open, currentKey]);
 
   const saveMutation = useMutation({
-    mutationFn: (value: string) => updateSubscriptionApiKey(value).then(unwrap),
+    mutationFn: (value: string) => updateSubscriptionApiKey(value),
     onSuccess: () => {
       toast.success("API Key 已更新");
       onOpenChange(false);

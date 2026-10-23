@@ -1,3 +1,5 @@
+import { errorMessage } from "@/lib/api/client";
+import type { UserWrite } from "@/lib/types";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -86,7 +88,7 @@ import type {
 import { useUserTunnels } from "@/hooks/use-user-tunnels";
 import { filterUsers } from "@/lib/user-search";
 import { invalidateGlobalSearch } from "@/lib/search-cache";
-import { listData, queries, unwrap } from "@/lib/api/query";
+import { queries } from "@/lib/api/query";
 import { KpiCard, PageHeader, QueryErrorNotice } from "@/components/page";
 
 export const Route = createFileRoute("/_app/user")({
@@ -176,21 +178,21 @@ function UserPage() {
 
   // 一次性加载用户，本地过滤（见 visibleUsers），不再按关键字反复请求。
   const usersQuery = useQuery({
-    queryKey: queries.user.list({ current: 1, size: 200 }),
-    queryFn: () => getAllUsers({ current: 1, size: 200 }).then(listData<ApiUser>),
+    queryKey: queries.user.list(),
+    queryFn: ({ signal }) => getAllUsers({ signal }),
   });
   const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
   const loading = usersQuery.isPending;
 
   const tunnelsQuery = useQuery({
     queryKey: queries.tunnel.list(),
-    queryFn: () => getTunnelList().then(listData<Tunnel>),
+    queryFn: ({ signal }) => getTunnelList({ signal }),
   });
   const tunnels = useMemo(() => tunnelsQuery.data ?? [], [tunnelsQuery.data]);
 
   const speedLimitsQuery = useQuery({
     queryKey: queries.limit.list(),
-    queryFn: () => getSpeedLimitList().then(listData<SpeedLimit>),
+    queryFn: ({ signal }) => getSpeedLimitList({ signal }),
   });
   const speedLimits = useMemo(() => speedLimitsQuery.data ?? [], [speedLimitsQuery.data]);
 
@@ -207,8 +209,8 @@ function UserPage() {
   };
 
   const saveUserMutation = useMutation({
-    mutationFn: ({ payload, isEdit }: { payload: Record<string, unknown>; isEdit: boolean }) =>
-      (isEdit ? updateUser(payload) : createUser(payload)).then(unwrap),
+    mutationFn: ({ payload, isEdit }: { payload: UserWrite; isEdit: boolean }) =>
+      isEdit ? updateUser(payload) : createUser(payload),
     onSuccess: (_data, { isEdit }) => {
       invalidateGlobalSearch("user");
       toast.success(isEdit ? "更新成功" : "创建成功");
@@ -219,7 +221,7 @@ function UserPage() {
   });
 
   const deleteUserMutation = useMutation({
-    mutationFn: (id: number) => deleteUser(id).then(unwrap),
+    mutationFn: (id: number) => deleteUser(id),
     onSuccess: () => {
       invalidateGlobalSearch("user");
       toast.success("删除成功");
@@ -237,9 +239,9 @@ function UserPage() {
         status: u.status === 1 ? 0 : 1,
         flow: u.flow,
         num: u.num,
-        expTime: u.expTime,
+        expTime: u.expTime ?? 0,
         flowResetTime: u.flowResetTime ?? 0,
-      }).then(unwrap),
+      }),
     onSuccess: () => {
       toast.success("状态已更新");
       invalidateUsers();
@@ -248,7 +250,7 @@ function UserPage() {
   });
 
   const resetFlowMutation = useMutation({
-    mutationFn: (id: number) => resetUserFlow({ id, type: 1 }).then(unwrap),
+    mutationFn: (id: number) => resetUserFlow({ id, type: 1 }),
     onSuccess: () => {
       toast.success("流量重置成功");
       invalidateUsers();
@@ -290,7 +292,7 @@ function UserPage() {
       toast.error("请填写完整信息（用户名、密码、过期时间）");
       return;
     }
-    const payload: any = { ...userForm, expTime: userForm.expTime.getTime() };
+    const payload: UserWrite = { ...userForm, expTime: userForm.expTime.getTime() };
     if (isEdit && !payload.pwd) delete payload.pwd;
     saveUserMutation.mutate({ payload, isEdit });
   };
@@ -336,7 +338,7 @@ function UserPage() {
     }
     setAssigning(true);
     try {
-      const res = await assignUserTunnel({
+      await assignUserTunnel({
         userId: tunnelMgrUser.id,
         tunnelId: tunnelForm.tunnelId,
         flow: tunnelForm.flow,
@@ -345,20 +347,19 @@ function UserPage() {
         flowResetTime: tunnelForm.flowResetTime,
         speedId: tunnelForm.speedId,
       });
-      if (res.code === 0) {
-        toast.success("分配成功");
-        setTunnelForm({
-          tunnelId: null,
-          flow: 100,
-          num: 10,
-          expTime: null,
-          flowResetTime: 0,
-          speedId: null,
-        });
-        loadUserTunnels();
-      } else toast.error(res.msg || "分配失败");
-    } catch {
-      toast.error("分配失败");
+
+      toast.success("分配成功");
+      setTunnelForm({
+        tunnelId: null,
+        flow: 100,
+        num: 10,
+        expTime: null,
+        flowResetTime: 0,
+        speedId: null,
+      });
+      loadUserTunnels();
+    } catch (error) {
+      toast.error(errorMessage(error));
     } finally {
       setAssigning(false);
     }
@@ -366,13 +367,12 @@ function UserPage() {
   const confirmRemoveUt = async () => {
     if (!utToDelete) return;
     try {
-      const res = await removeUserTunnel({ id: utToDelete.id });
-      if (res.code === 0) {
-        toast.success("已移除");
-        if (tunnelMgrUser) loadUserTunnels();
-      } else toast.error(res.msg || "删除失败");
-    } catch {
-      toast.error("删除失败");
+      await removeUserTunnel({ id: utToDelete.id });
+
+      toast.success("已移除");
+      if (tunnelMgrUser) loadUserTunnels();
+    } catch (error) {
+      toast.error(errorMessage(error));
     } finally {
       setUtToDelete(null);
     }
@@ -380,20 +380,19 @@ function UserPage() {
   const confirmResetUt = async () => {
     if (!utToReset) return;
     try {
-      const res = await resetUserFlow({ id: utToReset.id, type: 2 });
-      if (res.code === 0) {
-        toast.success("隧道流量已重置");
-        if (tunnelMgrUser) loadUserTunnels();
-      } else toast.error(res.msg || "重置失败");
-    } catch {
-      toast.error("重置失败");
+      await resetUserFlow({ id: utToReset.id, type: 2 });
+
+      toast.success("隧道流量已重置");
+      if (tunnelMgrUser) loadUserTunnels();
+    } catch (error) {
+      toast.error(errorMessage(error));
     } finally {
       setUtToReset(null);
     }
   };
   const toggleUtStatus = async (ut: UserTunnel) => {
     try {
-      const res = await updateUserTunnel({
+      await updateUserTunnel({
         id: ut.id,
         flow: ut.flow,
         num: ut.num,
@@ -402,12 +401,11 @@ function UserPage() {
         speedId: ut.speedId,
         status: ut.status === 1 ? 0 : 1,
       });
-      if (res.code === 0) {
-        toast.success("状态已更新");
-        if (tunnelMgrUser) loadUserTunnels();
-      } else toast.error(res.msg || "更新失败");
-    } catch {
-      toast.error("更新失败");
+
+      toast.success("状态已更新");
+      if (tunnelMgrUser) loadUserTunnels();
+    } catch (error) {
+      toast.error(errorMessage(error));
     }
   };
 
@@ -527,7 +525,7 @@ function UserPage() {
                   const used = (u.inFlow || 0) + (u.outFlow || 0);
                   const cap = u.flow * 1024 ** 3;
                   const pct = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
-                  const exp = getExpStatus(u.expTime);
+                  const exp = getExpStatus(u.expTime ?? undefined);
                   return (
                     <TableRow key={u.id} className="border-border/40 hover:bg-muted/20">
                       <TableCell>

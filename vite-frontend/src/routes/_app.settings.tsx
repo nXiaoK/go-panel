@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { getPanelAddress, setPanelAddress } from "@/lib/api/network";
+import { getPanelAddress, setPanelAddress } from "@/lib/api/client";
 import { resolveTheme, setTheme, type Theme } from "@/lib/theme";
 import { readPreferences, setPreference } from "@/lib/preferences";
 import { PageHeader } from "@/components/page";

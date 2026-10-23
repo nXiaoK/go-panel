@@ -1,5 +1,3 @@
-import type { ApiResponse } from "@/lib/types";
-
 /**
  * Structured query keys for react-query. Hierarchical so a mutation can
  * invalidate at any granularity (`queries.forward.all` clears every forward
@@ -38,7 +36,7 @@ export const queries = {
   },
   user: {
     all: ["user"] as const,
-    list: (params: Record<string, unknown>) => ["user", "list", params] as const,
+    list: () => ["user", "list"] as const,
     package: (range?: string, tunnelId?: number) =>
       ["user", "package", { range, tunnelId }] as const,
   },
@@ -61,34 +59,3 @@ export const queries = {
     settings: () => ["r2", "settings"] as const,
   },
 } as const;
-
-/**
- * Unwrap a panel API response for react-query: throw on any non-zero code
- * so useQuery surfaces the failure through `error` / `isError` instead of
- * treating a business error as resolved data.
- */
-export function unwrap<T>(res: ApiResponse<T>): T {
-  if (res && res.code === 0) return res.data;
-  throw new Error(res?.msg || "请求失败");
-}
-
-/**
- * Normalize the two list shapes the backend returns (bare array or
- * `{ records }` page envelope) into a plain array.
- */
-export function listFrom<T>(data: T[] | { records?: T[] } | null | undefined): T[] {
-  if (Array.isArray(data)) return data;
-  if (data && Array.isArray(data.records)) return data.records;
-  return [];
-}
-
-/**
- * Combine unwrap-style code checking with list normalization for untyped
- * list endpoints: throws on non-zero code, returns a plain array otherwise.
- */
-export function listData<T>(res: ApiResponse<unknown>): T[] {
-  if (res && res.code === 0) {
-    return listFrom<T>(res.data as T[] | { records?: T[] } | null | undefined);
-  }
-  throw new Error(res?.msg || "请求失败");
-}

@@ -1,3 +1,27 @@
+import type {
+  Tunnel,
+  PackagePermission,
+  PackageForward,
+  Forward,
+  UserPackage,
+  SpeedTestResult,
+} from "@/lib/types";
+type SpeedProgress = {
+  mbps?: number;
+  startSeconds?: number;
+  endSeconds?: number;
+  testId?: string;
+  phase?: string;
+  message?: string;
+  timestamp?: number;
+  elapsedSeconds?: number;
+  durationSeconds?: number;
+  sentMbps?: number;
+  receivedMbps?: number;
+  latencyMs?: number;
+  lossPercent?: number;
+  retransmits?: number;
+};
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
@@ -136,8 +160,8 @@ function makeAreaPath(linePath: string) {
   return `${linePath} L 100 96 L 0 96 Z`;
 }
 
-function stressTunnelIdOf(tunnel: any) {
-  return Number(tunnel?.tunnelId ?? tunnel?.id ?? 0);
+function stressTunnelIdOf(tunnel: Tunnel | PackagePermission) {
+  return Number(("tunnelId" in tunnel ? tunnel.tunnelId : tunnel.id) ?? 0);
 }
 
 function Dashboard() {
@@ -153,9 +177,9 @@ function Dashboard() {
   const [stressParallel, setStressParallel] = useState("1");
   const [stressPort, setStressPort] = useState("");
   const [stressLoading, setStressLoading] = useState(false);
-  const [stressResult, setStressResult] = useState<any>(null);
+  const [stressResult, setStressResult] = useState<SpeedTestResult | null>(null);
   const [stressTestId, setStressTestId] = useState("");
-  const [stressProgress, setStressProgress] = useState<any[]>([]);
+  const [stressProgress, setStressProgress] = useState<SpeedProgress[]>([]);
   const speedWsRef = useRef<WebSocket | null>(null);
   const activeStressTestIdRef = useRef("");
 
@@ -165,28 +189,23 @@ function Dashboard() {
 
   const dashboardQuery = useQuery({
     queryKey: queries.dashboard.sources(isAdmin, trafficRange, selectedTrafficTunnelId),
-    queryFn: () => loadDashboardSources(isAdmin, trafficRange, selectedTrafficTunnelId),
+    queryFn: ({ signal }) =>
+      loadDashboardSources(isAdmin, trafficRange, selectedTrafficTunnelId, undefined, signal),
   });
   const { refetch: refetchDashboard } = dashboardQuery;
   const dashboardResult = dashboardQuery.data ?? null;
   const dashboardLoading = dashboardQuery.isPending;
   const dashboardRefreshing = dashboardQuery.isFetching;
-  const packageData = useMemo(
-    () => (dashboardResult?.packageData ?? null) as any,
-    [dashboardResult],
-  );
+  const packageData = useMemo(() => dashboardResult?.packageData ?? null, [dashboardResult]);
   useEffect(() => {
     if (Array.isArray(packageData?.trafficTunnels)) {
       setTrafficTunnelOptions(packageData.trafficTunnels as TrafficTunnelOption[]);
     }
   }, [packageData?.trafficTunnels]);
-  const adminNodes = useMemo(() => (dashboardResult?.nodes ?? []) as any[], [dashboardResult]);
-  const adminTunnels = useMemo(() => (dashboardResult?.tunnels ?? []) as any[], [dashboardResult]);
-  const adminForwards = useMemo(
-    () => (dashboardResult?.forwards ?? []) as any[],
-    [dashboardResult],
-  );
-  const adminUsers = useMemo(() => (dashboardResult?.users ?? []) as any[], [dashboardResult]);
+  const adminNodes = useMemo(() => dashboardResult?.nodes ?? [], [dashboardResult]);
+  const adminTunnels = useMemo(() => dashboardResult?.tunnels ?? [], [dashboardResult]);
+  const adminForwards = useMemo(() => dashboardResult?.forwards ?? [], [dashboardResult]);
+  const adminUsers = useMemo(() => dashboardResult?.users ?? [], [dashboardResult]);
   const lastSync = dashboardResult?.completedAt ?? null;
   const healthStatus: DashboardHealthStatus = dashboardResult?.status ?? "error";
   const dashboardError = useMemo(() => {
@@ -252,7 +271,8 @@ function Dashboard() {
         try {
           const msg = JSON.parse(event.data);
           if (msg?.type !== "speed-test-progress") return;
-          const progress = msg.data || {};
+          const progress = msg.data as SpeedProgress;
+          if (!progress) return;
           if (!activeStressTestIdRef.current || progress.testId !== activeStressTestIdRef.current)
             return;
           setStressProgress((prev) => [...prev, progress].slice(-120));
@@ -277,7 +297,7 @@ function Dashboard() {
     if (stressOpen) connectSpeedWs();
   }, [connectSpeedWs, stressOpen]);
 
-  const userInfo = packageData?.userInfo || {};
+  const userInfo: Partial<UserPackage["userInfo"]> = packageData?.userInfo || {};
   const packageTunnels = useMemo(
     () => packageData?.tunnelPermissions || [],
     [packageData?.tunnelPermissions],
@@ -292,13 +312,14 @@ function Dashboard() {
     [adminTunnels, isAdmin],
   );
   const selectedStressTunnel = useMemo(
-    () => stressTunnels.find((t: any) => stressTunnelIdOf(t) === Number(stressTunnelId)),
+    () => stressTunnels.find((t) => stressTunnelIdOf(t) === Number(stressTunnelId)),
     [stressTunnelId, stressTunnels],
   );
   const stressHasRelay = Boolean(selectedStressTunnel?.relayNodeId);
   const visibleForwards = isAdmin && adminForwards.length > 0 ? adminForwards : packageForwards;
   const legacyForwardTrafficBytes = visibleForwards.reduce(
-    (sum: number, f: any) => sum + Number(f.inFlow || 0) + Number(f.outFlow || 0),
+    (sum: number, f: Forward | PackageForward) =>
+      sum + Number(f.inFlow || 0) + Number(f.outFlow || 0),
     0,
   );
   const legacyUserTrafficBytes = Number(userInfo.inFlow || 0) + Number(userInfo.outFlow || 0);
@@ -343,7 +364,7 @@ function Dashboard() {
     const onlineNodes = adminNodes.filter((n) => n.status === 1).length;
     const activeUsers = isAdmin
       ? adminUsers.filter((u) => (u.status ?? 1) === 1).length
-      : packageForwards.filter((f: any) => (f.status ?? 1) === 1).length;
+      : packageForwards.filter((f) => (f.status ?? 1) === 1).length;
 
     return [
       {
@@ -562,12 +583,8 @@ function Dashboard() {
         parallel,
         port: Number(stressPort) || 0,
       });
-      if (res.code === 0) {
-        setStressResult(res.data);
-        toast.success("压力测试完成");
-      } else {
-        toast.error(res.msg || "压力测试失败");
-      }
+      setStressResult(res);
+      toast.success("压力测试完成");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "压力测试失败");
     } finally {
@@ -622,7 +639,7 @@ function Dashboard() {
             <p className="mt-2 max-w-xl text-sm text-muted-foreground">
               {isAdmin
                 ? `${adminTunnels.filter((t) => (t.status ?? 1) === 1).length} 条隧道可用，${adminNodes.filter((n) => n.status === 1).length} 个节点在线。`
-                : `${packageTunnels.length} 条隧道权限，${packageForwards.filter((f: any) => (f.status ?? 1) === 1).length} 条转发运行中。`}
+                : `${packageTunnels.length} 条隧道权限，${packageForwards.filter((f) => (f.status ?? 1) === 1).length} 条转发运行中。`}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -950,9 +967,7 @@ function Dashboard() {
                 value={stressTunnelId}
                 onValueChange={(value) => {
                   setStressTunnelId(value);
-                  const selected = stressTunnels.find(
-                    (t: any) => stressTunnelIdOf(t) === Number(value),
-                  );
+                  const selected = stressTunnels.find((t) => stressTunnelIdOf(t) === Number(value));
                   setStressDirection(selected?.relayNodeId ? "in-to-relay" : "in-to-out");
                 }}
                 disabled={stressTunnels.length === 0 || stressLoading}
@@ -963,12 +978,12 @@ function Dashboard() {
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {stressTunnels.map((t: any) => (
+                  {stressTunnels.map((t) => (
                     <SelectItem
                       key={`${stressTunnelIdOf(t)}-${t.id ?? ""}`}
                       value={String(stressTunnelIdOf(t))}
                     >
-                      {t.name || t.tunnelName || `#${t.id}`}
+                      {t.name || `#${t.id}`}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -83,9 +83,11 @@ export interface User {
   status: number; // 1-正常, 0-禁用
   flow: number; // 流量限制(GB)
   num: number; // 转发数量
-  expTime?: number; // 过期时间戳
+  expTime?: number | null; // 过期时间戳
   flowResetTime?: number; // 流量重置日期(1-31号)
   createdTime?: number;
+  updatedTime?: number | null;
+  mustChangePwd?: number;
   inFlow?: number;
   outFlow?: number;
   roleId?: number;
@@ -107,17 +109,17 @@ export interface UserTunnel {
   id: number;
   userId: number;
   tunnelId: number;
-  tunnelName: string;
+  tunnelName: string | null;
   status: number;
   flow: number;
   num: number;
-  expTime: number;
+  expTime: number | null;
   flowResetTime: number;
   speedId?: number | null;
-  speedLimitName?: string;
+  speedLimitName?: string | null;
   inFlow?: number;
   outFlow?: number;
-  tunnelFlow?: number;
+  tunnelFlow?: number | null;
 }
 
 export interface UserTunnelForm {
@@ -142,16 +144,17 @@ export interface Tunnel {
   entryNodeName?: string;
   exitNodeName?: string;
   inIp?: string;
-  relayIp?: string;
+  relayIp?: string | null;
   outIp?: string;
-  protocol?: string;
+  protocol?: string | null;
   tcpListenAddr?: string;
   udpListenAddr?: string;
-  interfaceName?: string;
+  interfaceName?: string | null;
   flow?: number; // 1: 单向, 2: 双向
   trafficRatio?: number;
   status?: number;
-  createdTime?: string;
+  createdTime?: number;
+  updatedTime?: number;
 }
 
 // 普通用户选项仅包含授权与表单能力，不包含节点标识、出口地址或凭据。
@@ -192,19 +195,24 @@ export interface TunnelForm {
 }
 
 export interface DiagnosisResult {
-  tunnelName: string;
+  tunnelName?: string;
+  forwardName?: string;
+  forwardId?: number;
+  tunnelId?: number;
   tunnelType: string;
   timestamp: number;
   results: Array<{
     success: boolean;
     description: string;
     nodeName: string;
-    nodeId: string;
+    nodeId: number;
     targetIp: string;
     targetPort?: number;
     message?: string;
     averageTime?: number;
     packetLoss?: number;
+    advisory?: boolean;
+    timestamp?: number;
   }>;
 }
 
@@ -249,7 +257,9 @@ export interface Node {
   portSta?: number;
   portEnd?: number;
   portRange?: string;
-  version?: string;
+  version?: string | null;
+  createdTime?: number;
+  updatedTime?: number | null;
   latestVersion?: string;
   upgradeAvailable?: boolean;
   syncState?: NodeSyncState;
@@ -279,8 +289,8 @@ export interface ForwardExitMember {
   id?: number;
   forwardId?: number;
   outNodeId: number;
-  outNodeName?: string;
-  outNodeIp?: string;
+  outNodeName?: string | null;
+  outNodeIp?: string | null;
   relayPort?: number;
   outPort?: number;
   weight?: number;
@@ -293,7 +303,7 @@ export interface Forward {
   userId?: number;
   userName?: string;
   tunnelId: number;
-  tunnelName?: string;
+  tunnelName?: string | null;
   name: string;
   inIp?: string | null;
   inPort: number;
@@ -308,10 +318,11 @@ export interface Forward {
   status: number; // 1 running, 0 stopped, other = error
   inFlow?: number;
   outFlow?: number;
-  createdTime?: string;
+  createdTime?: number;
+  updatedTime?: number;
   inx?: number;
   serviceState?: string;
-  protocol?: string;
+  protocol?: string | null;
 }
 
 // ---------- Speed Limit ----------
@@ -323,7 +334,7 @@ export interface SpeedLimit {
   speed: number;
   status?: number;
   createdTime?: number;
-  updatedTime?: number;
+  updatedTime?: number | null;
 }
 
 // ---------- Subscription ----------
@@ -421,4 +432,282 @@ export interface Pagination {
   current: number;
   size: number;
   total: number;
+}
+
+// API 写入字段按后端 DTO 定义，表单中的 Date 在提交前转换为毫秒时间戳。
+export interface PasswordUpdate {
+  newUsername: string;
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+export type UserWrite = Omit<UserForm, "expTime"> & { expTime: number };
+export type NodeWrite = Required<
+  Pick<Node, "name" | "ip" | "serverIp" | "portSta" | "portEnd" | "forwardMode">
+> &
+  Pick<Node, "http" | "tls" | "socks"> & { id?: number };
+export type TunnelWrite = Omit<TunnelForm, "inNodeId"> & { inNodeId: number };
+export type ForwardWrite = Pick<Forward, "name" | "tunnelId" | "remoteAddr"> &
+  Partial<
+    Pick<
+      Forward,
+      | "id"
+      | "userId"
+      | "strategy"
+      | "targetMode"
+      | "activeRemoteAddr"
+      | "exitMode"
+      | "exitStrategy"
+      | "exitMembers"
+    >
+  > & { inPort?: number | null; forceSwitchTarget?: boolean; interfaceName?: string | null };
+export interface UserTunnelAssign {
+  userId: number;
+  tunnelId: number;
+  flow: number;
+  num: number;
+  expTime: number;
+  flowResetTime?: number;
+  speedId?: number | null;
+}
+export type UserTunnelWrite = Pick<UserTunnel, "id" | "flow" | "num" | "status"> &
+  Partial<Pick<UserTunnel, "expTime" | "flowResetTime" | "speedId">>;
+export type SpeedLimitWrite = Pick<SpeedLimit, "name" | "tunnelId" | "speed"> & {
+  id?: number;
+  tunnelName: string;
+};
+export type ProxyNodeWrite = Omit<Partial<ProxyNode>, "allowInsecure" | "udp"> &
+  Pick<ProxyNode, "id" | "name" | "protocol" | "server" | "port"> & {
+    allowInsecure?: boolean;
+    udp?: boolean;
+  };
+export type SubscriptionProfileWrite = Partial<SubscriptionProfile> & {
+  name: string;
+  nodeIds?: number[];
+};
+export interface RelayWrite {
+  nodeId: number;
+  tunnelId: number;
+  inPort?: number | null;
+  mode?: RelayMode;
+  name?: string;
+  strategy?: string;
+  interfaceName?: string | null;
+}
+export interface RelayEndpoint {
+  nodeId?: number;
+  nodeName?: string;
+  address?: string;
+  ip?: string;
+  port?: number;
+  portText?: string;
+}
+export interface RelayPreview {
+  nodeId: number;
+  nodeName: string;
+  tunnelId: number;
+  tunnelName: string;
+  tunnelType: number;
+  tunnelTypeName: string;
+  protocol?: string;
+  entry: RelayEndpoint;
+  relay?: RelayEndpoint;
+  exit: RelayEndpoint;
+  target: RelayEndpoint;
+  subscriptionAddress?: string;
+  forwardId?: number;
+  forwardName?: string;
+}
+export interface TrafficTotals {
+  inFlow: number;
+  outFlow: number;
+  totalFlow: number;
+}
+export interface TrafficTunnel {
+  tunnelId: number;
+  tunnelName: string;
+  type: number;
+  inNodeId: number;
+  inNodeName: string;
+  relayNodeId?: number;
+  relayNodeName?: string;
+  outNodeId: number;
+  outNodeName: string;
+}
+export interface TrafficPoint {
+  id: number;
+  userId: number;
+  flow: number;
+  totalFlow: number;
+  totalInFlow: number;
+  totalOutFlow: number;
+  createdTime: number;
+  time: string;
+  inFlow: number;
+  outFlow: number;
+}
+export type PackagePermission = Omit<
+  UserTunnel,
+  "status" | "tunnelName" | "flowResetTime" | "expTime" | "speedLimitName" | "tunnelFlow"
+> & {
+  tunnelName: string | null;
+  tunnelFlow: number | null;
+  flowResetTime: number | null;
+  expTime: number | null;
+  speedLimitName: string | null;
+  speed: number | null;
+};
+export type PackageForward = Pick<
+  Forward,
+  "id" | "name" | "tunnelId" | "inPort" | "remoteAddr" | "inFlow" | "outFlow" | "status"
+> & { tunnelName: string | null; inIp: string | null; createdTime: number };
+export interface UserPackage {
+  userInfo: Omit<User, "name" | "pwd" | "roleId" | "mustChangePwd"> & {
+    name: null;
+    updatedTime: number | null;
+  };
+  tunnelPermissions: PackagePermission[];
+  forwards: PackageForward[];
+  trafficRange: string;
+  trafficScope: "system" | "user";
+  trafficTunnelId: number | null;
+  trafficTunnel: TrafficTunnel | null;
+  trafficTunnels: TrafficTunnel[];
+  trafficTotals: TrafficTotals;
+  todayTraffic: TrafficTotals;
+  trafficTrendTotals: TrafficTotals;
+  statisticsFlows: TrafficPoint[];
+}
+export interface SystemStatus {
+  startedAt: number;
+  uptimeSeconds: number;
+}
+export interface SpeedTestRequest {
+  tunnelId: number;
+  testId?: string;
+  direction?: string;
+  durationSeconds?: number;
+  parallel?: number;
+  port?: number;
+}
+export interface SpeedTestResult {
+  tunnelId: number;
+  testId: string;
+  tunnelName: string;
+  direction: string;
+  sourceNodeId: number;
+  sourceNodeName: string;
+  targetNodeId: number;
+  targetNodeName: string;
+  targetHost: string;
+  port: number;
+  durationSeconds: number;
+  parallel: number;
+  summary: {
+    sentMbps: number;
+    receivedMbps: number;
+    sentBytes: number;
+    receivedBytes: number;
+    seconds: number;
+    retransmits: number;
+    latencyMs?: number;
+    lossPercent?: number;
+    pingSamples?: number;
+  };
+  raw?: unknown;
+  timestamp: number;
+}
+export interface DetectedForwardRule {
+  inPort: number;
+  outPort: number;
+  targetHost: string;
+  protocol: string;
+  tunnelId: number;
+  tunnelName: string;
+  comment: string;
+  rawRule: string;
+  suggested: boolean;
+}
+export interface DetectedTunnelRule extends Omit<DetectedForwardRule, "outPort" | "rawRule"> {
+  inNodeName: string;
+  outNodeName: string;
+  relayPort: number;
+  targetPort: number;
+  inRawRule: string;
+  outRawRule: string;
+}
+export interface NftDetection {
+  detected: DetectedForwardRule[];
+  total: number;
+  nodeName: string;
+  nodeId: number;
+}
+export interface TunnelDetection {
+  detected: DetectedTunnelRule[];
+  total: number;
+  inNodeId: number;
+  outNodeId: number;
+  inNodeName: string;
+  outNodeName: string;
+}
+export interface CompleteForwardRule {
+  tunnelId: number;
+  inPort: number;
+  outPort?: number | null;
+  targetPort?: number | null;
+  targetHost: string;
+  protocol: string;
+  name: string;
+  rawRule: string;
+  outRawRule?: string;
+}
+export interface NftCompletion {
+  created: number;
+  failed: number;
+  details: Array<{ inPort: number; success: boolean; forwardId?: number; error?: string }>;
+}
+export interface ExtraRule {
+  inPort: number;
+  targetHost: string;
+  outPort: number;
+  protocol: string;
+  ruleType: string;
+  rawRule: string;
+  suggestedTunnelId: number;
+  suggestedTunnelName: string;
+  suggestedName: string;
+}
+export interface ExtraRuleAction {
+  nodeId: number;
+  inPort: number;
+  action: "keep" | "delete";
+  name: string;
+  tunnelId: number;
+  targetHost: string;
+  outPort: number;
+  protocol: string;
+  rawRule: string;
+}
+export interface ExtraRulesDetection {
+  nodes: Array<{
+    nodeId: number;
+    nodeName: string;
+    nodeIp: string;
+    extraRules: ExtraRule[];
+    total: number;
+  }>;
+  totalNodes: number;
+  totalRules: number;
+}
+export interface ExtraRulesHandled {
+  kept: number;
+  deleted: number;
+  details: Array<{
+    nodeId: number;
+    inPort: number;
+    action: string;
+    success: boolean;
+    forwardId?: number;
+    error?: string;
+  }>;
 }

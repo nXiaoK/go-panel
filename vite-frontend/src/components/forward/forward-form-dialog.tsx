@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/api/client";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, Plus, Trash2 } from "lucide-react";
@@ -270,6 +271,7 @@ export function ForwardFormDialog({
         : { exitMode: "single", exitMembers: [] };
     const payload = {
       ...baseForm,
+      tunnelId: form.tunnelId!,
       remoteAddr,
       strategy: autoStrategy(remoteAddr, form.strategy),
       targetMode: form.targetMode,
@@ -277,15 +279,16 @@ export function ForwardFormDialog({
       forceSwitchTarget: editing ? form.forceSwitchTarget : false,
       ...exitConfig,
     };
-    const res = editing ? await updateForward(payload) : await createForward(payload);
-    setSaving(false);
-    if (res.code === 0) {
+    try {
+      await (editing ? updateForward(payload) : createForward(payload));
       invalidateGlobalSearch("forward");
       toast.success(editing ? "已更新" : "已创建");
       onOpenChange(false);
       onSaved();
-    } else {
-      toast.error(res.msg || "操作失败");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setSaving(false);
     }
   };
 

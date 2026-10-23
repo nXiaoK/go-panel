@@ -25,7 +25,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createSubscriptionProfile, updateSubscriptionProfile } from "@/lib/api";
-import { unwrap } from "@/lib/api/query";
 import type { ProxyNode, SubscriptionFormat, SubscriptionProfile } from "@/lib/types";
 import { subscriptionFormatLabels, subscriptionFormats } from "./formats";
 
@@ -78,9 +77,7 @@ export function SubscriptionProfileDialog({
 
   const saveMutation = useMutation({
     mutationFn: (payload: SubscriptionProfile & { nodeIds: number[] }) =>
-      (payload.id ? updateSubscriptionProfile(payload) : createSubscriptionProfile(payload)).then(
-        unwrap,
-      ),
+      payload.id ? updateSubscriptionProfile(payload) : createSubscriptionProfile(payload),
     onSuccess: () => {
       toast.success("订阅配置已保存");
       onOpenChange(false);

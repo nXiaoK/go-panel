@@ -1,3 +1,4 @@
+import type { Tunnel, Node, User, Forward } from "./types";
 export type GlobalSearchKind = "tunnel" | "node" | "user" | "forward";
 
 export interface GlobalSearchItem {
@@ -12,10 +13,10 @@ export interface GlobalSearchItem {
 type SearchRecord = Record<string, unknown>;
 
 export interface GlobalSearchLists {
-  tunnels?: SearchRecord[];
-  nodes?: SearchRecord[];
-  users?: SearchRecord[];
-  forwards?: SearchRecord[];
+  tunnels?: Partial<Tunnel>[];
+  nodes?: Partial<Node>[];
+  users?: (Partial<User> & { role_id?: number })[];
+  forwards?: Partial<Forward>[];
 }
 
 export function normalizeApiList(data: unknown): SearchRecord[] {

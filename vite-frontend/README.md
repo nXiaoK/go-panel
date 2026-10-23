@@ -59,3 +59,13 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 - `.prettierrc` 规定 100 列、分号、双引号和尾逗号；`.prettierignore` 排除依赖、锁文件、生成路由及构建缓存，不能借此排除手写源码。
 
 废弃的自动刷新 hook 测试已迁移到 `src/routes/-_app.node-refresh.test.tsx`，直接挂载节点页与真实 React Query 客户端，覆盖定时刷新、慢请求去重、隐藏暂停/恢复、偏好关闭/启用、卸载清理及离线恢复。
+
+## API 客户端与接口类型
+
+`src/lib/api/client.ts` 维护唯一的 Axios 实例。每次请求重新读取面板端点与令牌；`RequestOptions.signal` 透传取消信号，React Query 的查询都消费该信号，切换查询条件或卸载时中止传输。普通请求默认 30 秒、通用上传保留 60 秒；节点升级 100 秒、诊断 95 秒、测速按测试时长加 50 秒、备份传输 10 分钟，避免缩短已有长请求窗口。
+
+成功响应直接返回 `data`，业务失败、HTTP 失败、网络错误和超时统一抛出 `ApiError`；`code` 保留业务码（网络错误为 -1，超时为 -2），`httpStatus` 保留 HTTP 状态。错误优先显示后端中文 `msg`，缺失时使用中文兜底。下载遇到 JSON 错误体也按相同规则解析，正常下载采用后端 `Content-Disposition` 文件名。
+
+受保护接口的 HTTP 401 优先于响应体业务码，清除会话并回到登录页。业务 401、账号禁用 4031、强制改密 4032 及旧版两条明确的 403 中文消息沿用兼容行为；普通权限 403 保留会话。登录等公开请求失败不会撤销已有登录状态。
+
+资源接口位于 `src/lib/api/{auth,user,node,tunnel,forward,limit,config,system,backup,subscription}.ts`，请求字段按后端 DTO、响应按 JSON tag 定义；数组或 `{ records }` 列表在资源边界转换，页面只消费数组。`/user/list` 返回全部非管理员用户，不再发送无效分页参数。表单、诊断、测速与批量操作在失败后恢复操作状态，且保留普通用户转发编辑时省略出口配置的权限语义。

@@ -116,7 +116,7 @@ func CreateUser(req dto.UserDto) result.R {
 	return result.OkMsg("用户创建成功")
 }
 
-// GetAllUsers 用户列表（排除管理员）
+// GetAllUsers 返回全部非管理员用户；此接口不分页，忽略旧客户端的 current、size 参数。
 func GetAllUsers() result.R {
 	var users []model.User
 	model.DB.Where("role_id <> ?", adminRoleID).Find(&users)

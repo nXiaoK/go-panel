@@ -1,3 +1,5 @@
+import { toast } from "sonner";
+import { errorMessage } from "@/lib/api/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Command, Loader2 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
@@ -19,7 +21,6 @@ import { clearSession, getRoleID, isPasswordChangeRequired } from "@/lib/session
 import {
   buildGlobalSearchItems,
   filterGlobalSearchItems,
-  normalizeApiList,
   type GlobalSearchItem,
 } from "@/lib/global-search";
 import { getGlobalSearchCache, searchCacheKeyForRole } from "@/lib/search-cache";
@@ -60,22 +61,22 @@ export function AppTopbar() {
         const items = (await cache.load(key, async () => {
           // 普通用户只加载自己的转发列表；节点/用户/隧道是管理员数据集。
           const [tunnels, nodes, users, forwards] = await Promise.all([
-            admin ? getTunnelList() : Promise.resolve({ code: -1, data: null } as any),
-            admin ? getNodeList() : Promise.resolve({ code: -1, data: null } as any),
-            admin
-              ? getAllUsers({ current: 1, size: 500 })
-              : Promise.resolve({ code: -1, data: null } as any),
+            admin ? getTunnelList() : Promise.resolve([]),
+            admin ? getNodeList() : Promise.resolve([]),
+            admin ? getAllUsers() : Promise.resolve([]),
             getForwardList(),
           ]);
           return buildGlobalSearchItems({
-            tunnels: tunnels.code === 0 ? normalizeApiList(tunnels.data) : [],
-            nodes: nodes.code === 0 ? normalizeApiList(nodes.data) : [],
-            users: users.code === 0 ? normalizeApiList(users.data) : [],
-            forwards: forwards.code === 0 ? normalizeApiList(forwards.data) : [],
+            tunnels,
+            nodes,
+            users,
+            forwards,
           });
         })) as GlobalSearchItem[];
 
         setSearchItems(items);
+      } catch (error) {
+        toast.error(errorMessage(error));
       } finally {
         setSearchLoading(false);
       }

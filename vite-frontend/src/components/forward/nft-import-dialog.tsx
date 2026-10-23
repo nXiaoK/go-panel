@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/api/client";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -22,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { completeFromNft, detectNftRules, detectTunnelRules } from "@/lib/api";
-import type { Node } from "@/lib/types";
+import type { Node, NftDetection, TunnelDetection, CompleteForwardRule } from "@/lib/types";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -51,8 +52,8 @@ export function NftDetectDialog({
   const [outNodeId, setOutNodeId] = useState<number | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [completing, setCompleting] = useState(false);
-  const [portResult, setPortResult] = useState<any>(null);
-  const [tunnelResult, setTunnelResult] = useState<any>(null);
+  const [portResult, setPortResult] = useState<NftDetection | null>(null);
+  const [tunnelResult, setTunnelResult] = useState<TunnelDetection | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const nftNodes = useMemo(
@@ -87,48 +88,45 @@ export function NftDetectDialog({
 
   const detect = async () => {
     setDetecting(true);
-    if (mode === "port") {
-      if (!nodeId) {
-        setDetecting(false);
-        return toast.error("请选择节点");
+    try {
+      if (mode === "port") {
+        if (!nodeId) {
+          return toast.error("请选择节点");
+        }
+        const portData = await detectNftRules(nodeId);
+        if (!portData?.total) {
+          toast.success(`节点 ${portData?.nodeName || ""} 未发现需要补全的规则`);
+          onOpenChange(false);
+          return;
+        }
+        setPortResult(portData);
+        const auto = new Set<number>();
+        (portData.detected || []).forEach((r, i: number) => r.suggested && auto.add(i));
+        setSelected(auto);
+        setStep("result");
+      } else {
+        if (!inNodeId || !outNodeId) {
+          return toast.error("请选择入口 / 出口节点");
+        }
+        if (inNodeId === outNodeId) {
+          return toast.error("入口与出口节点不能相同");
+        }
+        const tunnelData = await detectTunnelRules(inNodeId, outNodeId);
+        if (!tunnelData?.total) {
+          toast.success(`未发现需要补全的隧道规则`);
+          onOpenChange(false);
+          return;
+        }
+        setTunnelResult(tunnelData);
+        const auto = new Set<number>();
+        (tunnelData.detected || []).forEach((r, i: number) => r.suggested && auto.add(i));
+        setSelected(auto);
+        setStep("result");
       }
-      const res = await detectNftRules(nodeId);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
       setDetecting(false);
-      if (res.code !== 0) return toast.error(res.msg || "识别失败");
-      const portData = res.data as any;
-      if (!portData?.total) {
-        toast.success(`节点 ${portData?.nodeName || ""} 未发现需要补全的规则`);
-        onOpenChange(false);
-        return;
-      }
-      setPortResult(portData);
-      const auto = new Set<number>();
-      (portData.detected || []).forEach((r: any, i: number) => r.suggested && auto.add(i));
-      setSelected(auto);
-      setStep("result");
-    } else {
-      if (!inNodeId || !outNodeId) {
-        setDetecting(false);
-        return toast.error("请选择入口 / 出口节点");
-      }
-      if (inNodeId === outNodeId) {
-        setDetecting(false);
-        return toast.error("入口与出口节点不能相同");
-      }
-      const res = await detectTunnelRules(inNodeId, outNodeId);
-      setDetecting(false);
-      if (res.code !== 0) return toast.error(res.msg || "识别失败");
-      const tunnelData = res.data as any;
-      if (!tunnelData?.total) {
-        toast.success(`未发现需要补全的隧道规则`);
-        onOpenChange(false);
-        return;
-      }
-      setTunnelResult(tunnelData);
-      const auto = new Set<number>();
-      (tunnelData.detected || []).forEach((r: any, i: number) => r.suggested && auto.add(i));
-      setSelected(auto);
-      setStep("result");
     }
   };
 
@@ -144,50 +142,53 @@ export function NftDetectDialog({
   const complete = async () => {
     if (selected.size === 0) return toast.error("请至少选择一条规则");
     setCompleting(true);
-    let rules: any[] = [];
-    let targetNodeId = 0;
-    if (portResult) {
-      targetNodeId = portResult.nodeId;
-      rules = Array.from(selected).map((i) => {
-        const r = portResult.detected[i];
-        return {
-          tunnelId: r.tunnelId,
-          inPort: r.inPort,
-          outPort: r.outPort,
-          targetHost: r.targetHost,
-          protocol: r.protocol,
-          name: `NFT识别-端口${r.inPort}`,
-          rawRule: r.rawRule,
-        };
-      });
-    } else if (tunnelResult) {
-      targetNodeId = tunnelResult.inNodeId;
-      rules = Array.from(selected).map((i) => {
-        const r = tunnelResult.detected[i];
-        return {
-          tunnelId: r.tunnelId,
-          inPort: r.inPort,
-          outPort: r.relayPort,
-          targetHost: r.targetHost,
-          targetPort: r.targetPort,
-          protocol: r.protocol,
-          name: `NFT识别-隧道${r.inPort}`,
-          rawRule: r.inRawRule,
-          outRawRule: r.outRawRule,
-        };
-      });
+    try {
+      let rules: CompleteForwardRule[] = [];
+      let targetNodeId = 0;
+      if (portResult) {
+        targetNodeId = portResult.nodeId;
+        rules = Array.from(selected).map((i) => {
+          const r = portResult.detected[i];
+          return {
+            tunnelId: r.tunnelId,
+            inPort: r.inPort,
+            outPort: "outPort" in r ? r.outPort : 0,
+            targetHost: r.targetHost,
+            protocol: r.protocol,
+            name: `NFT识别-端口${r.inPort}`,
+            rawRule: r.rawRule,
+          };
+        });
+      } else if (tunnelResult) {
+        targetNodeId = tunnelResult.inNodeId;
+        rules = Array.from(selected).map((i) => {
+          const r = tunnelResult.detected[i];
+          return {
+            tunnelId: r.tunnelId,
+            inPort: r.inPort,
+            outPort: "relayPort" in r ? r.relayPort : 0,
+            targetHost: r.targetHost,
+            targetPort: "targetPort" in r ? r.targetPort : 0,
+            protocol: r.protocol,
+            name: `NFT识别-隧道${r.inPort}`,
+            rawRule: r.inRawRule,
+            outRawRule: r.outRawRule,
+          };
+        });
+      }
+      const { created, failed } = await completeFromNft(targetNodeId, rules);
+      if (failed === 0) toast.success(`成功补全 ${created} 条规则`);
+      else toast.warning(`成功 ${created} 条，失败 ${failed} 条`);
+      onOpenChange(false);
+      onComplete();
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setCompleting(false);
     }
-    const res = await completeFromNft(targetNodeId, rules);
-    setCompleting(false);
-    if (res.code !== 0) return toast.error(res.msg || "补全失败");
-    const { created = 0, failed = 0 } = (res.data as any) || {};
-    if (failed === 0) toast.success(`成功补全 ${created} 条规则`);
-    else toast.warning(`成功 ${created} 条，失败 ${failed} 条`);
-    onOpenChange(false);
-    onComplete();
   };
 
-  const detected: any[] = (mode === "port" ? portResult?.detected : tunnelResult?.detected) || [];
+  const detected = (mode === "port" ? portResult?.detected : tunnelResult?.detected) || [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -201,7 +202,10 @@ export function NftDetectDialog({
 
         {step === "mode" && (
           <div className="space-y-3">
-            <RadioGroup value={mode} onValueChange={(v) => setMode(v as any)}>
+            <RadioGroup
+              value={mode}
+              onValueChange={(v) => setMode(v === "tunnel" ? "tunnel" : "port")}
+            >
               <label className="flex items-start gap-3 rounded-md border border-border/60 p-3 cursor-pointer">
                 <RadioGroupItem value="port" className="mt-1" />
                 <div>
@@ -314,8 +318,8 @@ export function NftDetectDialog({
                     </div>
                     <div className="font-mono text-[11px] text-muted-foreground">
                       {mode === "port"
-                        ? `:${r.inPort} → ${r.targetHost}:${r.outPort}`
-                        : `${r.inNodeName} :${r.inPort} → ${r.outNodeName} :${r.relayPort} → ${r.targetHost}:${r.targetPort}`}
+                        ? `:${r.inPort} → ${r.targetHost}:${"outPort" in r ? r.outPort : 0}`
+                        : `${"inNodeName" in r ? r.inNodeName : ""} :${r.inPort} → ${"outNodeName" in r ? r.outNodeName : ""} :${"relayPort" in r ? r.relayPort : 0} → ${r.targetHost}:${"targetPort" in r ? r.targetPort : 0}`}
                     </div>
                     {r.comment && (
                       <div className="text-[11px] text-muted-foreground">{r.comment}</div>

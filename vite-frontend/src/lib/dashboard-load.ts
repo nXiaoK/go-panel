@@ -10,71 +10,56 @@ export type DashboardHealthStatus = "success" | "partial" | "error";
 
 export type DashboardSourceKey = "package" | "nodes" | "tunnels" | "forwards" | "users";
 
+import type { UserPackage, Node, Tunnel, Forward, User } from "@/lib/types";
+
 export type DashboardSourceResult<T = unknown> =
   { ok: true; data: T } | { ok: false; error: string };
-
-export type DashboardSources = {
-  package: () => Promise<DashboardSourceResult>;
-  nodes?: () => Promise<DashboardSourceResult>;
-  tunnels?: () => Promise<DashboardSourceResult>;
-  forwards?: () => Promise<DashboardSourceResult>;
-  users?: () => Promise<DashboardSourceResult>;
+type SourceData = {
+  package: UserPackage;
+  nodes: Node[];
+  tunnels: Tunnel[];
+  forwards: Forward[];
+  users: User[];
 };
-
+export type DashboardSources = {
+  [K in DashboardSourceKey]?: () => Promise<DashboardSourceResult<SourceData[K]>>;
+} & { package: () => Promise<DashboardSourceResult<UserPackage>> };
 export type DashboardLoadResult = {
   status: DashboardHealthStatus;
   errors: Partial<Record<DashboardSourceKey, string>>;
   completedAt: Date | null;
-  packageData: unknown | null;
-  nodes: unknown[];
-  tunnels: unknown[];
-  forwards: unknown[];
-  users: unknown[];
+  packageData: UserPackage | null;
+  nodes: Node[];
+  tunnels: Tunnel[];
+  forwards: Forward[];
+  users: User[];
   missing: DashboardSourceKey[];
 };
-
-export type ApiLikeResponse<T = unknown> = {
-  code?: number;
-  msg?: string;
-  data?: T;
-};
-
-export function listFromResponse(data: unknown): unknown[] {
-  if (Array.isArray(data)) return data;
-  if (data && typeof data === "object" && Array.isArray((data as { records?: unknown }).records)) {
-    return (data as { records: unknown[] }).records;
-  }
-  return [];
-}
-
-export function resultFromApiResponse(res: ApiLikeResponse): DashboardSourceResult {
-  if (res && res.code === 0) {
-    return { ok: true, data: res.data };
-  }
-  return { ok: false, error: res?.msg || "请求失败" };
-}
-
-async function safeLoad(
-  loader: () => Promise<DashboardSourceResult>,
-): Promise<DashboardSourceResult> {
+async function safeLoad<T>(loader: () => Promise<T>): Promise<DashboardSourceResult<T>> {
   try {
-    return await loader();
+    return { ok: true, data: await loader() };
   } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "请求失败",
-    };
+    return { ok: false, error: error instanceof Error ? error.message : "请求失败" };
   }
 }
-
-function defaultSources(range: string, tunnelId?: number): DashboardSources {
+function defaultSources(range: string, tunnelId?: number, signal?: AbortSignal): DashboardSources {
   return {
-    package: async () => resultFromApiResponse(await getUserPackageInfo({ range, tunnelId })),
-    nodes: async () => resultFromApiResponse(await getNodeList()),
-    tunnels: async () => resultFromApiResponse(await getTunnelList()),
-    forwards: async () => resultFromApiResponse(await getForwardList()),
-    users: async () => resultFromApiResponse(await getAllUsers({ current: 1, size: 500 })),
+    package: () => safeLoad(() => getUserPackageInfo({ range, tunnelId }, { signal })),
+    nodes: () => safeLoad(() => getNodeList({ signal })),
+    tunnels: () => safeLoad(() => getTunnelList({ signal })),
+    forwards: () => safeLoad(() => getForwardList({ signal })),
+    users: () => safeLoad(() => getAllUsers({ signal })),
   };
+}
+// 注入的数据源也可能抛错，保留局部失败语义而不丢弃其他已完成的数据。
+async function readSource<T>(
+  source: () => Promise<DashboardSourceResult<T>>,
+): Promise<DashboardSourceResult<T>> {
+  try {
+    return await source();
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "请求失败" };
+  }
 }
 
 function summarize(
@@ -106,69 +91,42 @@ export async function loadDashboardSources(
   isAdmin: boolean,
   range: string,
   tunnelId?: number,
-  sources: DashboardSources = defaultSources(range, tunnelId),
+  sources?: DashboardSources,
+  signal?: AbortSignal,
 ): Promise<DashboardLoadResult> {
-  const packageResult = await safeLoad(sources.package);
-
-  const adminKeys = (["nodes", "tunnels", "forwards", "users"] as const).filter(
-    (key) => typeof sources[key] === "function",
-  );
-
-  const adminResults =
-    isAdmin && adminKeys.length > 0
-      ? await Promise.all(
-          adminKeys.map(async (key) => ({
-            key: key as DashboardSourceKey,
-            result: await safeLoad(sources[key]!),
-          })),
-        )
-      : [];
-
+  const loaders = sources ?? defaultSources(range, tunnelId, signal);
+  const [packageResult, nodes, tunnels, forwards, users] = await Promise.all([
+    readSource(loaders.package),
+    isAdmin && loaders.nodes ? readSource(loaders.nodes) : undefined,
+    isAdmin && loaders.tunnels ? readSource(loaders.tunnels) : undefined,
+    isAdmin && loaders.forwards ? readSource(loaders.forwards) : undefined,
+    isAdmin && loaders.users ? readSource(loaders.users) : undefined,
+  ]);
   const outcomes: Array<{ key: DashboardSourceKey; result: DashboardSourceResult }> = [
     { key: "package", result: packageResult },
-    ...adminResults,
   ];
-  const summary = summarize(outcomes);
-
-  const byKey = new Map(outcomes.map((item) => [item.key, item.result]));
-  const packageOk = byKey.get("package");
-  const nodesOk = byKey.get("nodes");
-  const tunnelsOk = byKey.get("tunnels");
-  const forwardsOk = byKey.get("forwards");
-  const usersOk = byKey.get("users");
-
+  if (nodes) outcomes.push({ key: "nodes", result: nodes });
+  if (tunnels) outcomes.push({ key: "tunnels", result: tunnels });
+  if (forwards) outcomes.push({ key: "forwards", result: forwards });
+  if (users) outcomes.push({ key: "users", result: users });
   return {
-    ...summary,
-    packageData: packageOk?.ok ? packageOk.data : null,
-    nodes: nodesOk?.ok ? listFromResponse(nodesOk.data) : [],
-    tunnels: tunnelsOk?.ok ? listFromResponse(tunnelsOk.data) : [],
-    forwards: forwardsOk?.ok ? listFromResponse(forwardsOk.data) : [],
-    users: usersOk?.ok ? listFromResponse(usersOk.data) : [],
+    ...summarize(outcomes),
+    packageData: packageResult.ok ? packageResult.data : null,
+    nodes: nodes?.ok ? nodes.data : [],
+    tunnels: tunnels?.ok ? tunnels.data : [],
+    forwards: forwards?.ok ? forwards.data : [],
+    users: users?.ok ? users.data : [],
   };
 }
 
 /** Test helper: merge partial source overrides. */
-export function fakeSources(
-  overrides: Partial<Record<DashboardSourceKey, () => Promise<DashboardSourceResult>>>,
-): DashboardSources {
-  const failAll = async (): Promise<DashboardSourceResult> => ({
-    ok: false,
-    error: "not provided",
-  });
-  return {
-    package: overrides.package || failAll,
-    nodes: overrides.nodes,
-    tunnels: overrides.tunnels,
-    forwards: overrides.forwards,
-    users: overrides.users,
-  };
+export function fakeSources(overrides: Partial<DashboardSources>): DashboardSources {
+  return { package: overrides.package || failSource("not provided"), ...overrides };
 }
-
-export function successSource(data: unknown = null): () => Promise<DashboardSourceResult> {
+export function successSource<T>(data: T): () => Promise<DashboardSourceResult<T>> {
   return async () => ({ ok: true, data });
 }
-
-export function failSource(error: string): () => Promise<DashboardSourceResult> {
+export function failSource(error: string): () => Promise<{ ok: false; error: string }> {
   return async () => ({ ok: false, error });
 }
 

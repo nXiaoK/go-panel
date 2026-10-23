@@ -1,15 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Network from "../src/lib/api/network";
+import { apiGet, apiPost, apiUpload, apiDownload } from "../src/lib/api/client";
 import { configureSessionForTest } from "../src/lib/session";
+import type { InternalAxiosRequestConfig } from "axios";
 
-const http = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock("axios", () => ({
-  default: {
-    create: () => http,
-    isAxiosError: (e: unknown) =>
-      typeof e === "object" && e !== null && "isAxiosError" in e && e.isAxiosError === true,
-  },
-}));
+const adapter = vi.hoisted(() => vi.fn());
+vi.mock("axios", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("axios")>();
+  const instance = actual.default.create({ adapter });
+  return { ...actual, default: { ...actual.default, create: () => instance } };
+});
 
 let navigate = vi.fn();
 beforeEach(() => {
@@ -23,11 +22,11 @@ beforeEach(() => {
 });
 
 const requests = {
-  get: (path: string) => Network.get(path),
-  post: (path: string) => Network.post(path),
-  postWithTimeout: (path: string) => Network.postWithTimeout(path, {}, 100),
-  upload: (path: string) => Network.upload(path, new FormData()),
-  download: (path: string) => Network.download(path),
+  get: (path: string) => apiGet(path),
+  post: (path: string) => apiPost(path),
+  postWithTimeout: (path: string) => apiPost(path, {}, { timeoutMs: 100 }),
+  upload: (path: string) => apiUpload(path, new FormData()),
+  download: (path: string) => apiDownload(path),
 };
 function respond(data: { code: number; msg: string }, download = false) {
   const response = download
@@ -36,8 +35,13 @@ function respond(data: { code: number; msg: string }, download = false) {
         headers: { "content-type": "application/json" },
       }
     : { data };
-  http.get.mockResolvedValue(response);
-  http.post.mockResolvedValue(response);
+  adapter.mockImplementation(async (config: InternalAxiosRequestConfig) => ({
+    ...response,
+    headers: "headers" in response ? response.headers : {},
+    status: 200,
+    statusText: "OK",
+    config,
+  }));
 }
 
 describe.each(Object.entries(requests))("%s session failures", (method, request) => {
@@ -73,8 +77,9 @@ describe.each(Object.entries(requests))("%s session failures", (method, request)
     respond({ code: 401, msg: "账号或密码错误" }, method === "download");
     await request("/user/login").catch(() => undefined);
     const error = { isAxiosError: true, response: { status: 401 }, message: "Unauthorized" };
-    http.get.mockRejectedValue(error);
-    http.post.mockRejectedValue(error);
+    adapter.mockImplementation(async (config: InternalAxiosRequestConfig) => {
+      throw { ...error, config };
+    });
     await request("/user/login").catch(() => undefined);
     expect(localStorage.getItem("token")).toBe("secret");
     expect(navigate).not.toHaveBeenCalled();
@@ -83,8 +88,9 @@ describe.each(Object.entries(requests))("%s session failures", (method, request)
     const body = { code, msg: "代理错误体" };
     const data = method === "download" ? { text: async () => JSON.stringify(body) } : body;
     const error = { isAxiosError: true, response: { status: 401, data } };
-    http.get.mockRejectedValue(error);
-    http.post.mockRejectedValue(error);
+    adapter.mockImplementation(async (config: InternalAxiosRequestConfig) => {
+      throw { ...error, config };
+    });
     await expect(request("/secure")).rejects.toThrow();
     expect(localStorage.getItem("token")).toBeNull();
     expect(localStorage.getItem("must_change_pwd")).toBeNull();
@@ -92,25 +98,29 @@ describe.each(Object.entries(requests))("%s session failures", (method, request)
   });
   it("invalidates protected HTTP 401 failures", async () => {
     const error = { isAxiosError: true, response: { status: 401 }, message: "Unauthorized" };
-    http.get.mockRejectedValue(error);
-    http.post.mockRejectedValue(error);
+    adapter.mockImplementation(async (config: InternalAxiosRequestConfig) => {
+      throw { ...error, config };
+    });
     await expect(request("/secure")).rejects.toThrow();
     expect(navigate).toHaveBeenCalledExactlyOnceWith("/login?reason=expired");
   });
 });
 it("redirects once for three simultaneous protected failures", async () => {
   respond({ code: 401, msg: "token已失效" });
-  await Promise.allSettled([Network.get("/one"), Network.post("/two"), Network.post("/three")]);
+  await Promise.allSettled([apiGet("/one"), apiPost("/two"), apiPost("/three")]);
   expect(navigate).toHaveBeenCalledTimes(1);
 });
 it("classifies non-2xx JSON download bodies", async () => {
-  http.get.mockRejectedValue({
-    isAxiosError: true,
-    response: {
-      status: 403,
-      data: { text: async () => JSON.stringify({ code: 4032, msg: "改密" }) },
-    },
+  adapter.mockImplementation(async (config: InternalAxiosRequestConfig) => {
+    throw {
+      config,
+      isAxiosError: true,
+      response: {
+        status: 403,
+        data: { text: async () => JSON.stringify({ code: 4032, msg: "改密" }) },
+      },
+    };
   });
-  await expect(Network.download("/secure")).rejects.toThrow();
+  await expect(apiDownload("/secure")).rejects.toThrow();
   expect(navigate).toHaveBeenCalledExactlyOnceWith("/profile?forcePassword=1");
 });

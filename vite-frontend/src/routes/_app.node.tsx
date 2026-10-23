@@ -1,3 +1,5 @@
+import { errorMessage } from "@/lib/api/client";
+import type { NodeWrite } from "@/lib/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -55,7 +57,7 @@ import {
 } from "@/lib/api";
 import { isMissingPanelAddressError } from "@/lib/node-command";
 import { reconnectDelay } from "@/lib/reconnect";
-import { listData, queries, unwrap } from "@/lib/api/query";
+import { queries } from "@/lib/api/query";
 import { usePreferences } from "@/hooks/use-preferences";
 import { invalidateGlobalSearch } from "@/lib/search-cache";
 import type { Node, NodeStatusCheck, NodeSystemInfo } from "@/lib/types";
@@ -112,7 +114,7 @@ function formatUptime(seconds: number): string {
   return `${m}分钟`;
 }
 
-function numeric(obj: any, ...keys: string[]): number {
+function numeric(obj: Record<string, unknown>, ...keys: string[]): number {
   for (const k of keys) {
     const v = obj?.[k];
     if (v === undefined || v === null || v === "") continue;
@@ -124,7 +126,7 @@ function numeric(obj: any, ...keys: string[]): number {
 
 function buildWsUrl(): string {
   const stored = window.localStorage.getItem("panel_address");
-  const env = (import.meta as any).env?.VITE_API_BASE as string | undefined;
+  const env = import.meta.env.VITE_API_BASE as string | undefined;
   const base = stored || env || window.location.origin;
   const url = new URL("/system-info", base);
   url.searchParams.set("type", "0");
@@ -185,8 +187,8 @@ function NodePage() {
   /* ---- load ---- */
   const nodesQuery = useQuery({
     queryKey: queries.node.runtimeList(),
-    queryFn: async () => {
-      const list = await getNodeList().then(listData<Node>);
+    queryFn: async ({ signal }) => {
+      const list = await getNodeList({ signal });
       return list.map((n) => ({
         ...n,
         connectionStatus: (n.status === 1 ? "online" : "offline") as "online" | "offline",
@@ -203,8 +205,8 @@ function NodePage() {
   }, [queryClient]);
 
   const saveMutation = useMutation({
-    mutationFn: ({ payload, isEdit }: { payload: Record<string, unknown>; isEdit: boolean }) =>
-      (isEdit ? updateNode(payload) : createNode(payload)).then(unwrap),
+    mutationFn: ({ payload, isEdit }: { payload: NodeWrite; isEdit: boolean }) =>
+      isEdit ? updateNode(payload) : createNode(payload),
     onSuccess: (_data, { isEdit }) => {
       invalidateGlobalSearch("node");
       toast.success(isEdit ? "已更新" : "已创建");
@@ -218,7 +220,7 @@ function NodePage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => deleteNode(id).then(unwrap),
+    mutationFn: (id: number) => deleteNode(id),
     onSuccess: () => {
       invalidateGlobalSearch("node");
       toast.success("已删除");
@@ -250,7 +252,7 @@ function NodePage() {
   }, []);
 
   const handleMessage = useCallback(
-    (data: any) => {
+    (data: { id?: number; type?: string; data?: unknown }) => {
       const { id, type, data: payload } = data || {};
       if (!id) return;
       const patchNodes = (fn: (n: Node) => Node) =>
@@ -274,10 +276,11 @@ function NodePage() {
         patchNodes((n) => {
           if (n.id != id) return n;
           const info = typeof payload === "string" ? safeParse(payload) : payload;
-          if (!info) return n;
-          const upload = numeric(info, "bytes_transmitted", "bytesTransmitted");
-          const download = numeric(info, "bytes_received", "bytesReceived");
-          const uptime = numeric(info, "uptime");
+          if (!info || typeof info !== "object") return n;
+          const metrics = info as Record<string, unknown>;
+          const upload = numeric(metrics, "bytes_transmitted", "bytesTransmitted");
+          const download = numeric(metrics, "bytes_received", "bytesReceived");
+          const uptime = numeric(metrics, "uptime");
           let uploadSpeed = 0;
           let downloadSpeed = 0;
           if (n.systemInfo?.uptime) {
@@ -291,8 +294,8 @@ function NodePage() {
             }
           }
           const next: NodeSystemInfo = {
-            cpuUsage: numeric(info, "cpu_usage", "cpuUsage"),
-            memoryUsage: numeric(info, "memory_usage", "memoryUsage"),
+            cpuUsage: numeric(metrics, "cpu_usage", "cpuUsage"),
+            memoryUsage: numeric(metrics, "memory_usage", "memoryUsage"),
             uploadTraffic: upload,
             downloadTraffic: download,
             uploadSpeed,
@@ -443,7 +446,7 @@ function NodePage() {
       .map((s) => s.trim())
       .filter(Boolean)
       .join(",");
-    const payload: any = {
+    const payload: NodeWrite = {
       name: form.name.trim(),
       ip,
       serverIp: form.serverIp.trim(),
@@ -468,24 +471,8 @@ function NodePage() {
     setCopyBusy(n.id);
     const api = kind === "install" ? getNodeInstallCommand : getNodeUninstallCommand;
     try {
-      const res = await api(n.id, n.forwardMode || "gost");
-      if (res.code !== 0 || !res.data) {
-        const msg = res.msg || "获取命令失败";
-        if (isMissingPanelAddressError(msg)) {
-          toast.error("请先在系统配置中设置面板公网地址", {
-            action: {
-              label: "去设置",
-              onClick: () => navigate({ to: "/config" }),
-            },
-          });
-        } else {
-          toast.error(msg);
-        }
-        return;
-      }
-
+      const commandText = await api(n.id, n.forwardMode || "gost");
       const label = kind === "install" ? "安装命令" : "卸载命令";
-      const commandText = String(res.data ?? "");
       if (typeof navigator !== "undefined" && navigator.clipboard) {
         try {
           await navigator.clipboard.writeText(commandText);
@@ -498,7 +485,12 @@ function NodePage() {
         openCommandModal(label, commandText, n.name);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "获取命令失败");
+      const msg = errorMessage(error);
+      if (isMissingPanelAddressError(msg)) {
+        toast.error("请先在系统配置中设置面板公网地址", {
+          action: { label: "去设置", onClick: () => navigate({ to: "/config" }) },
+        });
+      } else toast.error(msg);
     } finally {
       setCopyBusy(null);
     }
@@ -526,11 +518,7 @@ function NodePage() {
     if (!confirm(`确认升级节点「${n.name}」到 ${latest}？节点会自动重启并短暂离线。`)) return;
     setUpgradeBusy(n.id);
     try {
-      const res = await upgradeNode(n.id);
-      if (res.code !== 0) {
-        toast.error(res.msg || "升级失败");
-        return;
-      }
+      await upgradeNode(n.id);
       toast.success("升级已触发，节点稍后会自动重连");
       window.setTimeout(refresh, 3000);
     } catch (error) {
@@ -547,12 +535,7 @@ function NodePage() {
     setDiagResult(null);
     setDiagNode(n);
     try {
-      const res = await checkNodeStatus(n.id);
-      if (res.code !== 0) {
-        toast.error(res.msg || "检测失败");
-        return;
-      }
-      setDiagResult(res.data);
+      setDiagResult(await checkNodeStatus(n.id));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "检测失败");
     } finally {

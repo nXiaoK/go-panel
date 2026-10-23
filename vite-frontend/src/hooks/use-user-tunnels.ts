@@ -1,11 +1,5 @@
 import { useCallback, useRef, useState } from "react";
 
-type LoaderResponse<Row> = {
-  code: number;
-  msg?: string;
-  data?: Row[] | { records?: Row[] } | null;
-};
-
 export type UseUserTunnelsResult<Row, User extends { id: number }> = {
   /** Open the manager for one user; aborts and discards any previous load. */
   open: (user: User) => void;
@@ -29,7 +23,7 @@ export type UseUserTunnelsResult<Row, User extends { id: number }> = {
  * are blocked until ownership is proven).
  */
 export function useUserTunnels<Row extends { userId?: number }, User extends { id: number }>(
-  loader: (userID: number) => Promise<LoaderResponse<Row>>,
+  loader: (userID: number) => Promise<Row[]>,
   onError?: (message: string) => void,
 ): UseUserTunnelsResult<Row, User> {
   const [rows, setRows] = useState<Row[]>([]);
@@ -48,18 +42,12 @@ export function useUserTunnels<Row extends { userId?: number }, User extends { i
       loader(user.id)
         .then((res) => {
           if (generation.current !== requestGeneration) return; // superseded
-          if (res.code === 0) {
-            const d = res.data as Row[] | { records?: Row[] } | null | undefined;
-            const next: Row[] = Array.isArray(d) ? d : (d?.records ?? []);
-            setRows(next);
-            setOwnerUserID(user.id);
-          } else {
-            onError?.(res.msg || "获取隧道权限失败");
-          }
+          setRows(res);
+          setOwnerUserID(user.id);
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           if (generation.current !== requestGeneration) return;
-          onError?.("获取隧道权限失败");
+          onError?.(error instanceof Error ? error.message : "获取隧道权限失败");
         })
         .finally(() => {
           if (generation.current !== requestGeneration) return;
