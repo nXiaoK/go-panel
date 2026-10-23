@@ -152,6 +152,19 @@ describe("限速策略页面", () => {
       undefined,
     );
   });
+  it("原始大整数字符串超出浏览器精度时不静默舍入提交", async () => {
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "编辑限速策略" }));
+    const speed = screen.getByLabelText("限速速率 (Mbps)");
+    fireEvent.change(speed, { target: { value: "9007199254740993" } });
+    expect((speed as HTMLInputElement).value).toBe("9007199254740993");
+    fireEvent.click(screen.getByRole("button", { name: "保存策略" }));
+    expect(screen.getByText("速率超出浏览器可精确表示范围")).toBeTruthy();
+    expect(speed.getAttribute("aria-invalid")).toBe("true");
+    expect(vi.mocked(apiPost).mock.calls.some(([path]) => path === "/speed-limit/update")).toBe(
+      false,
+    );
+  });
   it("删除必须确认，取消不请求，后端引用拒绝原因原样显示", async () => {
     const onError = vi.spyOn(notify, "error");
     const original = vi.mocked(apiPost).getMockImplementation()!;

@@ -104,8 +104,10 @@ export function LimitPage() {
     if (!selected) next.tunnelId = "请选择有效的关联隧道";
     // 后端 SpeedLimitDto 使用 int 且 min=1，不额外设置未经后端定义的最大速率。
     const speed = Number(form.speed);
-    if (!form.speed.trim() || !Number.isSafeInteger(speed) || speed < 1)
+    if (!form.speed.trim() || !Number.isInteger(speed) || speed < 1)
       next.speed = "速率必须是大于或等于 1 的整数";
+    // JSON number 无法精确表达超过安全整数范围的输入，拒绝静默舍入；这不是业务速率上限。
+    else if (!Number.isSafeInteger(speed)) next.speed = "速率超出浏览器可精确表示范围";
     setErrors(next);
     setSaveError(undefined);
     if (Object.keys(next).length || !selected) return;
