@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { importTs } from "./import-ts.mjs";
 
 const { buildGlobalSearchItems, filterGlobalSearchItems, normalizeApiList } = await importTs(
-  new URL("../src/lib/global-search.ts", import.meta.url),
+  new URL("../src/features/search/model.ts", import.meta.url),
 );
 
 describe("global search helpers", () => {

@@ -13,8 +13,11 @@ async function sourceUrl(path) {
       verbatimModuleSyntax: false,
     },
   }).outputText;
-  for (const match of compiled.matchAll(/(?:from\s*|import\s*)(["'])(\.[^"']+)\1/g)) {
-    const target = new URL(match[2].endsWith(".ts") ? match[2] : `${match[2]}.ts`, path);
+  for (const match of compiled.matchAll(/(?:from\s*|import\s*)(["'])((?:\.|@\/)[^"']+)\1/g)) {
+    const relative = match[2].startsWith("@/")
+      ? new URL(`../src/${match[2].slice(2)}`, import.meta.url).href
+      : match[2];
+    const target = new URL(relative.endsWith(".ts") ? relative : `${relative}.ts`, path);
     compiled = compiled.replace(
       match[1] + match[2] + match[1],
       JSON.stringify(await sourceUrl(target)),

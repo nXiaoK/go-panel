@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { canReorderForwards, forwardOrderIDs, moveForwardByID } from "../src/lib/forward-order";
+import {
+  canReorderForwards,
+  forwardOrderIDs,
+  moveForwardByID,
+} from "../src/features/forward/order";
 
 describe("canReorderForwards", () => {
   it("disables sorting for any active filter", () => {

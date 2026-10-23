@@ -24,7 +24,7 @@ const {
   keyConfigNames,
   readOnlyConfigNames,
   resolveInsecureDownloadNoticeState,
-} = await importTs(new URL("../src/lib/config-items.ts", import.meta.url));
+} = await importTs(new URL("../src/features/config/model.ts", import.meta.url));
 
 describe("normalizeConfigItems", () => {
   it("adds important site settings even when backend config list is empty", () => {

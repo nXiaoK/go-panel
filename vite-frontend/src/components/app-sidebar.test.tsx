@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -35,7 +36,7 @@ vi.mock("@/components/ui/sidebar", () => {
     useSidebar: () => ({ state: "expanded" }),
   };
 });
-vi.mock("@/components/system-update-dialog", () => ({
+vi.mock("@/features/system/components/system-update-dialog", () => ({
   SystemUpdateDialog: ({ open }: { open: boolean }) => open && <div>管理员升级提示</div>,
 }));
 
@@ -53,7 +54,9 @@ const update: PanelUpdateStatus = {
   autoUpdateConfigured: false,
 };
 
+let client: QueryClient;
 beforeEach(() => {
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.useFakeTimers();
   window.localStorage.clear();
   configureSessionForTest({ storage: window.localStorage, navigate: vi.fn() });
@@ -67,15 +70,24 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  client.clear();
   vi.useRealTimers();
   vi.clearAllMocks();
 });
 
 async function showSidebar(role: number, forcePassword = false) {
   window.localStorage.setItem("role_id", String(role));
+  window.localStorage.setItem("token", "test-token");
   if (forcePassword) window.localStorage.setItem("must_change_pwd", "1");
   await act(async () => {
-    render(<AppSidebar />);
+    render(
+      <QueryClientProvider client={client}>
+        <AppSidebar />
+      </QueryClientProvider>,
+    );
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
   });
 }
 

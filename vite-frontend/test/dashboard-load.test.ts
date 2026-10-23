@@ -17,7 +17,7 @@ import {
   healthBadge,
   loadDashboardSources,
   successSource,
-} from "../src/lib/dashboard-load";
+} from "../src/features/dashboard/model";
 
 describe("loadDashboardSources", () => {
   beforeEach(() => {

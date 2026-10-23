@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { loadSortedForwards } from "../src/lib/forward-list";
+import { loadSortedForwards } from "../src/features/forward/list";
 
 describe("loadSortedForwards", () => {
   beforeEach(() => window.localStorage.clear());

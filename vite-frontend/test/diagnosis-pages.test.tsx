@@ -4,7 +4,7 @@ import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { apiPost } from "../src/lib/api/client";
 import { ConfirmProvider } from "../src/components/patterns/confirm-dialog";
-import { ForwardPage } from "../src/routes/_app.forward";
+import { ForwardPage } from "../src/features/forward/page";
 import { Route as TunnelRoute } from "../src/routes/_app.tunnel";
 
 vi.mock("../src/lib/api/client", async (importOriginal) => ({
@@ -48,6 +48,7 @@ describe("diagnosis result displays", () => {
     "renders %s advisory failure as a warning without failing the link",
     async (kind) => {
       localStorage.setItem("role_id", "0");
+      localStorage.setItem("token", "test-token");
       vi.spyOn(TunnelRoute, "useSearch").mockReturnValue({ action: undefined });
       post.mockImplementation(async (path) => {
         if (path.endsWith("/diagnose"))

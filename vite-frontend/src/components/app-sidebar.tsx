@@ -1,7 +1,9 @@
+import { useConfigs } from "@/features/config/queries";
+import { useSystemStatus } from "@/features/system/queries";
 import { useSession } from "@/hooks/use-session";
-import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { LogOut, RefreshCw, Zap } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   Sidebar,
@@ -16,13 +18,12 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { getConfigs, getSystemStatus } from "@/lib/api";
+import { SystemUpdateDialog } from "@/features/system/components/system-update-dialog";
 import { checkPanelUpdate, getSystemVersion } from "@/lib/api";
-import { SystemUpdateDialog } from "@/components/system-update-dialog";
-import { appNameFromConfigs, getCachedAppName, setCachedAppName } from "@/lib/site-config";
 import { formatDuration } from "@/lib/format";
 import { navigationForRole } from "@/lib/navigation";
 import { clearSession } from "@/lib/session";
+import { appNameFromConfigs, getCachedAppName, setCachedAppName } from "@/lib/site-config";
 import type { BuildInfo, PanelUpdateStatus } from "@/lib/types";
 import { displayVersion, shouldPromptForUpdate } from "@/lib/update";
 
@@ -33,7 +34,9 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const [appName, setAppName] = useState(getCachedAppName);
-  const [systemOnline, setSystemOnline] = useState(true);
+  const configsQuery = useConfigs();
+  const statusQuery = useSystemStatus();
+  const systemOnline = !statusQuery.isError;
   const [serverStartedAt, setServerStartedAt] = useState<number | null>(null);
   const [uptimeSeconds, setUptimeSeconds] = useState(0);
   const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null);
@@ -56,22 +59,12 @@ export function AppSidebar() {
 
   useEffect(() => {
     if (forcePassword) return;
-    let alive = true;
     const onSiteConfig = (event: Event) => {
       const next = (event as CustomEvent<{ appName?: string }>).detail?.appName;
       setAppName(next || getCachedAppName());
     };
     window.addEventListener("site-config-updated", onSiteConfig);
-    getConfigs()
-      .then((res) => {
-        if (!alive) return;
-        const next = appNameFromConfigs(res);
-        setCachedAppName(next);
-        setAppName(next);
-      })
-      .catch(() => undefined);
     return () => {
-      alive = false;
       window.removeEventListener("site-config-updated", onSiteConfig);
     };
   }, [forcePassword]);
@@ -106,23 +99,17 @@ export function AppSidebar() {
   }, [administrator, forcePassword]);
 
   useEffect(() => {
-    if (forcePassword) return;
-    let alive = true;
-    getSystemStatus()
-      .then((res) => {
-        if (!alive) return;
-        setSystemOnline(true);
-        const startedAt = Number(res.startedAt || 0);
-        setServerStartedAt(startedAt > 0 ? startedAt : null);
-        setUptimeSeconds(Number(res.uptimeSeconds || 0));
-      })
-      .catch(() => {
-        if (alive) setSystemOnline(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [forcePassword]);
+    if (forcePassword || !configsQuery.data) return;
+    const next = appNameFromConfigs(configsQuery.data);
+    setCachedAppName(next);
+    setAppName(next);
+  }, [forcePassword, configsQuery.data]);
+  useEffect(() => {
+    if (forcePassword || !statusQuery.data) return;
+    const startedAt = Number(statusQuery.data.startedAt || 0);
+    setServerStartedAt(startedAt > 0 ? startedAt : null);
+    setUptimeSeconds(Number(statusQuery.data.uptimeSeconds || 0));
+  }, [forcePassword, statusQuery.data]);
 
   useEffect(() => {
     if (!serverStartedAt) return;

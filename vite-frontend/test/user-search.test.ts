@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { filterUsers } from "../src/lib/user-search";
+import { filterUsers } from "../src/features/user/model";
 
 describe("filterUsers", () => {
   it("filters locally by username without requesting", () => {

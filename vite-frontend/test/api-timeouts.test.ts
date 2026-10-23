@@ -82,6 +82,13 @@ describe("long request deadlines", () => {
     );
   });
 
+  it("waits longer than the backend WebSocket upgrade command even with a shorter caller timeout", async () => {
+    await upgradeNode(10, { timeoutMs: 1 });
+    expect(adapter).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "/node/upgrade", timeout: 100_000 }),
+    );
+  });
+
   it("uses ten minutes for backup download and restore without changing generic defaults", async () => {
     await downloadSiteBackup();
     const file = new File(["backup"], "backup.db");

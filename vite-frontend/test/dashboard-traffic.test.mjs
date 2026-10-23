@@ -11,7 +11,7 @@ const {
   trafficTrendEmptyDescription,
   trafficTunnelLabel,
   trafficTunnelRequestId,
-} = await importTs(new URL("../src/lib/dashboard-traffic.ts", import.meta.url));
+} = await importTs(new URL("../src/features/dashboard/traffic.ts", import.meta.url));
 
 const gb = 1024 ** 3;
 
