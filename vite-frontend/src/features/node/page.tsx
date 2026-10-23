@@ -392,7 +392,7 @@ export function NodePage() {
   };
   if (!isAdmin) return <EmptyState title="无权访问节点" description="节点管理仅对管理员开放" />;
   return (
-    <div className="min-w-0 space-y-6">
+    <div className="min-w-0 space-y-6 [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
       <PageHeader
         title="节点"
         description="管理节点与实时运行状态"
