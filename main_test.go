@@ -7,14 +7,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/iotest"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 
 	"github.com/nXiaoK/go-panel/internal/config"
+	"github.com/nXiaoK/go-panel/internal/model"
 	"github.com/nXiaoK/go-panel/internal/selfupdate/protocol"
 )
 
@@ -379,5 +383,106 @@ func TestWaitForStopMapsRestartRequestsToExitCode(t *testing.T) {
 	cancel()
 	if code := waitForStop(ctx, make(chan struct{})); code != 0 {
 		t.Fatalf("signal exit=%d, want 0", code)
+	}
+}
+
+func copyTestDatabase(t *testing.T, source, target string) {
+	t.Helper()
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunMigrateCheckReportsSingleJSONLine(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "panel.db")
+	if err := model.Init(source); err != nil {
+		t.Fatal(err)
+	}
+	if err := model.Close(); err != nil {
+		t.Fatal(err)
+	}
+	copyPath := filepath.Join(dir, "migrate-check.db")
+	copyTestDatabase(t, source, copyPath)
+	t.Setenv("DB_PATH", source)
+
+	var stdout, stderr strings.Builder
+	if code := runMain([]string{"migrate-check", "--db", copyPath, "--json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("stdout must contain exactly one JSON line, got %q", stdout.String())
+	}
+	var output migrateCheckOutput
+	if err := json.Unmarshal([]byte(lines[0]), &output); err != nil || !output.OK || output.SchemaEpoch != model.SchemaEpoch {
+		t.Fatalf("output=%+v err=%v", output, err)
+	}
+}
+
+func TestRunMigrateCheckRefusesLiveDatabaseAndMissingFiles(t *testing.T) {
+	dir := t.TempDir()
+	live := filepath.Join(dir, "panel.db")
+	if err := os.WriteFile(live, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DB_PATH", live)
+	var stdout, stderr strings.Builder
+	if code := runMain([]string{"migrate-check", "--db", live, "--json"}, &stdout, &stderr); code != 1 || !strings.Contains(stdout.String(), "只能对副本演练") {
+		t.Fatalf("live database exit=%d stdout=%s", code, stdout.String())
+	}
+	missing := filepath.Join(dir, "missing.db")
+	stdout.Reset()
+	if code := runMain([]string{"migrate-check", "--db", missing, "--json"}, &stdout, &stderr); code != 1 {
+		t.Fatalf("missing copy exit=%d", code)
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Fatal("migrate-check must never create a database")
+	}
+	if code := runMain([]string{"migrate-check"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("missing --db exit=%d, want 2", code)
+	}
+}
+
+func TestRunMigrateCheckExitsSchemaTooNew(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "newer.db")
+	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		"CREATE TABLE schema_meta (`key` TEXT PRIMARY KEY, `value` TEXT NOT NULL DEFAULT '')",
+		"INSERT INTO schema_meta (`key`, `value`) VALUES ('schema_epoch', '99'), ('min_reader_epoch', '99')",
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
+	var stdout, stderr strings.Builder
+	if code := runMain([]string{"migrate-check", "--db", path, "--json"}, &stdout, &stderr); code != protocol.ExitSchemaTooNew {
+		t.Fatalf("exit=%d stdout=%s", code, stdout.String())
+	}
+}
+
+func TestSchemaTooNewExitExplainsRecovery(t *testing.T) {
+	var out strings.Builder
+	code, handled := schemaTooNewExit(&model.SchemaTooNewError{DBSchemaEpoch: 3, DBMinReaderEpoch: 3, LastWriterVersion: "v0.5.0", BinarySchemaEpoch: 1}, "/app/data/flux-panel.db", &out)
+	if !handled || code != protocol.ExitSchemaTooNew {
+		t.Fatalf("code=%d handled=%v", code, handled)
+	}
+	for _, want := range []string{"v0.5.0", "/app/data/backups", "pre-update-"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("guidance is missing %q: %s", want, out.String())
+		}
+	}
+	if _, handled := schemaTooNewExit(errors.New("other"), "/app/data/flux-panel.db", &out); handled {
+		t.Fatal("unrelated errors must keep the fatal startup path")
 	}
 }
