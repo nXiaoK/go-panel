@@ -28,7 +28,7 @@ const alice = {
   status: 1,
   flow: 100,
   num: 10,
-  expTime: new Date("2030-12-31").getTime(),
+  expTime: new Date("2030-12-31T13:24:56.789").getTime(),
   flowResetTime: 1,
 };
 const permission = {
@@ -395,4 +395,61 @@ it("授权单列新增与行内配额保存发送当前用户和真实授权id",
         ),
     ).toBe(true),
   );
+});
+
+it("用户仅改配额保留原毫秒到期时刻，主动改日期才转换到日末", async () => {
+  await show();
+  const detail = await openDetail();
+  const fields = within(screen.getByRole("tabpanel", { name: "基本信息" }));
+  fireEvent.change(fields.getByLabelText(/流量配额/), { target: { value: "125" } });
+  fireEvent.click(within(detail).getByRole("button", { name: "保存修改" }));
+  await waitFor(() => {
+    const writes = vi.mocked(apiPost).mock.calls.filter(([path]) => path === "/user/update");
+    expect(writes).toHaveLength(1);
+    expect(writes[0][1]).toMatchObject({ id: alice.id, flow: 125, expTime: alice.expTime });
+  });
+  await waitFor(() =>
+    expect(within(detail).getByRole("button", { name: "保存修改" })).toBeEnabled(),
+  );
+  fireEvent.change(fields.getByLabelText(/到期日期/, { selector: "input" }), {
+    target: { value: "2031-01-02" },
+  });
+  fireEvent.click(within(detail).getByRole("button", { name: "保存修改" }));
+  await waitFor(() => {
+    const writes = vi.mocked(apiPost).mock.calls.filter(([path]) => path === "/user/update");
+    expect(writes).toHaveLength(2);
+    expect(writes[1][1]).toMatchObject({ expTime: new Date("2031-01-02T23:59:59").getTime() });
+  });
+});
+
+it("授权仅改配额保留重取后的精确到期时刻，主动改日期才转换到日末", async () => {
+  await show();
+  await openPermissions();
+  fireEvent.click(screen.getByRole("button", { name: "编辑配额" }));
+  const edit = screen.getByRole("region", { name: "编辑授权配额" });
+  const refreshedExpiry = new Date("2031-01-01T09:12:34.567").getTime();
+  await act(async () => {
+    client.setQueryData(resourceKeys.user.tunnels(alice.id), [
+      { ...permission, expTime: refreshedExpiry },
+    ]);
+  });
+  fireEvent.change(within(edit).getByLabelText(/流量配额/), { target: { value: "35" } });
+  fireEvent.click(within(edit).getByRole("button", { name: "保存授权配额" }));
+  await waitFor(() => {
+    const writes = vi.mocked(apiPost).mock.calls.filter(([path]) => path === "/tunnel/user/update");
+    expect(writes).toHaveLength(1);
+    expect(writes[0][1]).toMatchObject({ id: permission.id, flow: 35, expTime: refreshedExpiry });
+  });
+  await waitFor(() => expect(screen.getByRole("button", { name: "编辑配额" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "编辑配额" }));
+  const nextEdit = screen.getByRole("region", { name: "编辑授权配额" });
+  fireEvent.change(within(nextEdit).getByLabelText(/到期日期/, { selector: "input" }), {
+    target: { value: "2031-02-03" },
+  });
+  fireEvent.click(within(nextEdit).getByRole("button", { name: "保存授权配额" }));
+  await waitFor(() => {
+    const writes = vi.mocked(apiPost).mock.calls.filter(([path]) => path === "/tunnel/user/update");
+    expect(writes).toHaveLength(2);
+    expect(writes[1][1]).toMatchObject({ expTime: new Date("2031-02-03T23:59:59").getTime() });
+  });
 });

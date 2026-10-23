@@ -19,6 +19,7 @@ import {
   dateTimestamp,
   expiryState,
   quotaValues,
+  toDateInput,
   validateQuota,
   type FieldErrors,
   type UserValues,
@@ -98,7 +99,11 @@ export function UserDetailSheet({ user, onClose }: { user: User | null; onClose:
         status: values.status ? 1 : 0,
         flow: Number(values.flow),
         num: Number(values.num),
-        expTime: dateTimestamp(values.expiry)!,
+        // 日期未变时保留原始毫秒时间；仅新建或主动改日期沿用日末失效策略。
+        expTime:
+          active?.expTime && values.expiry === toDateInput(active.expTime)
+            ? active.expTime
+            : dateTimestamp(values.expiry)!,
         flowResetTime: Number(values.reset),
       };
       if (active) {

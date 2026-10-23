@@ -60,7 +60,7 @@ export function QuotaFields({
           htmlFor={`${prefix}-expiry`}
           required
           error={errors.expiry}
-          hint="到期日当天 23:59:59 失效"
+          hint="选择新日期时于当天 23:59:59 失效；未改日期保留原到期时刻"
         >
           <Input
             type="date"

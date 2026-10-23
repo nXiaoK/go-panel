@@ -67,6 +67,7 @@ export function UserPermissions({
   const [values, setValues] = useState<QuotaValues>(quotaValues());
   const [tunnelId, setTunnelId] = useState("");
   const [editing, setEditing] = useState<number | null>(null);
+  const editingExpiry = useRef("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -128,6 +129,7 @@ export function UserPermissions({
   }
   function resetForm() {
     setEditing(null);
+    editingExpiry.current = "";
     setTunnelId("");
     setValues(quotaValues());
     setErrors({});
@@ -188,7 +190,11 @@ export function UserPermissions({
     const payload = {
       flow: Number(values.flow),
       num: Number(values.num),
-      expTime: dateTimestamp(values.expiry)!,
+      // 未改日期时保留当前成功缓存中的精确到期时刻，重取不应被旧表单日期覆盖。
+      expTime:
+        current && values.expiry === editingExpiry.current
+          ? (current.expTime ?? 0)
+          : dateTimestamp(values.expiry)!,
       flowResetTime: Number(values.reset),
       speedId: values.speedId === "none" ? null : Number(values.speedId),
     };
@@ -311,7 +317,9 @@ export function UserPermissions({
                   onClick={() => {
                     setEditing(row.id);
                     setTunnelId(String(row.tunnelId));
-                    setValues(quotaValues(row));
+                    const initial = quotaValues(row);
+                    editingExpiry.current = initial.expiry;
+                    setValues(initial);
                     setErrors({});
                   }}
                 >

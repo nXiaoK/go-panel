@@ -1,5 +1,6 @@
 import type { User, UserTunnel } from "@/lib/types";
 
+// URL 默认显示全部状态、全部到期范围，并按用户名升序；不带筛选的旧书签保持全量列表。
 export const userSearchDefaults = {
   q: "",
   status: "all",
@@ -74,10 +75,14 @@ export type UserValues = QuotaValues & { user: string; pwd: string; status: bool
 export type FieldErrors = Partial<Record<keyof UserValues | "tunnelId", string>>;
 export function quotaValues(row?: User | UserTunnel): QuotaValues {
   return {
+    // 新建默认 100 GB 与 10 条转发；已有配额（包括 0）原样保留，0 GB 会阻止转发。
     flow: String(row?.flow ?? 100),
     num: String(row?.num ?? 10),
+    // 新建到期日期留空，必须由管理员主动选择；不会默认延长现有账号或授权。
     expiry: toDateInput(row?.expTime),
+    // 重置日默认 0（不重置），1–31 表示每月对应日期重置流量。
     reset: String(row?.flowResetTime ?? 0),
+    // none 在提交时映射为 null（不限速）；只有选择当前隧道的规则才施加带宽上限。
     speedId: row && "speedId" in row && row.speedId ? String(row.speedId) : "none",
   };
 }
