@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/hooks/use-session";
 import { buildPanelWsUrl } from "@/lib/panel-ws";
 import { resourceKeys } from "@/lib/query-keys";
@@ -128,14 +128,25 @@ subscribeSession(() => {
     manager.reset();
 });
 
+// 相同 QueryClient 的多个消费者复用失效回调，单个上线事件只触发一次列表刷新。
+const invalidators = new WeakMap<QueryClient, () => void>();
+function nodeInvalidator(client: QueryClient) {
+  let callback = invalidators.get(client);
+  if (!callback) {
+    callback = () => {
+      void client.invalidateQueries({ queryKey: resourceKeys.node.list() });
+    };
+    invalidators.set(client, callback);
+  }
+  return callback;
+}
+
 /** 节点页和管理员控制台共用一条连接；最后一个消费者卸载时关闭，身份变化时清空指标。 */
 export function useNodeSocket(enabled = true) {
   const { token, isAdmin, mustChangePassword } = useSession();
   const client = useQueryClient();
   useEffect(() => {
     if (!enabled || !token || !isAdmin || mustChangePassword) return;
-    return manager.acquire(token, () => {
-      void client.invalidateQueries({ queryKey: resourceKeys.node.list() });
-    });
+    return manager.acquire(token, nodeInvalidator(client));
   }, [client, enabled, token, isAdmin, mustChangePassword]);
 }

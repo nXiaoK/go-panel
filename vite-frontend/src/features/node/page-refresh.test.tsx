@@ -19,6 +19,7 @@ vi.mock("@/lib/api/client", () => ({
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-router")>()),
   useNavigate: () => vi.fn(),
+  useSearch: () => ({}),
 }));
 
 const post = vi.mocked(apiPost);

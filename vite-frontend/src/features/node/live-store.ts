@@ -5,7 +5,7 @@ export type NodeLive = {
   info: NodeSystemInfo | null;
   updatedAt: number;
 };
-export type NodeLiveMessage = { id?: number; type?: string; data?: unknown };
+export type NodeLiveMessage = { id?: string | number; type?: string; data?: unknown };
 
 function numeric(metrics: Record<string, unknown>, ...keys: string[]): number {
   for (const key of keys) {
@@ -20,10 +20,12 @@ function numeric(metrics: Record<string, unknown>, ...keys: string[]): number {
 /** 独立于 REST 缓存与 React；每次写入生成稳定快照，供 useSyncExternalStore 订阅。 */
 export function createNodeLiveStore() {
   let snapshot: ReadonlyMap<number, NodeLive> = new Map();
+  let connections: ReadonlyMap<number, NodeLive["connection"]> = new Map();
   const listeners = new Set<() => void>();
   const publish = () => listeners.forEach((listener) => listener());
   return {
     getSnapshot: () => snapshot,
+    getConnectionsSnapshot: () => connections,
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {
@@ -33,10 +35,17 @@ export function createNodeLiveStore() {
     clear() {
       if (!snapshot.size) return;
       snapshot = new Map();
+      connections = new Map();
       publish();
     },
     receive(message: NodeLiveMessage, now = Date.now()) {
-      const { id, type, data } = message;
+      const { id: rawId, type, data } = message;
+      const id =
+        typeof rawId === "string" && /^\d+$/.test(rawId)
+          ? Number(rawId)
+          : typeof rawId === "number"
+            ? rawId
+            : NaN;
       if (!Number.isSafeInteger(id) || !id || id < 1) return;
       const previous = snapshot.get(id);
       let next: NodeLive;
@@ -85,6 +94,8 @@ export function createNodeLiveStore() {
         };
       } else return;
       snapshot = new Map(snapshot).set(id, next);
+      if (connections.get(id) !== next.connection)
+        connections = new Map(connections).set(id, next.connection);
       publish();
     },
   };

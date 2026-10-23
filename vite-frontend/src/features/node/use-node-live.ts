@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { nodeLiveStore } from "./live-store";
 const emptySnapshot = new Map<never, never>();
 export function useNodeLives() {
@@ -8,6 +8,14 @@ export function useNodeLives() {
     () => emptySnapshot,
   );
 }
+export function useNodeConnections() {
+  return useSyncExternalStore(
+    nodeLiveStore.subscribe,
+    nodeLiveStore.getConnectionsSnapshot,
+    () => emptySnapshot,
+  );
+}
 export function useNodeLive(id: number) {
-  return useNodeLives().get(id);
+  const getSnapshot = useCallback(() => nodeLiveStore.getSnapshot().get(id), [id]);
+  return useSyncExternalStore(nodeLiveStore.subscribe, getSnapshot, () => undefined);
 }
