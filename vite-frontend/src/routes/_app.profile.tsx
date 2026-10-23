@@ -1,10 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ProfilePage } from "@/features/account/page";
-
+import { createFileRoute, redirect } from "@tanstack/react-router";
 export const Route = createFileRoute("/_app/profile")({
-  // forcePassword=1 仅开启改密引导；默认不强制，真实权限始终由后端与持久会话标记判定。
-  validateSearch: (search: Record<string, unknown>): { forcePassword?: number } =>
-    search.forcePassword === 1 || search.forcePassword === "1" ? { forcePassword: 1 } : {},
-  head: () => ({ meta: [{ title: "个人资料" }] }),
-  component: ProfilePage,
+  // 旧书签保留强制改密参数，并统一进入账户安全分区。
+  validateSearch: (search: Record<string, unknown>) => ({
+    ...(search.forcePassword === 1 || search.forcePassword === "1" ? { forcePassword: 1 } : {}),
+  }),
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: "/account", search: { tab: "security", ...search }, replace: true });
+  },
 });

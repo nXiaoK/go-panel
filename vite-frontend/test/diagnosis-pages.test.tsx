@@ -1,3 +1,10 @@
+import {
+  RouterProvider,
+  createRootRoute,
+  createRouter,
+  createMemoryHistory,
+} from "@tanstack/react-router";
+import { TooltipProvider } from "../src/components/ui/tooltip";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentType } from "react";
@@ -14,6 +21,7 @@ vi.mock("../src/lib/api/client", async (importOriginal) => ({
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-router")>()),
   useNavigate: () => vi.fn(),
+  useSearch: () => ({}),
 }));
 const post = vi.mocked(apiPost);
 let client: QueryClient;
@@ -44,9 +52,25 @@ const results = [
 ];
 
 describe("diagnosis result displays", () => {
-  it.each(["tunnel", "forward"])(
-    "renders %s advisory failure as a warning without failing the link",
-    async (kind) => {
+  it.each([
+    {
+      kind: "tunnel",
+      diagnosisTitle: "隧道诊断 · test-tunnel",
+      advisoryLabel: "警告（仅供参考）",
+    },
+    {
+      kind: "forward",
+      diagnosisTitle: "转发诊断 · test-forward",
+      advisoryLabel: "警告（仅供参考）",
+    },
+  ])(
+    "renders $kind advisory failure as a warning without failing the link",
+    async ({ kind, diagnosisTitle, advisoryLabel }) => {
+      window.matchMedia = vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      });
       localStorage.setItem("role_id", "0");
       localStorage.setItem("token", "test-token");
       vi.spyOn(TunnelRoute, "useSearch").mockReturnValue({ action: undefined });
@@ -75,7 +99,18 @@ describe("diagnosis result displays", () => {
       render(
         <QueryClientProvider client={client}>
           <ConfirmProvider>
-            <Page />
+            {kind === "tunnel" ? (
+              <TooltipProvider>
+                <RouterProvider
+                  router={createRouter({
+                    routeTree: createRootRoute({ component: Page }),
+                    history: createMemoryHistory({ initialEntries: ["/"] }),
+                  })}
+                />
+              </TooltipProvider>
+            ) : (
+              <Page />
+            )}
           </ConfirmProvider>
         </QueryClientProvider>,
       );
@@ -84,8 +119,8 @@ describe("diagnosis result displays", () => {
       });
       fireEvent.keyDown(trigger, { key: "Enter" });
       fireEvent.click(await screen.findByRole("menuitem", { name: "诊断" }));
-      const dialog = await screen.findByRole("dialog");
-      expect(await within(dialog).findByText("警告")).toBeTruthy();
+      const dialog = await screen.findByRole("dialog", { name: diagnosisTitle });
+      expect(await within(dialog).findByText(advisoryLabel)).toBeTruthy();
       expect(within(dialog).getByText("外网探测仅供参考，受节点所在网络环境影响")).toBeTruthy();
       expect(within(dialog).getByText("链路诊断通过")).toBeTruthy();
       expect(within(dialog).queryByText("失败")).toBeNull();

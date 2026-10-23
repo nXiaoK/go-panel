@@ -1,5 +1,6 @@
 <!doctype html>
-<html lang="zh-CN">
+<!-- 固定暗色主题；不读取本地 theme，避免首屏闪烁与内联脚本。 -->
+<html lang="zh-CN" class="dark" style="color-scheme: dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -12,29 +13,7 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/favicon.ico" type="image/x-icon" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
-    />
-    <script>
-      (function () {
-        try {
-          var t = localStorage.getItem("theme");
-          if (!t) {
-            t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-          }
-          var r = document.documentElement;
-          if (t === "dark") {
-            r.classList.add("dark");
-          } else {
-            r.classList.remove("dark");
-          }
-          r.style.colorScheme = t;
-        } catch (e) {}
-      })();
-    </script>
+    <meta name="color-scheme" content="dark" />
     <title>go-panel · 转发管理控制台</title>
   </head>
   <body>

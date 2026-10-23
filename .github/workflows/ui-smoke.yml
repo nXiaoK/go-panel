@@ -1,0 +1,51 @@
+name: ui-smoke
+
+# 截图回归暂由维护者手动触发，不改变现有 PR、发布与生产依赖审计门槛。
+on:
+  workflow_dispatch:
+
+permissions:
+  # 只读取源码，禁止此流程发布镜像、Release 或提交截图。
+  contents: read
+
+jobs:
+  smoke:
+    # 仓库截图来自 macOS 26 arm64 Chromium；Linux 字体与栅格化不同，不能混用基线。
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          # 与正式前端构建保持 Node 22，锁文件安装不允许忽略 engines。
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: vite-frontend/package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          # 固定已修复安全漏洞的工具链，临时后端同样不允许降级。
+          go-version: "1.26.10"
+      - name: 安装与审计
+        working-directory: vite-frontend
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=moderate
+          npx playwright install chromium
+      - name: 构建真实内嵌前端
+        run: |
+          npm run build --prefix vite-frontend
+          bash scripts/sync-web-dist.sh
+      - name: 运行真实临时后端冒烟与截图对比
+        working-directory: vite-frontend
+        # 启动器仅操作 /tmp/go-panel-U12.db，存在旧文件时拒绝覆盖，且不会使用真实节点。
+        env:
+          GOTOOLCHAIN: go1.26.10
+        run: npm run test:e2e
+      - name: 保留失败证据
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-smoke-failure
+          # trace 可能包含临时测试凭据，仅短期保留，不允许上传生产数据或真实凭据。
+          path: vite-frontend/test-results
+          retention-days: 1

@@ -4,27 +4,54 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/*
- * Flux Panel — Deep-Space Ops design system.
- * All colors in oklch; tokens live on :root, mapped to Tailwind utilities via @theme inline.
- */
-
+/* 设计配置以根 DESIGN.md 为准：只提供暗色值，语义名与 shadcn 兼容名共享同一套颜色。 */
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-
+  /* 圆角按设计直接映射；旧组件的 lg/xl 兼容名统一为卡片圆角，不扩大轮廓。 */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+  --radius-2xl: 8px;
+  --radius-pill: 9999px;
+  --color-canvas: var(--canvas);
+  --color-canvas-soft: var(--canvas-soft);
+  --color-canvas-text-soft: var(--canvas-text-soft);
+  --color-ink: var(--ink);
+  --color-ink-strong: var(--ink-strong);
+  --color-body: var(--body);
+  --color-mute: var(--mute);
+  --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-deep: var(--primary-deep);
+  --color-on-primary: var(--on-primary);
+  --color-hairline: var(--hairline);
+  --color-border-control: var(--border-control);
+  --color-hairline-subtle: var(--hairline-subtle);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-selected: var(--surface-selected);
+  --color-status-good: var(--status-good);
+  --color-status-good-bg: var(--status-good-bg);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-bg: var(--status-warning-bg);
+  --color-status-serious: var(--status-serious);
+  --color-status-serious-bg: var(--status-serious-bg);
+  --color-status-critical: var(--status-critical);
+  --color-status-critical-text: var(--status-critical-text);
+  --color-status-critical-bg: var(--status-critical-bg);
+  --color-status-neutral: var(--status-neutral);
+  --color-destructive-solid: var(--destructive-solid);
+  --color-chart-series-1: var(--chart-series-1);
+  --color-chart-series-2: var(--chart-series-2);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-axis: var(--chart-axis);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
-  --color-primary-glow: var(--primary-glow);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -40,14 +67,9 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-ring-offset-background: var(--background);
-
+  --color-ring-offset-background: var(--ring-offset-background);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -57,159 +79,185 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* 仅浮层/可点击卡片悬停使用阴影；普通卡片只使用细线。 */
+  --shadow-level-2: 0 0 15px rgba(92, 88, 85, 0.2);
+  --shadow-level-3: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(148, 163, 184, 0.1) inset;
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  /* latin 字体由本地 fonts.css 提供；中文按以下顺序回退系统字体，无外部字体请求。 */
+  --font-sans:
+    "Inter Variable", Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC",
+    system-ui, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", "SF Mono", SFMono-Regular, Menlo, Consolas,
+    monospace;
+
+  /* 字号、行高与字重的组合供后续页面与共享组件使用，最小为 12px。 */
+  --text-page-title: 24px;
+  --text-page-title--line-height: 32px;
+  --text-page-title--font-weight: 600;
+  --text-section-title: 16px;
+  --text-section-title--line-height: 24px;
+  --text-section-title--font-weight: 600;
+  --text-card-title: 14px;
+  --text-card-title--line-height: 20px;
+  --text-card-title--font-weight: 600;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-body--font-weight: 400;
+  --text-body-strong: 14px;
+  --text-body-strong--line-height: 20px;
+  --text-body-strong--font-weight: 600;
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 26px;
+  --text-body-lg--font-weight: 400;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-caption--font-weight: 400;
+  --text-caption-strong: 12px;
+  --text-caption-strong--line-height: 16px;
+  --text-caption-strong--font-weight: 500;
+  --text-eyebrow: 12px;
+  --text-eyebrow--line-height: 16px;
+  --text-eyebrow--font-weight: 600;
+  --text-metric-lg: 28px;
+  --text-metric-lg--line-height: 36px;
+  --text-metric-lg--font-weight: 550;
+  --text-metric-md: 20px;
+  --text-metric-md--line-height: 28px;
+  --text-metric-md--font-weight: 550;
+  --text-code: 13px;
+  --text-code--line-height: 18px;
+  --text-code--font-weight: 400;
+  --text-code-strong: 13px;
+  --text-code-strong--line-height: 18px;
+  --text-code-strong--font-weight: 550;
+  --text-button: 14px;
+  --text-button--line-height: 20px;
+  --text-button--font-weight: 600;
+  --text-page-title--letter-spacing: -0.3px;
+  --text-eyebrow--letter-spacing: 1.5px;
+
+  /* 命名间距使用 space 前缀，避免覆盖 max-w-sm/xl 等容器尺寸；数字间距仍以 4px 为基准。 */
+  --spacing-space-xxs: 2px;
+  --spacing-space-xs: 4px;
+  --spacing-space-sm: 8px;
+  --spacing-space-md: 12px;
+  --spacing-space-lg: 16px;
+  --spacing-space-xl: 20px;
+  --spacing-space-2xl: 24px;
+  --spacing-space-3xl: 32px;
+  --spacing-space-4xl: 40px;
+  --spacing-space-5xl: 48px;
 }
 
-:root {
-  --radius: 0.5rem;
-  color-scheme: light;
-
-  /* Light theme (default) */
-  --background: oklch(0.99 0.004 250);
-  --foreground: oklch(0.2 0.02 260);
-
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.02 260);
-
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.02 260);
-
-  --primary: oklch(0.55 0.19 245);
-  --primary-foreground: oklch(0.99 0.005 250);
-  --primary-glow: oklch(0.68 0.2 240);
-
-  --secondary: oklch(0.95 0.01 260);
-  --secondary-foreground: oklch(0.22 0.02 260);
-
-  --muted: oklch(0.96 0.008 260);
-  --muted-foreground: oklch(0.48 0.02 258);
-
-  --accent: oklch(0.94 0.03 245);
-  --accent-foreground: oklch(0.22 0.02 260);
-
-  --destructive: oklch(0.6 0.22 25);
-  --destructive-foreground: oklch(0.99 0.01 20);
-
-  --success: oklch(0.58 0.16 165);
-  --success-foreground: oklch(0.99 0.005 250);
-
-  --warning: oklch(0.72 0.16 78);
-  --warning-foreground: oklch(0.18 0.03 60);
-
-  --border: oklch(0.88 0.01 258 / 80%);
-  --input: oklch(0.92 0.01 258 / 90%);
-  --ring: oklch(0.55 0.19 245 / 60%);
-
-  --chart-1: oklch(0.55 0.19 245);
-  --chart-2: oklch(0.58 0.16 165);
-  --chart-3: oklch(0.72 0.16 78);
-  --chart-4: oklch(0.55 0.2 305);
-  --chart-5: oklch(0.6 0.22 25);
-
-  --sidebar: oklch(0.97 0.008 260);
-  --sidebar-foreground: oklch(0.25 0.02 258);
-  --sidebar-primary: oklch(0.55 0.19 245);
-  --sidebar-primary-foreground: oklch(0.99 0.005 250);
-  --sidebar-accent: oklch(0.93 0.015 260);
-  --sidebar-accent-foreground: oklch(0.22 0.02 260);
-  --sidebar-border: oklch(0.88 0.01 258 / 70%);
-  --sidebar-ring: oklch(0.55 0.19 245 / 60%);
-
-  --grid-line: oklch(0 0 0 / 5%);
-  --hero-glow: radial-gradient(80% 60% at 50% 0%, oklch(0.75 0.15 245 / 25%), transparent 70%);
-
-  --gradient-primary: linear-gradient(135deg, var(--primary), var(--primary-glow));
-  --gradient-surface: linear-gradient(180deg, oklch(1 0 0), oklch(0.97 0.005 260));
-  --gradient-hero: var(--hero-glow);
-  --shadow-glow: 0 0 40px -8px color-mix(in oklab, var(--primary) 45%, transparent);
-  --shadow-elevated: 0 24px 60px -20px oklch(0 0 0 / 18%), 0 2px 6px -2px oklch(0 0 0 / 10%);
-  --shadow-card: 0 1px 0 0 oklch(1 0 0 / 40%) inset, 0 10px 30px -14px oklch(0 0 0 / 12%);
-}
-
+:root,
 .dark {
   color-scheme: dark;
+  --radius: 0.5rem;
+  /* 画布/文字、边界/交互与状态令牌逐项对应 DESIGN.md；危险文字使用 critical-text。 */
+  /* 画布保持近黑纯色；浮层/输入背景用 soft，主/次/弱文字依次用 ink/body/mute。 */
+  --canvas: #101010;
+  --canvas-soft: #1a1a1a;
+  --canvas-text-soft: #f5f6f7;
+  --ink: #f2f2f2;
+  --ink-strong: #ffffff;
+  --body: #bdbdbd;
+  --mute: #8b949e;
+  /* 绿色只用于主操作、选中与在线状态；绿色底文字必须用 on-primary，禁止白字。 */
+  --primary: #00d992;
+  --primary-soft: #2fd6a1;
+  --primary-deep: #10b981;
+  --on-primary: #101010;
+  /* hairline 只作装饰分隔；可操作控件使用 border-control，确保在两种画布上至少 3:1。 */
+  --hairline: #3d3a39;
+  --border-control: #6b6664;
+  --hairline-subtle: #262626;
+  --surface-hover: #161616;
+  --surface-selected: #0f1d18;
+  /* good 表示运行；warning 用于临期/配额80%，serious 用于95%；状态仍须配图标/文字。 */
+  --status-good: #00d992;
+  --status-good-bg: #0f2a20;
+  --status-warning: #fab219;
+  --status-warning-bg: #2a2210;
+  --status-serious: #ec835a;
+  --status-serious-bg: #2a1a12;
+  /* critical 只作边框/图形，错误文字用 critical-text；危险实心按钮使用 destructive-solid。 */
+  --status-critical: #d03b3b;
+  --status-critical-text: #f87171;
+  --status-critical-bg: #2a1414;
+  --status-neutral: #8b949e;
+  --destructive-solid: #b91c1c;
+  /* 流量下行/上行分别用 series-1/2；网格与坐标轴不承载交互边界。 */
+  --chart-series-1: #199e70;
+  --chart-series-2: #3987e5;
+  --chart-grid: #262626;
+  --chart-axis: #3d3a39;
 
-  /* Deep-space ops palette (dark mode) */
-  --background: oklch(0.16 0.02 260);
-  --foreground: oklch(0.97 0.005 250);
+  /* shadcn 兼容映射：保留现有组件 API，避免页面重构前出现缺失色值。 */
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--canvas);
+  --card-foreground: var(--ink);
+  --popover: var(--canvas-soft);
+  --popover-foreground: var(--ink);
+  --primary-foreground: var(--on-primary);
+  --secondary: var(--canvas-soft);
+  --secondary-foreground: var(--ink);
+  --muted: var(--canvas-soft);
+  --muted-foreground: var(--mute);
+  --accent: var(--surface-hover);
+  --accent-foreground: var(--ink);
+  --destructive: var(--status-critical);
+  --destructive-foreground: var(--ink);
+  --success: var(--status-good);
+  --success-foreground: var(--on-primary);
+  --warning: var(--status-warning);
+  --warning-foreground: var(--on-primary);
+  --border: var(--hairline);
+  --input: var(--border-control);
+  --ring: var(--primary-soft);
+  --ring-offset-background: var(--canvas);
+  --chart-1: var(--chart-series-1);
+  --chart-2: var(--chart-series-2);
+  --sidebar: var(--canvas);
+  --sidebar-foreground: var(--body);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--on-primary);
+  --sidebar-accent: var(--surface-hover);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--hairline);
+  --sidebar-ring: var(--primary-soft);
 
-  --card: oklch(0.2 0.022 260);
-  --card-foreground: oklch(0.97 0.005 250);
-
-  --popover: oklch(0.21 0.022 260);
-  --popover-foreground: oklch(0.97 0.005 250);
-
-  --primary: oklch(0.72 0.19 240);
-  --primary-foreground: oklch(0.14 0.02 250);
-  --primary-glow: oklch(0.8 0.2 235);
-
-  --secondary: oklch(0.26 0.025 260);
-  --secondary-foreground: oklch(0.97 0.005 250);
-
-  --muted: oklch(0.24 0.02 260);
-  --muted-foreground: oklch(0.68 0.02 255);
-
-  --accent: oklch(0.28 0.05 245);
-  --accent-foreground: oklch(0.97 0.005 250);
-
-  --destructive: oklch(0.68 0.22 25);
-  --destructive-foreground: oklch(0.98 0.01 20);
-
-  --success: oklch(0.74 0.16 165);
-  --success-foreground: oklch(0.14 0.02 250);
-
-  --warning: oklch(0.8 0.16 78);
-  --warning-foreground: oklch(0.18 0.03 60);
-
-  --border: oklch(0.3 0.02 258 / 60%);
-  --input: oklch(0.28 0.02 258 / 70%);
-  --ring: oklch(0.72 0.19 240 / 70%);
-
-  --sidebar: oklch(0.14 0.02 260);
-  --sidebar-foreground: oklch(0.85 0.01 255);
-  --sidebar-accent: oklch(0.22 0.025 260);
-  --sidebar-accent-foreground: oklch(0.97 0.005 250);
-  --sidebar-border: oklch(0.26 0.02 258 / 60%);
-
-  --grid-line: oklch(1 0 0 / 3%);
-  --hero-glow: radial-gradient(80% 60% at 50% 0%, oklch(0.3 0.1 245 / 60%), transparent 70%);
-
-  --gradient-surface: linear-gradient(180deg, oklch(0.22 0.025 260), oklch(0.18 0.02 260));
-  --shadow-glow: 0 0 40px -8px color-mix(in oklab, var(--primary) 55%, transparent);
-  --shadow-elevated: 0 24px 60px -20px oklch(0 0 0 / 60%), 0 2px 6px -2px oklch(0 0 0 / 40%);
-  --shadow-card: 0 1px 0 0 oklch(1 0 0 / 4%) inset, 0 10px 30px -14px oklch(0 0 0 / 60%);
+  /* 外壳尺寸供 U03 使用；内容区在移动端应改用 16px 内边距。 */
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 56px;
+  --topbar-height: 56px;
+  --content-max-width: 1440px;
+  --content-padding-desktop: 24px;
+  --content-padding-mobile: 16px;
 }
 
 @layer base {
   * {
-    border-color: var(--color-border);
+    border-color: var(--border);
+    scrollbar-color: var(--border-control) var(--canvas);
+    scrollbar-width: thin;
   }
 
   html,
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    background-color: var(--canvas);
+    color: var(--ink);
     font-family: var(--font-sans);
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    /* 当前 latin 子集仅保留 calt 等标准特性，不能沿用已被子集裁剪的字形配置。 */
+    font-feature-settings: "calt";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* App background: subtle grid + hero glow (theme-aware) */
   body {
-    background-image:
-      var(--gradient-hero), linear-gradient(var(--grid-line) 1px, transparent 1px),
-      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-    background-size:
-      auto,
-      48px 48px,
-      48px 48px;
-    background-position:
-      0 0,
-      0 0,
-      0 0;
-    background-attachment: fixed;
+    background-image: none;
   }
 
   .font-mono,
@@ -217,52 +265,33 @@
   kbd,
   pre {
     font-family: var(--font-mono);
-    font-feature-settings: "zero", "ss01";
+    /* 字体本身已等宽；清除正文特性继承，数值列另用 tabular 工具类。 */
+    font-feature-settings: normal;
   }
 
   ::selection {
-    background: color-mix(in oklab, var(--primary) 40%, transparent);
-    color: var(--foreground);
+    background: color-mix(in srgb, var(--primary) 30%, transparent);
+    color: var(--ink);
   }
 }
 
-@utility bg-grid {
-  background-image:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(ellipse at center, black 40%, transparent 80%);
+/* 放在工具层之外：即使旧组件带 outline-none，键盘焦点也始终显示统一 2px 环。 */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
-@utility bg-gradient-primary {
-  background-image: var(--gradient-primary);
+@utility tabular {
+  font-variant-numeric: tabular-nums;
 }
 
-@utility bg-gradient-surface {
-  background-image: var(--gradient-surface);
-}
-
-@utility shadow-glow {
-  box-shadow: var(--shadow-glow);
-}
-
-@utility shadow-elevated {
-  box-shadow: var(--shadow-elevated);
-}
-
-@utility shadow-card {
-  box-shadow: var(--shadow-card);
-}
-
-@utility text-gradient-primary {
-  background-image: var(--gradient-primary);
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-}
-
-@utility glow-ring {
-  box-shadow:
-    0 0 0 1px color-mix(in oklab, var(--primary) 40%, transparent),
-    0 0 24px -4px color-mix(in oklab, var(--primary) 50%, transparent);
+/* 用户选择减弱动态时关闭过渡和动画；保留 transform，避免居中浮层位置偏移。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }

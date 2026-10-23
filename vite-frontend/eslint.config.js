@@ -56,18 +56,6 @@ export default tseslint.config(
       "react-refresh/only-export-components": "off",
     },
   },
-  // 路由和外壳仍需兼容部分历史 API 松散结构；仅在这些边界允许 any，lib/ 与 hooks/
-  // 继续执行严格规则，避免把弱类型扩散到数据层。
-  {
-    files: [
-      "src/routes/**/*.{ts,tsx}",
-      "src/components/app-sidebar.tsx",
-      "src/components/app-topbar.tsx",
-      "src/components/forward/**/*.{ts,tsx}",
-    ],
-    rules: {
-      "@typescript-eslint/no-explicit-any": "off",
-    },
-  },
+  // UI 重构已消除历史 any，全部业务目录统一使用严格的 no-explicit-any 规则。
   eslintPluginPrettier,
 );

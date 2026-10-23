@@ -1,38 +1,30 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { resolvePanelEndpoint } from "../src/lib/panel-endpoint";
+import { currentPanelEndpoint, resolvePanelEndpoint } from "../src/lib/panel-endpoint";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  localStorage.clear();
+});
 
 describe("resolvePanelEndpoint", () => {
-  it("uses stored, env, then origin precedence", () => {
+  it("uses development env then same origin", () => {
     expect(
       resolvePanelEndpoint({
-        stored: "https://stored.example",
-        env: "https://env.example",
-        origin: "https://ui.example",
-        pageProtocol: "https:",
-      }).apiBase,
-    ).toBe("https://stored.example/api/v1/");
-
-    expect(
-      resolvePanelEndpoint({
-        stored: "",
         env: "https://env.example",
         origin: "https://ui.example",
         pageProtocol: "https:",
       }).apiBase,
     ).toBe("https://env.example/api/v1/");
-
     expect(
-      resolvePanelEndpoint({
-        origin: "https://ui.example",
-        pageProtocol: "https:",
-      }).apiBase,
+      resolvePanelEndpoint({ env: "", origin: "https://ui.example", pageProtocol: "https:" })
+        .apiBase,
     ).toBe("https://ui.example/api/v1/");
   });
 
-  it("normalizes a legacy api suffix and bare host", () => {
+  it("normalizes a development api suffix and bare host", () => {
     const endpoint = resolvePanelEndpoint({
-      stored: "panel.example:6365/api/v1",
+      env: "panel.example:6365/api/v1",
       origin: "https://ui.example",
       pageProtocol: "https:",
     });
@@ -43,7 +35,7 @@ describe("resolvePanelEndpoint", () => {
   it("prefixes a bare host with the page protocol", () => {
     expect(
       resolvePanelEndpoint({
-        stored: "panel.example",
+        env: "panel.example",
         origin: "http://ui.example",
         pageProtocol: "http:",
       }).root,
@@ -53,7 +45,7 @@ describe("resolvePanelEndpoint", () => {
   it("removes trailing slashes and preserves a base path", () => {
     expect(
       resolvePanelEndpoint({
-        stored: "https://host.example/base/",
+        env: "https://host.example/base/",
         origin: "https://ui.example",
         pageProtocol: "https:",
       }).apiBase,
@@ -63,14 +55,14 @@ describe("resolvePanelEndpoint", () => {
   it("builds a ws url with type=0 and scheme conversion", () => {
     expect(
       resolvePanelEndpoint({
-        stored: "https://panel.example",
+        env: "https://panel.example",
         origin: "https://ui.example",
         pageProtocol: "https:",
       }).wsURL(),
     ).toBe("wss://panel.example/system-info?type=0");
     expect(
       resolvePanelEndpoint({
-        stored: "http://panel.example:6365",
+        env: "http://panel.example:6365",
         origin: "http://ui.example",
         pageProtocol: "http:",
       }).wsURL(),
@@ -79,7 +71,7 @@ describe("resolvePanelEndpoint", () => {
 
   it("builds subscription urls with encoded token and format", () => {
     const endpoint = resolvePanelEndpoint({
-      stored: "https://panel.example",
+      env: "https://panel.example",
       origin: "https://ui.example",
       pageProtocol: "https:",
     });
@@ -92,5 +84,14 @@ describe("resolvePanelEndpoint", () => {
     expect(endpoint.subscriptionURL("t", "singbox")).toBe(
       "https://panel.example/api/v1/sub/render/t/singbox",
     );
+  });
+  it("生产环境忽略旧浏览器地址和开发环境覆盖，始终同源", () => {
+    localStorage.setItem("panel_address", "https://old.example");
+    vi.stubEnv("VITE_API_BASE", "https://dev.example/base");
+    vi.stubEnv("DEV", false);
+    expect(currentPanelEndpoint().apiBase).toBe(`${window.location.origin}/api/v1/`);
+    expect(currentPanelEndpoint().wsURL()).toBe(`ws://${window.location.host}/system-info?type=0`);
+    vi.stubEnv("DEV", true);
+    expect(currentPanelEndpoint().apiBase).toBe("https://dev.example/base/api/v1/");
   });
 });

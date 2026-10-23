@@ -20,8 +20,9 @@ export function selectSubscriptionQrState(
 
 export function createSubscriptionQrDataUrl(value: string): Promise<string> {
   return QRCode.toDataURL(value, {
+    // 本地生成中等纠错的黑白 PNG，四模块静区便于扫码；不把含 Token 的链接发送给外部服务。
     errorCorrectionLevel: "M",
-    margin: 1,
+    margin: 4,
     width: 256,
   });
 }

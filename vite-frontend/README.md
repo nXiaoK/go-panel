@@ -2,6 +2,10 @@
 
 本目录是 go-panel 的 React/Vite SPA。`package.json` 与 `package-lock.json` 都是严格 JSON，语法不允许内联注释，因此在本文按模块说明配置和风险。
 
+## 视觉规范
+
+界面开发以仓库根目录的 [DESIGN.md](../DESIGN.md) 为准。控制台只保留暗色主题，使用语义令牌、自托管字体和统一组件；不得使用 Tailwind 原生色板。新增颜色组合必须计算对比度，文字至少 4.5:1，控件边界和图形至少 3:1。
+
 ## 运行版本
 
 - GitHub Actions 与 Dockerfile 固定使用 Node.js 22；Vite 8 / Vitest 4 的本地开发基线为 Node.js 22.12+。
@@ -43,7 +47,7 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 默认 `npm ci` 严格安装锁定版本。删除锁文件或回退版本可能重新引入已修复的问题；更新后必须重新执行完整前端检查和生产依赖审计，不得降低审计门槛。
 
 - 网络请求模块：`axios@1.20.0` 与 `follow-redirects@1.16.1` 修复请求选项、请求头、代理规则和重定向处理中的安全问题。后续升级需验证登录凭据、错误处理及下载请求。
-- 路由模块：`@tanstack/router-plugin@1.168.48` 与 `@tanstack/react-router@1.170.46` 保留已有安全锁定版本，`seroval` / `seroval-plugins` 为 `1.7.0`。路由生成依赖随树更新，可能改变生成代码和格式检查结果，需完整复验。根路由错误边界使用 `ErrorComponentProps` 处理未知抛出值，只输出浏览器控制台错误并提供重试。
+- 路由模块：`@tanstack/router-plugin@1.168.48` 与 `@tanstack/react-router@1.170.46` 保留已有安全锁定版本，`seroval` / `seroval-plugins` 为 `1.7.0`。路由生成依赖随树更新，可能改变生成代码和格式检查结果，需完整复验。根路由错误边界使用 `ErrorComponentProps` 处理未知抛出值，提供重试；错误堆栈只在开发环境的折叠区展示。
 - 构建与源码映射模块：`vite@8.3.5` 与 `source-map-js@1.2.2` 保留已有修复。开发服务只用于本地调试；更新构建链可能改变静态文件哈希、分块和 CSS 输出，必须重新构建、同步 `web/dist` 并验证 Go 内嵌页面。
 - YAML 工具：`npm ls js-yaml` 显示只剩开发依赖 `eslint → @eslint/eslintrc → js-yaml@4.3.2`；`npm ls --omit=dev js-yaml` 已为空，生产树不再包含它。`4.0.0` 至 `4.3.1` 受 GHSA-2883-xcq3-v3hh 影响，空 YAML 合并源可绕过资源限制并耗尽 CPU；开发依赖同样不能回退到已知受影响版本。
 
@@ -83,3 +87,81 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 `app_name` 优先使用已有数据库配置，空值回退 `go-panel`；新库只在该项缺失时写入默认值，已有名称不会迁移。页面标题由根组件统一组合为“页面名 · 站点名称”，配置保存和路由切换即时更新，`HeadContent` 继续管理其余 meta。
 
 字节和速率统一使用 1024 进制，数值小于 10 保留两位、小于 100 保留一位，否则取整；测速保留原有 Mbps 转 MB/s 的两位小数。日期使用 `zh-CN`，无效值显示破折号。危险操作使用共享异步确认框，节点删除及备份恢复需输入名称或备份文件名；这只加强操作确认，不改变后端权限。
+
+## 字体、主题与设计令牌配置
+
+`package.json` / `package-lock.json` 新增的 `@fontsource-variable/inter` 和 `@fontsource-variable/jetbrains-mono` 用于自托管字体，不访问 Google Fonts 或字体 CDN。锁定版本的 `wght.css` 含所有语种，且未提供 latin 专用 CSS 入口，因此 `src/main.tsx` 导入本地 `src/fonts.css`，只声明两包 `files/*-latin-wght-normal.woff2`，保留上游的字重范围、`unicode-range` 与 `font-display: swap`；不导入 cyrillic、greek、latin-ext 等子集，中文回退系统字体。实际分发的 Inter latin 子集已移除 `cv02/cv03/cv04/cv11/ss01`，正文只配置实际保留的 `calt`，等宽字体不继承这些字形配置。字体许可均为 SIL OFL 1.1，版权和完整许可见根 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) 以及随页面分发的 `public/font-licenses/`，升级字体时必须同步这些声明。
+
+`index.html` 固定 `class="dark"`、`color-scheme: dark` 和暗色元数据；主题无脚本、无切换或持久化读写，旧浏览器 `theme` 值不影响结果。`src/styles.css` 按根设计规范提供语义颜色与 shadcn 兼容映射，圆角 `sm=6px`、`md=8px`，命名间距使用 `space-` 前缀（例如 `p-space-sm`），避免与 `max-w-sm` / `max-w-xl` 等容器尺寸冲突；普通卡片只使用边线，只有浮层和交互卡片悬停使用阴影。`destructive` 仅用于图形/边界，危险确认实心按钮使用 `destructive-solid` 与 `ink`，避免文字对比不足。焦点轮廓始终显示；减弱动态偏好关闭动画与过渡但保留布局定位。
+
+`test/design-tokens.test.mjs` 对所有 TSX 字符串、模板和词法常量拼接执行零违规门禁，覆盖完整 Tailwind 色板、渐变/光晕/网格特效、小于12px的px/rem字号。历史额度收紧回归仍保留，不能新增任何允许项。全部业务目录统一执行 no-explicit-any，不再豁免路由边界。
+
+## U02 共享组件与开发预览
+
+`package.json` / `package-lock.json` 新增 `@tanstack/react-table`，供统一 DataTable 使用；新增 `@radix-ui/react-popover`，提供具备焦点管理与键盘关闭的 Popover。两者均为本地打包的运行依赖，不访问外部服务，不改变业务权限或生产审计门槛。
+
+Node 22 下运行 `npm run dev` 后访问 `/_dev/components`，可检查基础控件、列表、表单、状态、配额、复制、诊断与抽屉。入口仅在 `import.meta.env.DEV` 下动态挂载，生产构建会移除入口与整个预览模块；不将它添加到正式路由树。发布前扫描 `dist/assets`，不得包含唯一标记“组件验收实验室 U02”。
+
+开发预览可用 `/_dev/components?batch=1` 单独验证 50 行长列表：它复用正式 `AppContent` 容器，包含手机长卡片、换行批量操作、抽屉和确认框；数据全部是内存夹具，不访问业务接口。加 `&legacy=1` 仅在开发环境复现旧 `overflow-x-hidden` 滚动祖先行为，不用于正式布局。两个模式都随整个预览模块从生产构建移除。正式内容区使用 `overflow-x-clip` 只裁切横向溢出，避免浏览器将纵向溢出隐式变为 `auto`，让共享列表的吸底批量条继续跟随页面滚动；不要在页面外层重新添加不实际滚动的 `overflow-hidden/auto` 容器。
+
+页面从 `components/patterns/` 按组件路径导入。`DataTable` 必须提供稳定 `getRowId` 和 `renderMobileCard`；`sorting/onSortingChange`、`rowSelection/onRowSelectionChange` 为 TanStack 受控状态，`initialRowSelection` 可预选。`onRowActivate` 同时支持鼠标和回车/空格，内嵌按钮、复选框、链接不触发行激活。操作列使用 `meta.actions`，数值列使用 `meta.numeric` 与 `meta.align="right"`。筛选空态传 `filtered/onClearFilters`。`focusRowId` 等待异步数据后清选择、滚动、聚焦并高亮2秒。
+
+`useUrlState(defaults)` 返回 `{state,setState}`，只合并修改的 search 字段并 replace 历史。各页面必须在路由 `validateSearch` 中验证并保留需要的 `q/status/sort/focus` 等字段，避免路由丢弃共享链接中的状态；分页同样由页面声明。该工具不会重载整页。
+
+`EntitySheet` 的 `onSubmit` 可省略，以支持只读详情与自定义表单，避免嵌套 form。默认底栏通过 `footerActions` 加左侧操作；完全自定义时用 `footer={({requestClose,submitting}) => ...}`，关闭操作必须调用 `requestClose` 以保留 dirty 确认。提交期间控件禁止重复提交与关闭。确认层会隔离内部点击，避免关闭动画期间误触发底层抽屉的外部点击。`useConfirm` / `usePrompt` 在整组队列结束后回焦到最初的页面控件；排队期间不把焦点移出当前确认框。
+
+`CodeBlock` 默认保留多行命令并自动换行；订阅链接可传 `singleLine`，完整文本通过 title 与内建复制按钮保留，视觉上仅单行省略。`label` 用作复制按钮说明，`trailingActions` 只传打开链接、二维码等其他动作，不再额外添加复制按钮。单行复制使用图标按钮，复制成功与失败都通过状态文字反馈；`CopyButton` 的 `iconOnly` 是可选紧凑展示，默认文字按钮行为保持不变。
+
+`DiagnosisSheet` 直接接收 `DiagnosisResult | NodeStatusCheck`；advisory 外网失败只显示警告，不计链路失败。`lib/batch.runBatch(items,action,{nameOf,onProgress,concurrency})` 默认且最多4并发，结果按输入排序并逐项保留 success/reason；进度提供 done/total。增加并发会同时发送写请求，页面应展示部分失败摘要，禁止无限并发。
+
+字体注意：`text-body` 是正文颜色令牌；由于同名的颜色/字号歧义，Tailwind 会把该类解析为颜色。正文14px/20px请显式使用 `text-sm leading-5`，并搭配 `text-ink`、`text-body` 或 `text-mute`；不要用 `text-body` 代替字号。
+
+`FormField` 会给单个真实控件或可透传 DOM 属性的代理控件注入 id/aria，复用控件已有 id。Select 根通过上下文把关联传给 Trigger，RadioGroup 通过 `aria-labelledby` 关联组标题。布局 div/多控件字段必须使用 render prop，为各控件设置唯一 id；第一项可关联主 label，其余设置独立 aria-label，错误说明可共享。基础 Input 不再向嵌套的多个字段传播同一个 id。复制、清搜索和重试等共享动作明确使用 `type="button"`，避免位于实体表单时误提交。
+
+## 外壳、端点与命令面板
+
+正式构建的 REST、WebSocket 与订阅地址始终使用当前页面同源。已移除登录页与账户页的“面板地址”入口，也不再读取浏览器历史的 `panel_address`；不会迁移或删除该旧键。仅 `import.meta.env.DEV` 为真时允许 `VITE_API_BASE` 覆盖开发后端地址，该值可能接收登录凭据，只能指向可信开发实例。优先使用前述同源开发代理，生产构建即使设置该变量也不会改变同源地址。
+
+侧栏 `sidebar_state` cookie 只保存展开布尔值，有效期 7 天、路径 `/`、`SameSite=Lax`，不包含身份信息。无历史偏好时，桌面默认展开，平板默认折叠，手机使用导航抽屉。管理员系统状态每 60 秒轮询，页面隐藏时暂停；连续两次失败才显示连接异常。普通用户与强制改密模式不读取系统状态、版本或升级接口。
+
+旧 `/profile`、`/settings` 书签分别转至 `/account?tab=security` 与 `/account?tab=preferences`；`forcePassword=1` 会继续保留，真实改密要求仍来自持久会话。账户默认资料与安全分区。命令面板只在打开时加载有权查询的资源，共用资源缓存；资源深链写入使用数字 ID，生成 `focus=<id>`，路由与列表的 `useUrlState` 读取仍为数字，页面在 DataTable 的 `focusRowId` 边界显式转换为字符串，新建操作使用 `create=1`。列表页接收这些参数并在定位时清空筛选；隧道原 `action=create` 与其他页面参数继续保留。已提供但非法的筛选/定位键被规范为空值，页面读取可选参数时使用 `??` 回退自己的默认值；缺省键不会覆盖页面默认值。
+
+### 系统配置分区
+
+系统配置页使用 `?tab=site|security|backup|r2|advanced` 保存当前分区。站点、节点与安全、高级分区共用未保存修改计数；只有实际值不同的键计入数量，保存后才生效。放弃修改回到当前服务端值，切换分区保留草稿，离开页面前需确认。R2 使用独立备份接口和自己的保存按钮，不计入全局保存栏；切换分区也保留其草稿。
+
+- `ip` 是节点服务器可访问的面板公网地址；未配置时节点安装命令无法生成，可使用当前地址快捷填写。`app_name` 留空仍显示默认 `go-panel`，不迁移旧数据库名称。
+- `allow_insecure_node_downloads` 默认关闭并强制 HTTPS；开启会让节点密钥和下载程序通过明文链路传输。部署环境覆盖继续优先，未保存的开关不会提前改变实际策略或告警。
+- `github_download_proxy` 默认留空直连；代理能够接触下载程序，只使用可信 HTTPS 服务。`diagnose_internet_probe` 留空沿用 `www.google.com:443`，只影响参考探测。
+- 自定义键名仅允许小写字母、数字和下划线，不能与已有键重复；新增项需统一保存。删除通过独立接口立即从服务器移除，可能使引用它的功能回退默认行为；内部凭据、迁移标记和关键站点策略不提供删除入口。
+- 恢复只接受本面板导出的 `.db`、`.sqlite` 或 `.sqlite3` 文件，最大 256 MB；后端继续校验 SQLite 内容。输入“恢复”确认后将覆盖当前数据库和节点配置，过程不可取消。成功页仅显示后端真实的恢复时间与恢复前数据库备份名，3 秒后清理会话并要求重新登录。
+
+## 新界面目录与新增页面
+
+`src/features/<资源>/` 保存该资源的页面、API、React Query hooks、纯模型和行为测试；`src/routes/` 只维护路由、权限、URL 参数与标题。共享表单、列表、状态、诊断、确认与反馈来自 `src/components/patterns/`。业务界面遵守根 `DESIGN.md`，只使用语义颜色令牌。
+
+新增页面时先定义类型化 API 和查询键，再实现主状态、空态、加载、错误及真实 Router 行为测试，最后增加路由和按角色可见的导航。可分享筛选在 `validateSearch` 规范化并保留无关键，通过 `useUrlState` 更新。不得复制共享组件，不得在普通用户查询路径调用管理员接口。
+
+## 无障碍与端到端测试配置
+
+`package.json` / `package-lock.json` 的开发依赖 `@playwright/test` 和 `@axe-core/playwright` 提供真实 Chromium 冒烟和 axe 检查，不进入生产 JS。`scripts.test:e2e` 运行真实 Go 后端的登录、强制改密、创建用户和限速、配置保存和放弃、普通用户导航及转发表单、退出和四页两宽截图。axe 对主要页面、配置分区及关键表单执行 serious/critical 零违规断言，不跳过规则。另在真实390px配置和账户布局检查页签宽高至少40px，防止桌面拉伸掩盖中文短标签的触控缺陷。Vitest 同主版本更新到4.1.12；锁文件的 mocker、brace-expansion、undici 采用兼容安全补丁。更新后仍需 Node22 正常 `npm ci` 和全部门禁，不使用强制依赖覆盖或降低审计级别。
+
+```bash
+npm ci
+npx playwright install chromium
+npm run build
+cd .. && bash scripts/sync-web-dist.sh && cd vite-frontend
+npm run test:e2e
+```
+
+`playwright.config.ts` 串行运行，固定中文、上海时区、暗色与减弱动态，只访问回环6401端口。`e2e/start-backend.mjs` 用 `GOTOOLCHAIN=go1.26.10 go run .`、固定本地测试密码及每次随机的 JWT_SECRET 启动临时后端，仅操作 `/tmp/go-panel-U12.db`。已有该路径或夹具标记时立即失败；操作者应确认是自己的临时库后完整保留移开。脚本不会删库或覆盖现有数据。它只给新库设置强制改密夹具。冒烟在该标记存在时读取临时节点密钥，以本机 WebSocket 模拟节点命令回执，再通过真实 API 创建隧道和限速，并断言收到 AddLimiters；测试结束关闭连接，不运行真实代理或转发数据平面，不改正式在线门槛。
+
+截图基线位于 `e2e/smoke.spec.mjs-snapshots/`，由 macOS26 arm64 和锁定的 Playwright Chromium 实际生成。时间使用固定测试时钟，动态 `<time>` 文本明确遮蔽，不增加像素差容忍。`npm run test:e2e -- --update-snapshots` 后必须人工审图。不同系统、字体或浏览器版本需单独审查基线，不能宣称跨平台逐像素一致。`test-results/` 与 `playwright-report/` 是忽略的临时证据，trace 可能含测试凭据。`.github/workflows/ui-smoke.yml` 仅手动触发、只读权限、匹配 macOS26 runner，失败证据保留一天，不改变 PR 门槛或发布流程。
+
+## 性能采集工具
+
+`scripts.test:performance` 读取仓库外 `U12_PERFORMANCE_OUTPUT`，在已启动的生产内嵌回环实例上用官方 Chromium CDP 关闭缓存，设置 Fast3G（延迟150ms、下载1.6Mbps、上传750Kbps）及4倍 CPU 降速，通过真实 PerformanceObserver 记录登录页和控制台 LCP 及外源请求。`U12_ADMIN_PASSWORD` 覆盖临时管理员密码，只用于测试实例；不得上传凭据。存在外源请求时保存完整测量结果并以非0退出。数值属于本机单次测量，不能代表真实用户分位数。
+
+开发模式访问 `/node?__profileNodes=1` 加载 `src/dev/node-profiler.tsx`，对实际节点页面记录 React Profiler commit，结果在 `#node-profiler-samples` 的可访问输出。DEV 常量使整个测量器从生产构建移除；不能把生产版 Profiler 的0ms当作证据。运行 `npm run dev -- --host 127.0.0.1 --port 5201 --strictPort` 后，设置仓库外 `U12_NODE_PERFORMANCE_OUTPUT` 并运行 `node e2e/node-performance.mjs`：仅拦截本地测试 API 和 WebSocket，建立50个内存节点，每2秒发送50条指标事件，记录真实浏览器开发构建的 commit（不含初次加载）。它不连接真实节点，不证明数据面性能；每次 commit 目标小于8ms，轮数不足、未确认50个节点、有效commit不足或最大耗时达到8ms时保存结果并以非0退出，必须报告实际结果或能力边界。
+
+`tsconfig.json` 的 `include` 同时覆盖 `playwright.config.ts`，新增测试配置也必须通过正式 typecheck；生产源码的严格检查范围不会缩小。

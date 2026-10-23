@@ -1,6 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { DataTable } from "@/components/patterns/data-table";
+import { FormField as Field } from "@/components/patterns/form-field";
+import type { RowSelectionState, ColumnDef } from "@tanstack/react-table";
 import {
   Dialog,
   DialogContent,
@@ -8,9 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -25,14 +25,9 @@ import type { CompleteForwardRule, NftDetection, Node, TunnelDetection } from "@
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      {children}
-    </div>
-  );
-}
+type DetectionRow = (NftDetection["detected"][number] | TunnelDetection["detected"][number]) & {
+  selectionId: string;
+};
 
 export function NftDetectDialog({
   open,
@@ -54,7 +49,7 @@ export function NftDetectDialog({
   const [completing, setCompleting] = useState(false);
   const [portResult, setPortResult] = useState<NftDetection | null>(null);
   const [tunnelResult, setTunnelResult] = useState<TunnelDetection | null>(null);
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selected, setSelected] = useState<RowSelectionState>({});
 
   const nftNodes = useMemo(
     () => nodes.filter((n) => n.forwardMode === "nftables" && n.status === 1),
@@ -67,7 +62,7 @@ export function NftDetectDialog({
       setMode("port");
       setPortResult(null);
       setTunnelResult(null);
-      setSelected(new Set());
+      setSelected({});
       setNodeId(nftNodes[0]?.id ?? null);
       setInNodeId(nftNodes[0]?.id ?? null);
       setOutNodeId(nftNodes[1]?.id ?? nftNodes[0]?.id ?? null);
@@ -100,8 +95,10 @@ export function NftDetectDialog({
           return;
         }
         setPortResult(portData);
-        const auto = new Set<number>();
-        (portData.detected || []).forEach((r, i: number) => r.suggested && auto.add(i));
+        const auto: RowSelectionState = {};
+        (portData.detected || []).forEach((r, i) => {
+          if (r.suggested) auto[String(i)] = true;
+        });
         setSelected(auto);
         setStep("result");
       } else {
@@ -118,8 +115,10 @@ export function NftDetectDialog({
           return;
         }
         setTunnelResult(tunnelData);
-        const auto = new Set<number>();
-        (tunnelData.detected || []).forEach((r, i: number) => r.suggested && auto.add(i));
+        const auto: RowSelectionState = {};
+        (tunnelData.detected || []).forEach((r, i) => {
+          if (r.suggested) auto[String(i)] = true;
+        });
         setSelected(auto);
         setStep("result");
       }
@@ -130,24 +129,15 @@ export function NftDetectDialog({
     }
   };
 
-  const toggle = (i: number) => {
-    setSelected((prev) => {
-      const n = new Set(prev);
-      if (n.has(i)) n.delete(i);
-      else n.add(i);
-      return n;
-    });
-  };
-
   const complete = async () => {
-    if (selected.size === 0) return notify.error("请至少选择一条规则");
+    if (selectedIDs.length === 0) return notify.error("请至少选择一条规则");
     setCompleting(true);
     try {
       let rules: CompleteForwardRule[] = [];
       let targetNodeId = 0;
       if (portResult) {
         targetNodeId = portResult.nodeId;
-        rules = Array.from(selected).map((i) => {
+        rules = selectedIDs.map((i) => {
           const r = portResult.detected[i];
           return {
             tunnelId: r.tunnelId,
@@ -161,7 +151,7 @@ export function NftDetectDialog({
         });
       } else if (tunnelResult) {
         targetNodeId = tunnelResult.inNodeId;
-        rules = Array.from(selected).map((i) => {
+        rules = selectedIDs.map((i) => {
           const r = tunnelResult.detected[i];
           return {
             tunnelId: r.tunnelId,
@@ -188,7 +178,48 @@ export function NftDetectDialog({
     }
   };
 
-  const detected = (mode === "port" ? portResult?.detected : tunnelResult?.detected) || [];
+  const detected: DetectionRow[] = (
+    (mode === "port" ? portResult?.detected : tunnelResult?.detected) || []
+  ).map((rule, index) => ({ ...rule, selectionId: String(index) }));
+  const selectedIDs = Object.entries(selected)
+    .filter(([, checked]) => checked)
+    .map(([id]) => Number(id));
+  const ruleAddress = (rule: DetectionRow) =>
+    "inRawRule" in rule
+      ? `${rule.inNodeName} :${rule.inPort} → ${rule.outNodeName} :${rule.relayPort} → ${rule.targetHost}:${rule.targetPort}`
+      : `:${rule.inPort} → ${rule.targetHost}:${rule.outPort}`;
+  const ruleHeading = (rule: DetectionRow) => (
+    <div className="space-y-1">
+      <p className="font-semibold">{rule.tunnelName || `隧道 #${rule.tunnelId}`}</p>
+      <div className="flex gap-2">
+        <Badge variant="outline" className="font-mono text-caption uppercase">
+          {rule.protocol}
+        </Badge>
+        {rule.suggested && (
+          <Badge variant="outline" className="text-caption">
+            推荐
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+  const columns: ColumnDef<DetectionRow>[] = [
+    { id: "tunnel", header: "隧道", cell: ({ row }) => ruleHeading(row.original) },
+    {
+      id: "address",
+      header: "规则",
+      cell: ({ row }) => (
+        <p className="break-all font-mono text-caption text-body">{ruleAddress(row.original)}</p>
+      ),
+    },
+    {
+      id: "comment",
+      header: "备注",
+      cell: ({ row }) => (
+        <p className="break-words text-caption text-mute">{row.original.comment || "—"}</p>
+      ),
+    },
+  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -203,23 +234,22 @@ export function NftDetectDialog({
         {step === "mode" && (
           <div className="space-y-3">
             <RadioGroup
+              aria-label="识别模式"
               value={mode}
               onValueChange={(v) => setMode(v === "tunnel" ? "tunnel" : "port")}
             >
-              <label className="flex items-start gap-3 rounded-md border border-border/60 p-3 cursor-pointer">
+              <label className="flex items-start gap-3 rounded-md border border-hairline p-3 cursor-pointer">
                 <RadioGroupItem value="port" className="mt-1" />
                 <div>
                   <div className="font-medium">端口转发识别</div>
-                  <div className="text-xs text-muted-foreground">
-                    识别单个节点上直接转发到目标地址的规则
-                  </div>
+                  <div className="text-xs text-mute">识别单个节点上直接转发到目标地址的规则</div>
                 </div>
               </label>
-              <label className="flex items-start gap-3 rounded-md border border-border/60 p-3 cursor-pointer">
+              <label className="flex items-start gap-3 rounded-md border border-hairline p-3 cursor-pointer">
                 <RadioGroupItem value="tunnel" className="mt-1" />
                 <div>
                   <div className="font-medium">隧道转发识别</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-mute">
                     识别两节点隧道转发配置（A → B）；三节点 A → B → C 暂不支持导入
                   </div>
                 </div>
@@ -290,66 +320,53 @@ export function NftDetectDialog({
         )}
 
         {step === "result" && (
-          <ScrollArea className="max-h-[55vh]">
-            <div className="space-y-2">
-              {detected.map((r, i) => (
-                <label
-                  key={i}
-                  className="flex items-start gap-3 rounded-md border border-border/60 p-3 cursor-pointer"
-                >
-                  <Checkbox
-                    checked={selected.has(i)}
-                    onCheckedChange={() => toggle(i)}
-                    className="mt-1"
-                  />
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">
-                        {r.tunnelName || `隧道 #${r.tunnelId}`}
-                      </span>
-                      <Badge variant="outline" className="font-mono text-[10px] uppercase">
-                        {r.protocol}
-                      </Badge>
-                      {r.suggested && (
-                        <Badge variant="default" className="text-[10px]">
-                          推荐
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="font-mono text-[11px] text-muted-foreground">
-                      {mode === "port"
-                        ? `:${r.inPort} → ${r.targetHost}:${"outPort" in r ? r.outPort : 0}`
-                        : `${"inNodeName" in r ? r.inNodeName : ""} :${r.inPort} → ${"outNodeName" in r ? r.outNodeName : ""} :${"relayPort" in r ? r.relayPort : 0} → ${r.targetHost}:${"targetPort" in r ? r.targetPort : 0}`}
-                    </div>
-                    {r.comment && (
-                      <div className="text-[11px] text-muted-foreground">{r.comment}</div>
-                    )}
-                  </div>
-                </label>
-              ))}
-            </div>
-          </ScrollArea>
+          <div className="max-h-[55dvh] overflow-y-auto">
+            <DataTable
+              columns={columns}
+              data={detected}
+              getRowId={(rule) => rule.selectionId}
+              enableSelection
+              rowSelection={selected}
+              onRowSelectionChange={setSelected}
+              ariaLabel="识别到的 NFT 规则"
+              renderMobileCard={(rule) => (
+                <div className="space-y-2">
+                  {ruleHeading(rule)}
+                  <p className="break-all font-mono text-caption text-body">{ruleAddress(rule)}</p>
+                  {rule.comment && <p className="text-caption text-mute">{rule.comment}</p>}
+                </div>
+              )}
+            />
+          </div>
         )}
 
         <DialogFooter>
           {step !== "mode" && (
-            <Button variant="ghost" onClick={() => setStep(step === "result" ? "node" : "mode")}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setStep(step === "result" ? "node" : "mode")}
+            >
               上一步
             </Button>
           )}
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             取消
           </Button>
-          {step === "mode" && <Button onClick={nextFromMode}>下一步</Button>}
+          {step === "mode" && (
+            <Button type="button" onClick={nextFromMode}>
+              下一步
+            </Button>
+          )}
           {step === "node" && (
-            <Button onClick={detect} disabled={detecting} className="shadow-glow">
+            <Button type="button" onClick={detect} disabled={detecting}>
               {detecting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />} 开始识别
             </Button>
           )}
           {step === "result" && (
-            <Button onClick={complete} disabled={completing} className="shadow-glow">
+            <Button type="button" onClick={complete} disabled={completing}>
               {completing && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-              补全所选 ({selected.size})
+              补全所选 ({selectedIDs.length})
             </Button>
           )}
         </DialogFooter>

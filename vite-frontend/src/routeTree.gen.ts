@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
+import { Route as AppAccountRouteImport } from './routes/_app.account'
 import { Route as AppConfigRouteImport } from './routes/_app.config'
 import { Route as AppForwardRouteImport } from './routes/_app.forward'
 import { Route as AppLimitRouteImport } from './routes/_app.limit'
@@ -34,6 +35,11 @@ const LoginRoute = LoginRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAccountRoute = AppAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => AppRoute,
 } as any)
 const AppConfigRoute = AppConfigRouteImport.update({
@@ -85,6 +91,7 @@ const AppUserRoute = AppUserRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
+  '/account': typeof AppAccountRoute
   '/config': typeof AppConfigRoute
   '/forward': typeof AppForwardRoute
   '/limit': typeof AppLimitRoute
@@ -97,6 +104,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/account': typeof AppAccountRoute
   '/config': typeof AppConfigRoute
   '/forward': typeof AppForwardRoute
   '/limit': typeof AppLimitRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/account': typeof AppAccountRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/forward': typeof AppForwardRoute
   '/_app/limit': typeof AppLimitRoute
@@ -128,6 +137,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/account'
     | '/config'
     | '/forward'
     | '/limit'
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/account'
     | '/config'
     | '/forward'
     | '/limit'
@@ -154,6 +165,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/login'
+    | '/_app/account'
     | '/_app/config'
     | '/_app/forward'
     | '/_app/limit'
@@ -192,6 +204,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/account': {
+      id: '/_app/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AppAccountRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/config': {
@@ -261,6 +280,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAccountRoute: typeof AppAccountRoute
   AppConfigRoute: typeof AppConfigRoute
   AppForwardRoute: typeof AppForwardRoute
   AppLimitRoute: typeof AppLimitRoute
@@ -274,6 +294,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAccountRoute: AppAccountRoute,
   AppConfigRoute: AppConfigRoute,
   AppForwardRoute: AppForwardRoute,
   AppLimitRoute: AppLimitRoute,

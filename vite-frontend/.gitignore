@@ -30,3 +30,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Playwright 的失败记录可能含本地测试凭据，禁止提交；截图基线在 e2e 中另行审查。
+/playwright-report/
+/test-results/

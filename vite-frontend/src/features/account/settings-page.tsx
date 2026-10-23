@@ -1,138 +1,50 @@
-import { PageHeader } from "@/components/page";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { getPanelAddress, setPanelAddress } from "@/lib/api/client";
-import { notify } from "@/lib/notify";
-import { readPreferences, setPreference } from "@/lib/preferences";
-import { resolveTheme, setTheme, type Theme } from "@/lib/theme";
-import { Globe, Moon, Save, Settings2, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { usePreferences } from "@/hooks/use-preferences";
+import { setPreference } from "@/lib/preferences";
 
 export function SettingsPage() {
-  const [address, setAddress] = useState("");
-  const [notificationsEnabled, setNotify] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [theme, setThemeState] = useState<Theme>("dark");
-
-  useEffect(() => {
-    setAddress(getPanelAddress());
-    setThemeState(resolveTheme());
-    const prefs = readPreferences();
-    setNotify(prefs.notify);
-    setAutoRefresh(prefs.autoRefresh);
-  }, []);
-
-  const toggleTheme = (v: boolean) => {
-    const next: Theme = v ? "dark" : "light";
-    setTheme(next);
-    setThemeState(next);
-    notify.success(v ? "已切换到深色模式" : "已切换到浅色模式");
-  };
-
-  const saveAddress = () => {
-    const v = address.trim();
-    // 留空会恢复同源 API 默认行为；自定义地址会改变 API、WebSocket 与订阅链接目标，
-    // 仅应填写可信且由当前用户管理的面板地址，保存后网络层会清理旧站点缓存。
-    if (!v) {
-      setPanelAddress("");
-      notify.success("已重置为同源 /api/v1/");
-      return;
-    }
-    if (!/^https?:\/\//.test(v)) return notify.error("请以 http:// 或 https:// 开头");
-    setPanelAddress(v);
-    notify.success("面板地址已保存");
-  };
-
-  const togglePref = (k: "notify" | "auto_refresh", v: boolean) => {
-    // 写入共享偏好存储并广播；订阅方（notify 包装器、自动刷新 hook）实时生效。
-    setPreference(k === "notify" ? "notify" : "autoRefresh", v);
-    if (k === "notify") setNotify(v);
-    else setAutoRefresh(v);
-  };
-
+  const preferences = usePreferences();
   return (
-    <div className="space-y-6">
-      <PageHeader
-        icon={<Settings2 className="h-5 w-5" />}
-        title="面板设置"
-        description="连接后端与本地偏好"
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Globe className="h-4 w-4 text-primary" /> 后端连接
-          </CardTitle>
-          <CardDescription>
-            指向你的 go-panel Go 后端。留空则使用同源 <span className="font-mono">/api/v1/</span>
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>面板地址</Label>
-            <div className="flex gap-2">
-              <Input
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="https://panel.example.com"
-                className="font-mono"
-              />
-              <Button onClick={saveAddress}>
-                <Save className="h-4 w-4" /> 保存
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              需允许当前域名跨域，https 页面不能调用 http 后端。
+    <Card>
+      <CardHeader>
+        <CardTitle>偏好</CardTitle>
+        <CardDescription>仅保存在当前浏览器，修改后立即生效</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <label htmlFor="account-notify" className="text-body-strong text-ink">
+              操作成功提示
+            </label>
+            <p id="account-notify-description" className="mt-1 text-caption text-mute">
+              关闭后只保留警告和错误提示
             </p>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">本地偏好</CardTitle>
-          <CardDescription>仅存储在浏览器 localStorage</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center justify-between rounded-md border border-border p-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-muted/40 text-primary">
-                {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-              </div>
-              <div>
-                <div className="text-sm font-medium">深色模式</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  切换深色 / 浅色主题；也可在顶栏一键切换
-                </div>
-              </div>
-            </div>
-            <Switch checked={theme === "dark"} onCheckedChange={toggleTheme} />
+          <Switch
+            id="account-notify"
+            checked={preferences.notify}
+            onCheckedChange={(value) => setPreference("notify", value)}
+            aria-describedby="account-notify-description"
+          />
+        </div>
+        <div className="flex items-start justify-between gap-4 border-t border-hairline pt-5">
+          <div>
+            <label htmlFor="account-auto-refresh" className="text-body-strong text-ink">
+              列表自动刷新
+            </label>
+            <p id="account-auto-refresh-description" className="mt-1 text-caption text-mute">
+              节点、转发列表每 30 秒刷新一次
+            </p>
           </div>
-          <div className="flex items-center justify-between rounded-md border border-border p-3">
-            <div>
-              <div className="text-sm font-medium">操作通知</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">操作完成后弹出 Toast 提示</div>
-            </div>
-            <Switch
-              checked={notificationsEnabled}
-              onCheckedChange={(v) => togglePref("notify", v)}
-            />
-          </div>
-          <div className="flex items-center justify-between rounded-md border border-border p-3">
-            <div>
-              <div className="text-sm font-medium">列表自动刷新</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">节点/转发页每 30 秒轮询</div>
-            </div>
-            <Switch checked={autoRefresh} onCheckedChange={(v) => togglePref("auto_refresh", v)} />
-          </div>
-          <Separator />
-          <p className="text-xs text-muted-foreground">所有偏好仅存储在当前浏览器。</p>
-        </CardContent>
-      </Card>
-    </div>
+          <Switch
+            id="account-auto-refresh"
+            checked={preferences.autoRefresh}
+            onCheckedChange={(value) => setPreference("autoRefresh", value)}
+            aria-describedby="account-auto-refresh-description"
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
