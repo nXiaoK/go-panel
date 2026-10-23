@@ -43,31 +43,45 @@ export function targetAddressFields(remoteAddr: string): string[] {
   return targets.length ? targets : [""];
 }
 
-export function validateForwardForm(form: ForwardFormInput) {
-  if (!form.name?.trim()) return "请输入转发名称";
-  if (!form.tunnelId) return "请选择隧道";
+export type ForwardFormErrors = Partial<
+  Record<
+    | "name"
+    | "tunnelId"
+    | "inPort"
+    | "remoteAddr"
+    | "activeRemoteAddr"
+    | "exitMembers"
+    | "targetMode"
+    | "exitMode",
+    string
+  >
+>;
+
+export function validateForwardForm(form: ForwardFormInput): ForwardFormErrors {
+  const errors: ForwardFormErrors = {};
+  if (!form.name?.trim()) errors.name = "请输入转发名称";
+  if (!form.tunnelId) errors.tunnelId = "请选择隧道";
   if (
-    form.inPort !== null &&
-    form.inPort !== undefined &&
+    form.inPort != null &&
     (!Number.isInteger(form.inPort) || form.inPort < 1 || form.inPort > 65535)
-  ) {
-    return "入口端口范围应为 1-65535";
-  }
+  )
+    errors.inPort = "入口端口范围应为 1-65535";
   const targets = splitTargetAddresses(form.remoteAddr || "");
-  if (targets.length === 0) return "请输入目标地址";
+  if (targets.length === 0) errors.remoteAddr = "请输入目标地址";
   if (form.targetMode === "manual") {
-    if (!form.activeRemoteAddr?.trim()) return "手动目标需要选择当前目标地址";
-    if (!targets.includes(form.activeRemoteAddr.trim())) return "当前目标地址不在目标地址列表中";
+    if (!form.activeRemoteAddr?.trim()) errors.activeRemoteAddr = "手动目标需要选择当前目标地址";
+    else if (!targets.includes(form.activeRemoteAddr.trim()))
+      errors.activeRemoteAddr = "当前目标地址不在目标地址列表中";
   }
   if (form.tunnelType === 2) {
     const members = (form.exitMembers || []).filter((m) => !!m.outNodeId);
     if (form.exitMode === "manual") {
-      if (members.length === 0) return "请至少选择一个出口节点";
-      if (members.filter((m) => m.active).length !== 1) return "手动负载需要选择一个当前出口节点";
+      if (members.length === 0) errors.exitMembers = "请至少选择一个出口节点";
+      else if (members.filter((m) => m.active).length !== 1)
+        errors.exitMembers = "手动负载需要选择一个当前出口节点";
     }
-    if (form.exitMode === "balance" && members.length < 2) {
-      return "自动负载均衡至少需要两个出口节点";
-    }
+    if (form.exitMode === "balance" && members.length < 2)
+      errors.exitMembers = "自动负载均衡至少需要两个出口节点";
   }
-  return "";
+  return errors;
 }

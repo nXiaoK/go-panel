@@ -17,7 +17,7 @@ describe("loadSortedForwards", () => {
     expect(result.map((forward) => forward.id)).toEqual([2, 1]);
   });
 
-  it("falls back to the locally persisted order when backend order is absent", async () => {
+  it("ignores old local ordering even when backend order is absent", async () => {
     window.localStorage.setItem("forward-order", JSON.stringify([3, 1]));
     const fetchForwards = vi.fn(async () => [
       { id: 1, name: "one", inx: 0 },
@@ -28,6 +28,6 @@ describe("loadSortedForwards", () => {
     const result = await loadSortedForwards(fetchForwards);
 
     expect(fetchForwards).toHaveBeenCalledTimes(1);
-    expect(result.map((forward) => forward.id)).toEqual([3, 1, 2]);
+    expect(result.map((forward) => forward.id)).toEqual([1, 2, 3]);
   });
 });

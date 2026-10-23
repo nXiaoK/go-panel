@@ -25,6 +25,7 @@ vi.mock("../src/lib/api/client", async (original) => ({
 vi.mock("@tanstack/react-router", async (original) => ({
   ...(await original<typeof import("@tanstack/react-router")>()),
   useNavigate: () => vi.fn(),
+  useSearch: () => ({}),
 }));
 let client: QueryClient;
 function show(Page: React.ComponentType) {

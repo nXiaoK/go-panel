@@ -32,7 +32,7 @@ describe("forward form helpers", () => {
       strategy: "fifo",
     });
 
-    assert.equal(error, "");
+    assert.deepEqual(error, {});
   });
 
   it("rejects an explicit entry port outside the valid port range", () => {
@@ -44,7 +44,7 @@ describe("forward form helpers", () => {
       strategy: "fifo",
     });
 
-    assert.equal(error, "入口端口范围应为 1-65535");
+    assert.deepEqual(error, { inPort: "入口端口范围应为 1-65535" });
   });
 
   it("extracts host and port from a pasted http url target", () => {
