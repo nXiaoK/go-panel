@@ -86,15 +86,99 @@ func CreateNode(req dto.NodeDto) result.R {
 	return result.OkMsg("节点创建成功")
 }
 
-// GetAllNodes 节点列表（隐藏 secret）
+// GetAllNodes 节点列表（隐藏 secret），同步摘要批量查询，避免逐节点查表。
 func GetAllNodes() result.R {
 	var nodes []model.Node
-	model.DB.Find(&nodes)
+	if err := model.DB.Find(&nodes).Error; err != nil {
+		return result.Err("节点查询失败")
+	}
+	var states []model.NodeSyncState
+	if err := model.DB.Find(&states).Error; err != nil {
+		return result.Err("节点同步状态查询失败")
+	}
+	byNode := make(map[int64]*model.NodeSyncState, len(states))
+	for i := range states {
+		byNode[states[i].NodeID] = &states[i]
+	}
 	for i := range nodes {
 		nodes[i].Secret = ""
 		enrichNodeVersionInfo(&nodes[i])
+		state := byNode[nodes[i].ID]
+		nodes[i].SyncState = nodeSyncSummary(state)
+		if state != nil {
+			nodes[i].SyncLastError = state.LastError
+		}
 	}
 	return result.Ok(nodes)
+}
+
+func nodeSyncSummary(state *model.NodeSyncState) string {
+	if state == nil {
+		return "unknown"
+	}
+	if state.State == SyncFailed {
+		return "failed"
+	}
+	if state.AppliedGeneration >= state.DesiredGeneration {
+		return "synced"
+	}
+	return "pending"
+}
+
+// 节点检查默认只等 5 秒回包；使用单独的参数化实现，测试可缩短等待且不修改全局配置。
+const nodeStatusCheckTimeout = 5 * time.Second
+
+// CheckNodeStatus 检查指定节点的会话与命令往返，不修改节点状态或触发规则同步。
+func CheckNodeStatus(nodeID int64) result.R {
+	return checkNodeStatusWithTimeout(nodeID, nodeStatusCheckTimeout)
+}
+
+func checkNodeStatusWithTimeout(nodeID int64, timeout time.Duration) result.R {
+	var node model.Node
+	if err := model.DB.First(&node, nodeID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return result.Err("节点不存在")
+		}
+		return result.Err("节点查询失败")
+	}
+	var state model.NodeSyncState
+	err := model.DB.Where("node_id = ?", nodeID).First(&state).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return result.Err("节点同步状态查询失败")
+	}
+	enrichNodeVersionInfo(&node)
+	check := dto.NodeStatusCheck{
+		NodeID: node.ID, Name: node.Name, ForwardMode: normalizeForwardMode(node.ForwardMode), DBStatus: node.Status,
+		Connected: ws.Default.GetNode(nodeID) != nil, Version: stringValue(node.Version), LatestVersion: node.LatestVersion,
+		UpgradeAvailable: node.UpgradeAvailable, SyncState: "unknown",
+	}
+	if err == nil {
+		check.SyncState = nodeSyncSummary(&state)
+		check.SyncLastError = state.LastError
+		check.SyncLastAttempt = state.LastAttemptTime
+	}
+	if !check.Connected {
+		check.Message = "节点未连接面板"
+		check.CheckedAt = time.Now().UnixMilli()
+		return result.Ok(check)
+	}
+	// gost 与 nft 均支持回环 TcpPing；固定探测本机 1 号端口一次，最长连接 1 秒。
+	// 不访问面板或外网，也不下发规则；目标拒绝连接同样证明节点已收到并处理命令。
+	start := time.Now()
+	res := ws.SendMsgWithTimeout(nodeID, map[string]interface{}{
+		"ip": "127.0.0.1", "port": 1, "count": 1, "timeout": 1000,
+	}, "TcpPing", timeout)
+	check.Responsive = res.Responded
+	if check.Responsive {
+		check.RoundTripMs = time.Since(start).Milliseconds()
+		check.Message = "节点连接正常，已收到命令响应"
+	} else if res.Msg == "等待响应超时" {
+		check.Message = fmt.Sprintf("已连接但 %g 秒内无响应", timeout.Seconds())
+	} else {
+		check.Message = "节点检测未收到响应：" + res.Msg
+	}
+	check.CheckedAt = time.Now().UnixMilli()
+	return result.Ok(check)
 }
 
 func enrichNodeVersionInfo(node *model.Node) {

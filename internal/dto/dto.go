@@ -64,6 +64,25 @@ type NodeDto struct {
 	ForwardMode string `json:"forwardMode" binding:"required"`
 }
 
+// NodeStatusCheck 单节点实时检查；数据库在线标记与实际会话、命令响应分别返回。
+type NodeStatusCheck struct {
+	NodeID           int64  `json:"nodeId"`
+	Name             string `json:"name"`
+	ForwardMode      string `json:"forwardMode"`
+	DBStatus         int    `json:"dbStatus"`
+	Connected        bool   `json:"connected"`
+	Responsive       bool   `json:"responsive"`
+	RoundTripMs      int64  `json:"roundTripMs"`
+	Version          string `json:"version"`
+	LatestVersion    string `json:"latestVersion"`
+	UpgradeAvailable bool   `json:"upgradeAvailable"`
+	SyncState        string `json:"syncState"`
+	SyncLastError    string `json:"syncLastError,omitempty"`
+	SyncLastAttempt  int64  `json:"syncLastAttempt"`
+	CheckedAt        int64  `json:"checkedAt"`
+	Message          string `json:"message,omitempty"`
+}
+
 // NodeUpdateDto 更新节点
 type NodeUpdateDto struct {
 	ID          int64  `json:"id" binding:"required"`

@@ -20,6 +20,8 @@ type GostResult struct {
 	// OutcomeUnknown means a write was attempted but no definitive agent
 	// response was received. It is internal transport state and is never JSON.
 	OutcomeUnknown bool `json:"-"`
+	// Responded 仅在当前请求收到所属会话的真实回包时为 true，命令拒绝也算回包；不暴露到协议。
+	Responded bool `json:"-"`
 }
 
 // SessionOptions configures a new connection-scoped session.
@@ -217,6 +219,7 @@ func (h *Hub) resolvePending(session *Session, requestId string, res GostResult)
 	if !ok || pending.session != session || !h.pending.CompareAndDelete(requestId, pending) {
 		return
 	}
+	res.Responded = true
 	pending.deliver(res)
 }
 
