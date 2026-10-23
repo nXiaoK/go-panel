@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { formatBytes } from "@/lib/format";
 import { TrafficChart } from "./traffic-chart";
 import { trafficChartGeometry, type TrafficPoint } from "../traffic";
 const data: TrafficPoint[] = [
@@ -46,6 +47,18 @@ describe("流量图像素坐标与无障碍", () => {
       "M 64.00 187.00 L 370.00 16.00",
     );
     expect(container.querySelector("circle")?.getAttribute("r")).toBe("4");
+  });
+  it("子 GB 数据在显示单位内使用整齐 MB 刻度，仍覆盖最大流量", () => {
+    const geometry = trafficChartGeometry([{ time: "12:00", down: 0.59, up: 0.11 }], 800, 280);
+    expect(geometry.ticks.map((tick) => formatBytes(tick * 1024 ** 3))).toEqual([
+      "0 B",
+      "200 MB",
+      "400 MB",
+      "600 MB",
+      "800 MB",
+    ]);
+    expect(geometry.y(0.59)).toBeGreaterThanOrEqual(geometry.top);
+    expect(geometry.y(0.59)).toBeLessThan(geometry.top + geometry.plotHeight);
   });
   it("方向键/Home/End选择最近点，提示同时提供上下行及合计", () => {
     render(<TrafficChart data={data} range="7d" view="chart" />);

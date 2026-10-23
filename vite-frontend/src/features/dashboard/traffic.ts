@@ -237,9 +237,14 @@ export function trafficChartGeometry(data: TrafficPoint[], width: number, height
   const plotWidth = Math.max(1, width - left - right);
   const plotHeight = Math.max(1, height - top - bottom);
   const highest = Math.max(0, ...data.flatMap((point) => [point.down, point.up]));
-  const rawStep = (highest || 1) / 4;
+  // 数据沿用 GB 坐标；先按实际展示单位取整齐刻度，避免 0.2 GB 被格式化成 205 MB。
+  const highestBytes = (highest || 1) * 1024 ** 3;
+  const unitBytes =
+    1024 ** Math.max(0, Math.min(4, Math.floor(Math.log(highestBytes) / Math.log(1024))));
+  const rawStep = highestBytes / unitBytes / 4;
   const power = 10 ** Math.floor(Math.log10(rawStep));
-  const step = ([1, 2, 2.5, 5, 10].find((value) => value * power >= rawStep) ?? 10) * power;
+  const stepInUnit = ([1, 2, 2.5, 5, 10].find((value) => value * power >= rawStep) ?? 10) * power;
+  const step = (stepInUnit * unitBytes) / 1024 ** 3;
   const maximum = step * 4;
   const x = (index: number) => left + (data.length < 2 ? 0 : index / (data.length - 1)) * plotWidth;
   const y = (value: number) => top + plotHeight - (nonNegativeNumber(value) / maximum) * plotHeight;
