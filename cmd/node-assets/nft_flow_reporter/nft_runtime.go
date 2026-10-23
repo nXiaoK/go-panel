@@ -351,10 +351,10 @@ func (r *execNftRuntime) inspectTables(ctx context.Context) ([]GenerationTable, 
 	// 只记录有限长度的清单输出，区分空输出、截断和 stderr 提示，避免整份清单淹没错误信息。
 	parseErr = fmt.Errorf("%w (stdout_bytes=%d stdout_prefix=%q stderr_prefix=%q)",
 		parseErr, len(stdout), stdout[:min(len(stdout), 256)], stderr[:min(len(stderr), 256)])
-	// Debian 12 nft 1.0.6 的 JSON 输出可能为空，也可能在键或值中间结束并报 EOF。
+	// Debian 12 nft 1.0.6 的 JSON 输出可能为空，也可能在键或值中间提前结束。
 	// 仅不完整输出走此兼容路径：精确核对版本，再独立读取文本清单并逐表确认状态。
 	// 完整但结构非法的 JSON 仍拒绝；不能把不完整清单当作无表，避免错误切换流量。
-	if errors.Is(parseErr, io.EOF) || errors.Is(parseErr, io.ErrUnexpectedEOF) {
+	if incompleteJSON([]byte(stdout), parseErr) {
 		verified, verifyErr := r.inspectIncompleteJSONTables(ctx)
 		if verifyErr != nil {
 			operation := "verify truncated nft JSON compatibility"
@@ -388,6 +388,68 @@ func (r *execNftRuntime) inspectTables(ctx context.Context) ([]GenerationTable, 
 		return nil, errors.Join(parseErr, verifyErr)
 	}
 	return verified, nil
+}
+
+// incompleteJSON 只识别在合法 JSON 前缀处结束的输出，不依赖各 Go 版本对截断返回 EOF 还是 SyntaxError。
+// 空输出和纯空白也可进入兼容核验；完整但结构非法、重复键和深度超限仍拒绝。
+func incompleteJSON(raw []byte, err error) bool {
+	if err == nil {
+		return false
+	}
+	var syntaxErr *json.SyntaxError
+	if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) &&
+		(!errors.As(err, &syntaxErr) || syntaxErr.Offset < int64(len(bytes.TrimRight(raw, " \t\r\n")))) {
+		return false
+	}
+
+	// 先按 JSON 语法逐字节校验字符串前缀：Go 1.27 的 Unicode 转义错误位置可能
+	// 指向第四位，即使较早的位已经非法；不能只凭末尾 Offset 接受该类输出。
+	inString, escaped := false, false
+	unicodeDigits := 0
+	for _, char := range raw {
+		if !inString {
+			inString = char == '"'
+			continue
+		}
+		if unicodeDigits > 0 {
+			if !('0' <= char && char <= '9' || 'a' <= char && char <= 'f' || 'A' <= char && char <= 'F') {
+				return false
+			}
+			unicodeDigits--
+			continue
+		}
+		if escaped {
+			escaped = false
+			switch char {
+			case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
+			case 'u':
+				unicodeDigits = 4
+			default:
+				return false
+			}
+			continue
+		}
+		switch char {
+		case '"':
+			inString = false
+		case '\\':
+			escaped = true
+		default:
+			if char < 0x20 {
+				return false
+			}
+		}
+	}
+
+	// 单独比较 Offset >= len(raw) 会把末尾非法记号（如 {"nftables":[}）误认为截断。
+	// 追加一个空白字节再校验：合法前缀只会在原输入之后报错，原有非法记号仍在原位置。
+	// 保留原始尾部空白，避免把已经被空白终止的残缺数字或字面量误当作合法前缀。
+	padded := make([]byte, len(raw)+1)
+	copy(padded, raw)
+	padded[len(raw)] = ' '
+	var document json.RawMessage
+	validationErr := json.Unmarshal(padded, &document)
+	return errors.As(validationErr, &syntaxErr) && syntaxErr.Offset > int64(len(raw))
 }
 
 func (r *execNftRuntime) inspectIncompleteJSONTables(ctx context.Context) ([]GenerationTable, error) {
