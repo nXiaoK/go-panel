@@ -132,10 +132,10 @@ func Register(r *gin.Engine, corsAllowOrigin string, allowLegacyNftReports bool)
 	admin.POST("/config/update", updateConfigs)
 	admin.POST("/config/update-single", updateSingleConfig)
 
-	// system
+	// system：运行状态向已完成改密的登录用户开放，精确版本与升级信息仅管理员可读。
 	authChecked.POST("/system/status", systemStatus)
-	authChecked.POST("/system/version", systemVersion)
-	authChecked.POST("/system/update/check", systemUpdateCheck)
+	admin.POST("/system/version", systemVersion)
+	admin.POST("/system/update/check", systemUpdateCheck)
 	admin.POST("/system/update/apply", systemUpdateApply)
 
 	// backup
