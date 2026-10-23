@@ -84,24 +84,27 @@ function form(
   current: Forward | null = null,
   tunnels: (Tunnel | UserTunnelOption)[] = [option],
 ) {
+  const onOpenChange = vi.fn();
+  const onSaved = vi.fn();
   render(
     <QueryClientProvider client={new QueryClient()}>
       <ForwardFormDialog
         mode={mode}
         open
-        onOpenChange={vi.fn()}
+        onOpenChange={onOpenChange}
         editing={current}
         tunnels={tunnels}
         nodes={[]}
-        onSaved={vi.fn()}
+        onSaved={onSaved}
       />
     </QueryClientProvider>,
   );
+  return { onOpenChange, onSaved };
 }
 describe("regular-user forward form", () => {
   it("disables unusable grants, shows reasons and creates with the tunnel default exit", async () => {
     vi.mocked(createForward).mockResolvedValue("操作成功");
-    form("user", null, [
+    const callbacks = form("user", null, [
       option,
       {
         ...option,
@@ -123,6 +126,8 @@ describe("regular-user forward form", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(createForward).toHaveBeenCalledOnce());
+    await waitFor(() => expect(callbacks.onOpenChange).toHaveBeenCalledWith(false));
+    expect(callbacks.onSaved).toHaveBeenCalledOnce();
     expect(vi.mocked(createForward).mock.calls[0][0]).toMatchObject({
       exitMode: "single",
       exitMembers: [],
@@ -150,6 +155,33 @@ describe("regular-user forward form", () => {
       exitMembers: editing.exitMembers,
     });
   });
+  it("reports missing targets inline and focuses the target field", async () => {
+    form("user", { ...editing, remoteAddr: "" });
+    const target = screen.getByPlaceholderText(/10.211.55.5/);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("请输入目标地址")).toBeTruthy();
+    expect(target.getAttribute("aria-invalid")).toBe("true");
+    await waitFor(() => expect(document.activeElement).toBe(target));
+    expect(updateForward).not.toHaveBeenCalled();
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+  it("validates explicit port ranges inline without native browser blocking", async () => {
+    form("user", editing);
+    fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "70000" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("入口端口范围应为 1-65535")).toBeTruthy();
+    expect(screen.getByRole("spinbutton").getAttribute("aria-invalid")).toBe("true");
+    expect(updateForward).not.toHaveBeenCalled();
+  });
+  it("confirms before discarding dirty form input", async () => {
+    const callbacks = form("user", editing);
+    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "changed" } });
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(await screen.findByRole("alertdialog", { name: "放弃未保存的修改？" })).toBeTruthy();
+    expect(callbacks.onOpenChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "放弃修改" }));
+    expect(callbacks.onOpenChange).toHaveBeenCalledWith(false);
+  });
   it("releases the save button after a rejected request and allows retry", async () => {
     vi.mocked(updateForward)
       .mockRejectedValueOnce(new ApiError("系统维护中，请稍后重试", 503, 503))
@@ -157,7 +189,10 @@ describe("regular-user forward form", () => {
     form("user", editing);
     const save = screen.getByRole("button", { name: "保存" });
     fireEvent.click(save);
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith("系统维护中，请稍后重试"));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain("系统维护中，请稍后重试"),
+    );
+    expect(notify.error).not.toHaveBeenCalled();
     expect(save.hasAttribute("disabled")).toBe(false);
     fireEvent.click(save);
     await waitFor(() => expect(updateForward).toHaveBeenCalledTimes(2));

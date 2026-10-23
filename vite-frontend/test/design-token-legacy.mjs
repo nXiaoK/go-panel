@@ -21,13 +21,6 @@ export const legacyViolations = {
       "text-[9px]": 1,
     },
   },
-  "src/features/forward/components/exit-member-picker.tsx": {
-    owner: "U05",
-    values: {
-      "text-[11px]": 2,
-      "text-[10px]": 1,
-    },
-  },
   "src/features/forward/components/nft-import-dialog.tsx": {
     owner: "U05",
     values: {

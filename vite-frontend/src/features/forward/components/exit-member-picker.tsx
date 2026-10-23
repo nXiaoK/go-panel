@@ -39,12 +39,12 @@ export function ExitMemberPicker({
     const current = activeId || tunnel?.outNodeId || tunnel?.exitNodeId || candidates[0]?.id;
     return (
       <div className={className}>
-        <Label className="text-xs text-muted-foreground">出口节点</Label>
+        <Label className="text-xs text-mute">出口节点</Label>
         <Select
           value={current ? String(current) : ""}
           onValueChange={(v) => apply([{ outNodeId: Number(v), active: true, weight: 1 }])}
         >
-          <SelectTrigger className="mt-1.5">
+          <SelectTrigger aria-label="出口节点" className="mt-1.5">
             <SelectValue placeholder="选择出口节点" />
           </SelectTrigger>
           <SelectContent>
@@ -77,21 +77,21 @@ export function ExitMemberPicker({
   return (
     <div className={`space-y-2 ${className}`}>
       <div className="flex items-center justify-between">
-        <Label className="text-xs text-muted-foreground">候选出口节点</Label>
-        <span className="text-[11px] text-muted-foreground">{members.length} selected</span>
+        <Label className="text-xs text-mute">候选出口节点</Label>
+        <span className="text-caption text-mute">已选 {members.length} 个</span>
       </div>
       <RadioGroup
         value={activeId ? String(activeId) : ""}
         onValueChange={(v) => setActive(Number(v))}
       >
-        <div className="max-h-44 space-y-1 overflow-auto rounded-md border border-border/60 bg-background">
+        <div className="max-h-44 space-y-1 overflow-auto rounded-md border border-hairline bg-canvas">
           {candidates.map((node) => {
             const checked = selectedIds.has(node.id);
             const active = activeId === node.id;
             return (
               <div
                 key={node.id}
-                className="flex items-center gap-2 border-b border-border/50 px-3 py-2 last:border-b-0"
+                className="flex items-center gap-2 border-b border-hairline-subtle px-3 py-2 last:border-b-0"
               >
                 <Checkbox
                   checked={checked}
@@ -105,16 +105,16 @@ export function ExitMemberPicker({
                     aria-label={`当前出口 ${node.name}`}
                   />
                 ) : (
-                  <span className="h-4 w-4 rounded-full border border-border bg-muted" />
+                  <span className="h-4 w-4 rounded-full border border-control bg-canvas-soft" />
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm">{node.name}</div>
-                  <div className="truncate font-mono text-[11px] text-muted-foreground">
+                  <div className="truncate font-mono text-caption text-mute">
                     {node.serverIp || node.ip || "-"} · {node.forwardMode || "node"}
                   </div>
                 </div>
                 {mode === "manual" && active && checked && (
-                  <Badge variant="outline" className="border-primary/30 text-[10px] text-primary">
+                  <Badge variant="outline" className="border-hairline text-caption text-ink">
                     当前
                   </Badge>
                 )}
@@ -122,9 +122,7 @@ export function ExitMemberPicker({
             );
           })}
           {candidates.length === 0 && (
-            <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-              暂无可用出口节点
-            </div>
+            <div className="px-3 py-6 text-center text-sm text-mute">暂无可用出口节点</div>
           )}
         </div>
       </RadioGroup>
