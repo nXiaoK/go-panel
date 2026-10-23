@@ -1,14 +1,14 @@
-import { apiPost, type RequestOptions } from "./client";
+import { apiPost, type RequestOptions } from "@/lib/api/client";
 import type {
-  Tunnel,
-  TunnelWrite,
-  TunnelListItem,
-  UserTunnel,
-  UserTunnelAssign,
-  UserTunnelWrite,
   DiagnosisResult,
   SpeedTestRequest,
   SpeedTestResult,
+  Tunnel,
+  TunnelListItem,
+  TunnelWrite,
+  UserTunnel,
+  UserTunnelAssign,
+  UserTunnelWrite,
 } from "@/lib/types";
 export const createTunnel = (data: TunnelWrite, opts?: RequestOptions): Promise<string> =>
   apiPost("/tunnel/create", data, opts);
