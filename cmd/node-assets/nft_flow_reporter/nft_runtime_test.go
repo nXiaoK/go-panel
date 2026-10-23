@@ -570,6 +570,78 @@ func TestRuntimeCapabilityProbeVerifiesEveryTransitionAndPreservesExistingTables
 	}
 }
 
+func TestIncompleteJSONRecognizesOnlyLegalPrefixes(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{name: "empty", want: true},
+		{name: "whitespace", raw: " \t\r\n", want: true},
+		{name: "missing array close", raw: `{"nftables":[`, want: true},
+		{name: "missing object close", raw: `{"nftables":[]`, want: true},
+		{name: "missing value with whitespace", raw: "{\"nftables\": \n", want: true},
+		{name: "truncated string escape", raw: `{"nftables":"dorm\`, want: true},
+		{name: "truncated unicode escape", raw: `{"nftables":"\u12`, want: true},
+		{name: "truncated literal", raw: `{"nftables":tru`, want: true},
+		{name: "truncated exponent", raw: `{"nftables":1e+`, want: true},
+		{name: "invalid final delimiter", raw: `{"nftables":[}`},
+		{name: "invalid delimiter with whitespace", raw: "{\"nftables\":[} \n"},
+		{name: "complete invalid table structure", raw: `{"nftables":[{"table":1}]}`},
+		{name: "complete valid inventory", raw: `{"nftables":[]}`},
+		{name: "complete invalid inventory", raw: `{"nftables":null}`},
+		{name: "trailing content", raw: `{"nftables":[]} trailing`},
+		{name: "trailing incomplete document", raw: `{"nftables":[]} {`},
+		{name: "invalid literal", raw: `{"nftables":trX`},
+		{name: "terminated partial literal", raw: `{"nftables":tru `},
+		{name: "terminated partial exponent", raw: `{"nftables":1e+ `},
+		{name: "invalid string escape", raw: `{"nftables":"\x`},
+		{name: "invalid first unicode digit", raw: `{"nftables":"\uX`},
+		{name: "invalid second unicode digit", raw: `{"nftables":"\u1X`},
+		{name: "invalid third unicode digit", raw: `{"nftables":"\u12X`},
+		{name: "invalid fourth unicode digit", raw: `{"nftables":"\u123X`},
+		{name: "invalid string control", raw: "{\"nftables\":\"dorm\n"},
+		{name: "missing separator", raw: `{"nftables":[1 2`},
+		{name: "duplicate key before truncation", raw: `{"nftables":[],"nftables":`},
+		{name: "depth limit before truncation", raw: strings.Repeat("[", maxNftJSONDepth+2)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			raw := []byte(test.raw)
+			_, err := parseNftTables(raw)
+			if got := incompleteJSON(raw, err); got != test.want {
+				t.Fatalf("incompleteJSON(%q, %v)=%v, want %v", raw, err, got, test.want)
+			}
+			if err != nil {
+				if got := incompleteJSON(raw, fmt.Errorf("wrapped inventory error: %w", err)); got != test.want {
+					t.Fatalf("wrapped incompleteJSON(%q)=%v, want %v", raw, got, test.want)
+				}
+			}
+		})
+	}
+}
+
+func TestIncompleteJSONAcceptsEveryTruncatedInventoryPrefix(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{"nftables":[{"table":{"family":"inet","name":"flux_panel","handle":123,"comment":"quote \" slash \\ unicode \u4e2d","flags":["dormant"]}}]}`)
+	if _, err := parseNftTables(raw); err != nil {
+		t.Fatalf("invalid complete fixture: %v", err)
+	}
+	for end := range len(raw) {
+		prefix := raw[:end]
+		_, err := parseNftTables(prefix)
+		if !incompleteJSON(prefix, err) {
+			t.Fatalf("rejected legal prefix at byte %d: %q (%v)", end, prefix, err)
+		}
+	}
+	if incompleteJSON(raw, nil) || incompleteJSON([]byte(`{"nftables":[`), errors.New("unrelated validation failure")) {
+		t.Fatal("accepted a complete document or an unrelated validation failure")
+	}
+}
+
 func TestRuntimeProbeSupportsDebian12IncompleteDormantJSON(t *testing.T) {
 	t.Parallel()
 	for name, raw := range map[string]string{
@@ -583,8 +655,8 @@ func TestRuntimeProbeSupportsDebian12IncompleteDormantJSON(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := parseNftTables([]byte(raw)); !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-				t.Fatalf("fixture must reproduce EOF: %v", err)
+			if _, err := parseNftTables([]byte(raw)); !incompleteJSON([]byte(raw), err) {
+				t.Fatalf("fixture must be a legal incomplete JSON prefix: %v", err)
 			}
 			testRuntimeProbeWithIncompleteDormantJSON(t, raw)
 		})
@@ -662,6 +734,9 @@ func TestEmptyJSONCompatibilityFailsClosed(t *testing.T) {
 		{name: "wrong table", inventory: "table inet " + testGenerationA, tableText: nftTableTextFixture(testGenerationB, true), wantErr: "unexpected header"},
 		{name: "unknown flag", inventory: "table inet " + testGenerationA, tableText: strings.Replace(nftTableTextFixture(testGenerationA, true), "flags dormant", "flags owner", 1), wantErr: "unexpected top-level statement"},
 		{name: "invalid JSON", json: `{"nftables":!}`, wantErr: "decode nft table inventory"},
+		{name: "invalid final JSON token", json: `{"nftables":[}`, wantErr: "decode nft table inventory"},
+		{name: "invalid complete table structure", json: `{"nftables":[{"table":1}]}`, wantErr: "decode nft table"},
+		{name: "trailing JSON content", json: `{"nftables":[]} trailing`, wantErr: "decode nft table inventory"},
 		{name: "duplicate JSON key", json: `{"nftables":[],"nftables":[]}`, wantErr: "duplicate nft JSON object key"},
 		{name: "invalid complete structure", json: `{"nftables":null}`, wantErr: "missing or null nftables array"},
 	} {
@@ -748,7 +823,7 @@ func TestTruncatedJSONFallbackRetainsBoundedDiagnostics(t *testing.T) {
 			})
 			runtime.maxOutputBytes = 4096
 			_, err := runtime.Discover(context.Background())
-			if !errors.Is(err, io.EOF) || !strings.Contains(err.Error(), "verify truncated nft JSON compatibility") ||
+			if !incompleteJSON([]byte(raw), err) || !strings.Contains(err.Error(), "verify truncated nft JSON compatibility") ||
 				!strings.Contains(err.Error(), fmt.Sprintf("stdout_bytes=%d", len(raw))) || !strings.Contains(err.Error(), "stderr_prefix=\"diagnostic") {
 				t.Fatalf("missing failure diagnostics: %v", err)
 			}
