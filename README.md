@@ -55,7 +55,7 @@ docker compose ps
 docker compose logs -f panel
 ```
 
-访问 `http://服务器地址:6365`。生产环境建议使用 HTTPS 反向代理，并将 `.env` 中的 `PANEL_BIND` 改成 `127.0.0.1`，避免 6365 端口直接暴露公网。
+访问 `http://服务器地址:6365`。生产环境建议使用 HTTPS 反向代理，并将 `.env` 中的 `PANEL_BIND` 改成 `127.0.0.1`，避免 6365 端口直接暴露公网。HSTS 由 HTTPS 反向代理按实际域名和证书配置；面板自身不发送 HSTS，以保留 HTTP 内网访问和代理终止 HTTPS 的兼容性。
 
 确认管理员已创建并完成密码轮换后，可以清空 `.env` 中的 `ADMIN_PASSWORD` 再执行 `docker compose up -d`。`JWT_SECRET` 必须长期保留；修改它会使所有现有登录令牌失效，也可能使已加密保存的 R2 凭据无法读取。
 

@@ -124,7 +124,7 @@ func HandleSystemInfo(w http.ResponseWriter, r *http.Request) {
 			// 地址可能属于内网，日志只记录节点 ID 和错误原因，不回显原始内容。
 			log.Printf("节点 %d 上报的面板基址无效：%v", node.ID, reportErr)
 		}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := upgrader.Upgrade(w, r, middleware.SecurityHeadersForUpgrade(w.Header()))
 		if err != nil {
 			return
 		}
@@ -149,7 +149,7 @@ func HandleSystemInfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "origin not allowed", http.StatusForbidden)
 		return
 	}
-	responseHeader := http.Header{}
+	responseHeader := middleware.SecurityHeadersForUpgrade(w.Header())
 	if adminProtocol != "" {
 		responseHeader.Set("Sec-WebSocket-Protocol", adminProtocol)
 	}
