@@ -1,5 +1,5 @@
-import { roleLabel } from "./capabilities";
-import type { Tunnel, Node, User, Forward } from "./types";
+import { roleLabel } from "@/lib/capabilities";
+import type { Forward, Node, Tunnel, User } from "@/lib/types";
 export type GlobalSearchKind = "tunnel" | "node" | "user" | "forward";
 
 export interface GlobalSearchItem {

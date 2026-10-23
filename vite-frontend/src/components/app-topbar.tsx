@@ -1,11 +1,5 @@
-import { useSession } from "@/hooks/use-session";
-import { notify } from "@/lib/notify";
-import { errorMessage } from "@/lib/api/client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, Command, Loader2 } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,17 +8,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { getAllUsers, getForwardList, getNodeList, getTunnelList } from "@/lib/api";
-import { isAdministrator, roleLabel } from "@/lib/capabilities";
-import { clearSession, getRoleID } from "@/lib/session";
-import {
-  buildGlobalSearchItems,
-  filterGlobalSearchItems,
-  type GlobalSearchItem,
-} from "@/lib/global-search";
-import { getGlobalSearchCache, searchCacheKeyForRole } from "@/lib/search-cache";
+import { Separator } from "@/components/ui/separator";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { filterGlobalSearchItems, type GlobalSearchItem } from "@/features/search/model";
+import { useSearchItems } from "@/features/search/queries";
+import { useSession } from "@/hooks/use-session";
+import { errorMessage } from "@/lib/api/client";
+import { roleLabel } from "@/lib/capabilities";
+import { notify } from "@/lib/notify";
+import { clearSession } from "@/lib/session";
+import { useNavigate } from "@tanstack/react-router";
+import { Command, Loader2, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export function AppTopbar() {
   const navigate = useNavigate();
@@ -35,45 +30,15 @@ export function AppTopbar() {
   const searchRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [query, setQuery] = useState("");
-  const [searchItems, setSearchItems] = useState<GlobalSearchItem[]>([]);
-
-  const loadSearchItems = useCallback(
-    async (force = false) => {
-      if (forcePassword || searchLoading) return;
-      setSearchLoading(true);
-      try {
-        const admin = isAdministrator(getRoleID());
-        const cache = getGlobalSearchCache();
-        const key = searchCacheKeyForRole(admin);
-        if (force) cache.invalidate("all");
-
-        const items = (await cache.load(key, async () => {
-          // 普通用户只加载自己的转发列表；节点/用户/隧道是管理员数据集。
-          const [tunnels, nodes, users, forwards] = await Promise.all([
-            admin ? getTunnelList() : Promise.resolve([]),
-            admin ? getNodeList() : Promise.resolve([]),
-            admin ? getAllUsers() : Promise.resolve([]),
-            getForwardList(),
-          ]);
-          return buildGlobalSearchItems({
-            tunnels,
-            nodes,
-            users,
-            forwards,
-          });
-        })) as GlobalSearchItem[];
-
-        setSearchItems(items);
-      } catch (error) {
-        notify.error(errorMessage(error));
-      } finally {
-        setSearchLoading(false);
-      }
-    },
-    [forcePassword, searchLoading],
-  );
+  const {
+    items: searchItems,
+    isFetching: searchLoading,
+    error: searchError,
+  } = useSearchItems(searchOpen && !forcePassword);
+  useEffect(() => {
+    if (searchError) notify.error(errorMessage(searchError));
+  }, [searchError]);
 
   const filteredSearchItems = useMemo(
     () => filterGlobalSearchItems(searchItems, query, 8),
@@ -92,13 +57,12 @@ export function AppTopbar() {
         event.preventDefault();
         setSearchOpen(true);
         inputRef.current?.focus();
-        void loadSearchItems();
       }
       if (event.key === "Escape") setSearchOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [forcePassword, loadSearchItems]);
+  }, [forcePassword]);
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -108,19 +72,8 @@ export function AppTopbar() {
     return () => window.removeEventListener("pointerdown", onPointerDown);
   }, []);
 
-  useEffect(() => {
-    const onInvalidate = () => {
-      // Cache already cleared by invalidateGlobalSearch; drop local rows so
-      // the next open reloads through SearchCache.
-      setSearchItems([]);
-    };
-    window.addEventListener("global-search-invalidate", onInvalidate);
-    return () => window.removeEventListener("global-search-invalidate", onInvalidate);
-  }, []);
-
   const logout = () => {
     clearSession();
-    getGlobalSearchCache().clear();
     navigate({ to: "/login" });
   };
   return (
@@ -138,7 +91,6 @@ export function AppTopbar() {
               value={query}
               onFocus={() => {
                 setSearchOpen(true);
-                void loadSearchItems();
               }}
               onChange={(event) => {
                 setQuery(event.target.value);
