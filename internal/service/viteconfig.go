@@ -230,3 +230,22 @@ func GetConfigValue(name string) string {
 	}
 	return cfg.Value
 }
+
+// DeleteConfig 只允许删除自定义配置；关键下载策略、站点地址和内部状态必须保留。
+func DeleteConfig(name string) result.R {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return result.Err("配置名称不能为空")
+	}
+	if isInternalConfigName(name) || name == allowInsecureNodeDownloadsEnvOverrideName {
+		return result.Err("该配置项由系统内部维护，不能删除")
+	}
+	switch name {
+	case "ip", "app_name", githubDownloadProxyConfigName, allowInsecureNodeDownloadsConfigName:
+		return result.Err("关键配置项不能删除")
+	}
+	if err := model.DB.Where("name = ?", name).Delete(&model.ViteConfig{}).Error; err != nil {
+		return result.Err("配置删除失败")
+	}
+	return result.OkMsg("配置删除成功")
+}

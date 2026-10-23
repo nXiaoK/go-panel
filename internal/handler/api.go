@@ -508,3 +508,13 @@ func updateSingleConfig(c *gin.Context) {
 	value, _ := params["value"].(string)
 	c.JSON(http.StatusOK, service.UpdateConfig(name, value))
 }
+
+func deleteConfig(c *gin.Context) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if !bindJSON(c, &req) {
+		return
+	}
+	c.JSON(http.StatusOK, service.DeleteConfig(req.Name))
+}

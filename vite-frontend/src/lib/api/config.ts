@@ -10,3 +10,6 @@ export const updateConfigs = (
   data: Record<string, string>,
   opts?: RequestOptions,
 ): Promise<string> => apiPost("/config/update", data, opts);
+
+export const deleteConfig = (name: string, opts?: RequestOptions): Promise<string> =>
+  apiPost("/config/delete", { name }, opts);
