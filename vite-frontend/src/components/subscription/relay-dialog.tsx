@@ -1,7 +1,7 @@
 import type { RelayWrite } from "@/lib/types";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -99,15 +99,15 @@ export function SubscriptionRelayDialog({
   const relayMutation = useMutation({
     mutationFn: (payload: RelayWrite) => createProxyNodeRelay(payload),
     onSuccess: () => {
-      toast.success("中转已创建");
+      notify.success("中转已创建");
       onOpenChange(false);
       onSaved();
     },
-    onError: (error: Error) => toast.error(error.message || "中转创建失败"),
+    onError: (error: Error) => notify.error(error.message || "中转创建失败"),
   });
 
   const submit = () => {
-    if (!node || !form.tunnelId) return toast.error("请选择隧道");
+    if (!node || !form.tunnelId) return notify.error("请选择隧道");
     relayMutation.mutate({
       nodeId: node.id,
       tunnelId: Number(form.tunnelId),

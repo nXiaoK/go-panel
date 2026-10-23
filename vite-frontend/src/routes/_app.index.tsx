@@ -1,3 +1,6 @@
+import { formatMbps } from "@/lib/format";
+import { formatByteParts, formatBytes, formatRelative, formatDateTime } from "@/lib/format";
+import { useSession } from "@/hooks/use-session";
 import type {
   Tunnel,
   PackagePermission,
@@ -25,7 +28,7 @@ type SpeedProgress = {
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import {
   Activity,
   ArrowDownRight,
@@ -87,13 +90,13 @@ import {
 } from "@/lib/dashboard-load";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { buildPanelWsUrl, createSpeedTestId } from "@/lib/panel-ws";
-import { formatLatencyMs, formatLossPercent, formatSpeedRateFromMbps } from "@/lib/speed-rate";
+import { formatLatencyMs, formatLossPercent } from "@/lib/speed-rate";
 
 export const Route = createFileRoute("/_app/")({
   head: () => ({
     meta: [
-      { title: "控制台 · Flux Panel" },
-      { name: "description", content: "Flux Panel 控制台：实时流量、节点状态与最近活动。" },
+      { title: "控制台" },
+      { name: "description", content: "控制台：实时流量、节点状态与最近活动。" },
     ],
   }),
   component: Dashboard,
@@ -105,32 +108,6 @@ const toneMap = {
   danger: "text-destructive bg-destructive/10 border-destructive/30",
   info: "text-primary bg-primary/10 border-primary/30",
 };
-
-function bytesToGb(value: number) {
-  if (!value || value <= 0) return 0;
-  return value / 1024 / 1024 / 1024;
-}
-
-function formatTraffic(bytes: number) {
-  const gb = bytesToGb(bytes);
-  if (gb >= 1024) return { value: (gb / 1024).toFixed(2), suffix: "TB" };
-  return { value: gb.toFixed(gb >= 10 ? 1 : 2), suffix: "GB" };
-}
-
-function formatTrafficGb(value: number) {
-  const gb = Number(value || 0);
-  if (gb > 0 && gb < 1 / 1024 / 1024) return `${Math.round(gb * 1024 ** 3)} B`;
-  if (gb > 0 && gb < 1 / 1024) return `${(gb * 1024 * 1024).toFixed(2)} KB`;
-  if (gb > 0 && gb < 1) return `${(gb * 1024).toFixed(2)} MB`;
-  return `${gb.toFixed(gb >= 10 ? 2 : 3)} GB`;
-}
-
-function formatEventTime(value?: number | string) {
-  if (!value) return "刚刚";
-  const ts = typeof value === "number" ? value : Date.parse(value);
-  if (!Number.isFinite(ts)) return "刚刚";
-  return new Date(ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-}
 
 function timeGreeting(date = new Date()) {
   const hour = date.getHours();
@@ -183,7 +160,7 @@ function Dashboard() {
   const speedWsRef = useRef<WebSocket | null>(null);
   const activeStressTestIdRef = useRef("");
 
-  const isAdmin = typeof window !== "undefined" && window.localStorage.getItem("role_id") === "0";
+  const { isAdmin, name: sessionName } = useSession();
 
   const selectedTrafficTunnelId = trafficTunnelRequestId(trafficTunnelId);
 
@@ -226,11 +203,11 @@ function Dashboard() {
     const result = await refetchDashboard();
     const data = result.data;
     if (data?.status === "success") {
-      toast.success("控制台数据已刷新");
+      notify.success("控制台数据已刷新");
     } else if (data?.status === "partial") {
-      toast.warning(`部分数据未同步：${formatMissingSources(data.missing)}`);
+      notify.warning(`部分数据未同步：${formatMissingSources(data.missing)}`);
     } else {
-      toast.error(Object.values(data?.errors ?? {}).filter(Boolean)[0] || "控制台数据加载失败");
+      notify.error(Object.values(data?.errors ?? {}).filter(Boolean)[0] || "控制台数据加载失败");
     }
   }, [refetchDashboard]);
 
@@ -327,8 +304,8 @@ function Dashboard() {
     legacyForwardTrafficBytes > 0 ? legacyForwardTrafficBytes : legacyUserTrafficBytes;
   const trafficBytes = resolveTrafficTotalBytes(packageData?.trafficTotals, legacyTrafficBytes);
   const todayTrafficBytes = resolveTrafficTotalBytes(packageData?.todayTraffic);
-  const traffic = formatTraffic(trafficBytes);
-  const todayTraffic = formatTraffic(todayTrafficBytes);
+  const traffic = formatByteParts(trafficBytes);
+  const todayTraffic = formatByteParts(todayTrafficBytes);
   const trafficScope =
     packageData?.trafficScope === "system"
       ? "system"
@@ -353,7 +330,7 @@ function Dashboard() {
       : selectedTrafficTunnel
         ? trafficTunnelLabel(selectedTrafficTunnel)
         : `隧道 #${selectedTrafficTunnelId}`;
-  const trafficTrendTotal = formatTraffic(
+  const trafficTrendTotal = formatByteParts(
     resolveTrafficTotalBytes(packageData?.trafficTrendTotals),
   );
 
@@ -469,11 +446,11 @@ function Dashboard() {
   );
   const clearTrafficHover = useCallback(() => setTrafficHover(null), []);
   const latestStressProgress = stressProgress[stressProgress.length - 1] || null;
-  const latestStressRate = formatSpeedRateFromMbps(latestStressProgress?.mbps || 0);
+  const latestStressRate = formatMbps(latestStressProgress?.mbps || 0);
   const latestStressLatency = formatLatencyMs(latestStressProgress?.latencyMs);
   const latestStressLoss = formatLossPercent(latestStressProgress?.lossPercent);
-  const sentStressRate = formatSpeedRateFromMbps(stressResult?.summary?.sentMbps || 0);
-  const receivedStressRate = formatSpeedRateFromMbps(stressResult?.summary?.receivedMbps || 0);
+  const sentStressRate = formatMbps(stressResult?.summary?.sentMbps || 0);
+  const receivedStressRate = formatMbps(stressResult?.summary?.receivedMbps || 0);
   const finalStressLatency = formatLatencyMs(stressResult?.summary?.latencyMs);
   const finalStressLoss = formatLossPercent(stressResult?.summary?.lossPercent);
   const liveStressPercent = latestStressProgress
@@ -506,7 +483,7 @@ function Dashboard() {
     }
     for (const f of visibleForwards.slice(0, 4)) {
       rows.push({
-        time: formatEventTime(f.createdTime),
+        time: formatRelative(f.createdTime),
         type: "forward",
         text: `转发 ${f.name} ${f.status === 1 ? "运行中" : "已暂停"}`,
         tone: f.status === 1 ? "success" : "warning",
@@ -514,7 +491,7 @@ function Dashboard() {
     }
     for (const t of adminTunnels.slice(0, 2)) {
       rows.push({
-        time: formatEventTime(t.createdTime),
+        time: formatRelative(t.createdTime),
         type: "tunnel",
         text: `隧道 ${t.name} ${t.status === 0 ? "已禁用" : "可用"}`,
         tone: t.status === 0 ? "warning" : "info",
@@ -527,9 +504,7 @@ function Dashboard() {
   }, [adminNodes, adminTunnels, visibleForwards]);
 
   const displayName =
-    typeof window !== "undefined"
-      ? window.localStorage.getItem("name") || userInfo.user || "admin"
-      : "admin";
+    typeof window !== "undefined" ? sessionName || userInfo.user || "admin" : "admin";
 
   useEffect(() => {
     if (!stressOpen || stressTunnelId || stressTunnels.length === 0) return;
@@ -550,7 +525,7 @@ function Dashboard() {
 
   const runStressTest = async () => {
     const tunnelId = Number(stressTunnelId);
-    if (!tunnelId) return toast.error("请选择要测试的隧道");
+    if (!tunnelId) return notify.error("请选择要测试的隧道");
     // 输入时保留空值以便替换数字；提交时恢复默认值并按节点限制钳制为整数，避免无限测速或并发。
     const durationInput = Number(stressDuration);
     const parallelInput = Number(stressParallel);
@@ -563,7 +538,7 @@ function Dashboard() {
         ? 1
         : Math.max(1, Math.min(32, Math.trunc(parallelInput)));
     if (String(duration) !== stressDuration || String(parallel) !== stressParallel) {
-      toast.warning(`测试参数已调整为 ${duration} 秒、${parallel} 个并发连接`);
+      notify.warning(`测试参数已调整为 ${duration} 秒、${parallel} 个并发连接`);
     }
     setStressDuration(String(duration));
     setStressParallel(String(parallel));
@@ -584,9 +559,9 @@ function Dashboard() {
         port: Number(stressPort) || 0,
       });
       setStressResult(res);
-      toast.success("压力测试完成");
+      notify.success("压力测试完成");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "压力测试失败");
+      notify.error(error instanceof Error ? error.message : "压力测试失败");
     } finally {
       setStressLoading(false);
     }
@@ -619,7 +594,7 @@ function Dashboard() {
                 {dashboardLoading
                   ? "syncing · 数据同步中"
                   : healthStatus === "success" && lastSync
-                    ? `last sync · ${lastSync.toLocaleTimeString("zh-CN")}`
+                    ? `last sync · ${formatDateTime(lastSync.getTime())}`
                     : healthStatus === "partial"
                       ? "partial · 部分数据可用"
                       : "last sync · 等待同步"}
@@ -898,7 +873,7 @@ function Dashboard() {
                   {trafficHover.time}
                 </span>
                 <span className="font-mono text-[11px] font-semibold text-foreground">
-                  合计 {formatTrafficGb(trafficHover.total)}
+                  合计 {formatBytes(trafficHover.total * 1024 ** 3)}
                 </span>
               </div>
               <div className="space-y-1.5 font-mono">
@@ -907,14 +882,14 @@ function Dashboard() {
                     <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                     下行
                   </span>
-                  <span className="text-primary">{formatTrafficGb(trafficHover.down)}</span>
+                  <span className="text-primary">{formatBytes(trafficHover.down * 1024 ** 3)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="flex items-center gap-1.5 text-muted-foreground">
                     <span className="h-1.5 w-1.5 rounded-full bg-chart-2" />
                     上行
                   </span>
-                  <span className="text-chart-2">{formatTrafficGb(trafficHover.up)}</span>
+                  <span className="text-chart-2">{formatBytes(trafficHover.up * 1024 ** 3)}</span>
                 </div>
               </div>
             </div>
@@ -1109,7 +1084,7 @@ function Dashboard() {
                 {stressProgress.length > 0 ? (
                   <div className="grid gap-1.5 sm:grid-cols-2">
                     {stressProgress.slice(-6).map((item, index) => {
-                      const rate = formatSpeedRateFromMbps(item.mbps || 0);
+                      const rate = formatMbps(item.mbps || 0);
                       const latency = formatLatencyMs(item.latencyMs);
                       const loss = formatLossPercent(item.lossPercent);
                       return (

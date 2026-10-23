@@ -1,9 +1,10 @@
+import { formatGbQuota, formatDateTime } from "@/lib/format";
 import { errorMessage } from "@/lib/api/client";
 import type { UserWrite } from "@/lib/types";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import {
   KeyRound,
   MoreHorizontal,
@@ -92,22 +93,11 @@ import { queries } from "@/lib/api/query";
 import { KpiCard, PageHeader, QueryErrorNotice } from "@/components/page";
 
 export const Route = createFileRoute("/_app/user")({
-  head: () => ({ meta: [{ title: "用户管理 · Flux Panel" }] }),
+  head: () => ({ meta: [{ title: "用户管理" }] }),
   component: UserPage,
 });
 
 // ---------- helpers ----------
-function formatBytes(v: number): string {
-  if (!v || v <= 0) return "0 B";
-  if (v < 1024) return `${v} B`;
-  if (v < 1024 ** 2) return `${(v / 1024).toFixed(2)} KB`;
-  if (v < 1024 ** 3) return `${(v / 1024 ** 2).toFixed(2)} MB`;
-  return `${(v / 1024 ** 3).toFixed(2)} GB`;
-}
-function formatDate(ts?: number | null) {
-  if (!ts) return "—";
-  return new Date(ts).toLocaleString();
-}
 function initials(name: string) {
   return name.replace(/\s+/g, "").slice(0, 2).toUpperCase() || "U";
 }
@@ -159,7 +149,7 @@ function UserPage() {
   const [tunnelMgrOpen, setTunnelMgrOpen] = useState(false);
   const userTunnelManager = useUserTunnels<UserTunnel, ApiUser>(
     useCallback((userId: number) => getUserTunnelList({ userId }), []),
-    useCallback((message: string) => toast.error(message), []),
+    useCallback((message: string) => notify.error(message), []),
   );
   const tunnelMgrUser = userTunnelManager.activeUser;
   const userTunnels = userTunnelManager.rows;
@@ -213,21 +203,21 @@ function UserPage() {
       isEdit ? updateUser(payload) : createUser(payload),
     onSuccess: (_data, { isEdit }) => {
       invalidateGlobalSearch("user");
-      toast.success(isEdit ? "更新成功" : "创建成功");
+      notify.success(isEdit ? "更新成功" : "创建成功");
       setUserDlgOpen(false);
       invalidateUsers();
     },
-    onError: (error: Error) => toast.error(error.message || "保存失败"),
+    onError: (error: Error) => notify.error(error.message || "保存失败"),
   });
 
   const deleteUserMutation = useMutation({
     mutationFn: (id: number) => deleteUser(id),
     onSuccess: () => {
       invalidateGlobalSearch("user");
-      toast.success("删除成功");
+      notify.success("删除成功");
       invalidateUsers();
     },
-    onError: (error: Error) => toast.error(error.message || "删除失败"),
+    onError: (error: Error) => notify.error(error.message || "删除失败"),
   });
 
   const toggleStatusMutation = useMutation({
@@ -243,19 +233,19 @@ function UserPage() {
         flowResetTime: u.flowResetTime ?? 0,
       }),
     onSuccess: () => {
-      toast.success("状态已更新");
+      notify.success("状态已更新");
       invalidateUsers();
     },
-    onError: (error: Error) => toast.error(error.message || "更新失败"),
+    onError: (error: Error) => notify.error(error.message || "更新失败"),
   });
 
   const resetFlowMutation = useMutation({
     mutationFn: (id: number) => resetUserFlow({ id, type: 1 }),
     onSuccess: () => {
-      toast.success("流量重置成功");
+      notify.success("流量重置成功");
       invalidateUsers();
     },
-    onError: (error: Error) => toast.error(error.message || "重置失败"),
+    onError: (error: Error) => notify.error(error.message || "重置失败"),
   });
 
   const openCreate = () => {
@@ -289,7 +279,7 @@ function UserPage() {
 
   const submitUser = async () => {
     if (!userForm.user || (!isEdit && !userForm.pwd) || !userForm.expTime) {
-      toast.error("请填写完整信息（用户名、密码、过期时间）");
+      notify.error("请填写完整信息（用户名、密码、过期时间）");
       return;
     }
     const payload: UserWrite = { ...userForm, expTime: userForm.expTime.getTime() };
@@ -333,7 +323,7 @@ function UserPage() {
   };
   const assignTunnel = async () => {
     if (!tunnelMgrUser || !tunnelForm.tunnelId || !tunnelForm.expTime) {
-      toast.error("请选择隧道并填写过期时间");
+      notify.error("请选择隧道并填写过期时间");
       return;
     }
     setAssigning(true);
@@ -348,7 +338,7 @@ function UserPage() {
         speedId: tunnelForm.speedId,
       });
 
-      toast.success("分配成功");
+      notify.success("分配成功");
       setTunnelForm({
         tunnelId: null,
         flow: 100,
@@ -359,7 +349,7 @@ function UserPage() {
       });
       loadUserTunnels();
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setAssigning(false);
     }
@@ -369,10 +359,10 @@ function UserPage() {
     try {
       await removeUserTunnel({ id: utToDelete.id });
 
-      toast.success("已移除");
+      notify.success("已移除");
       if (tunnelMgrUser) loadUserTunnels();
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setUtToDelete(null);
     }
@@ -382,10 +372,10 @@ function UserPage() {
     try {
       await resetUserFlow({ id: utToReset.id, type: 2 });
 
-      toast.success("隧道流量已重置");
+      notify.success("隧道流量已重置");
       if (tunnelMgrUser) loadUserTunnels();
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setUtToReset(null);
     }
@@ -402,10 +392,10 @@ function UserPage() {
         status: ut.status === 1 ? 0 : 1,
       });
 
-      toast.success("状态已更新");
+      notify.success("状态已更新");
       if (tunnelMgrUser) loadUserTunnels();
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     }
   };
 
@@ -561,7 +551,7 @@ function UserPage() {
                             className={`h-1.5 w-24 ${pct > 90 ? "[&>div]:bg-destructive" : ""}`}
                           />
                           <span className="font-mono text-xs text-muted-foreground">
-                            {formatBytes(used)} / {u.flow} GB
+                            {formatGbQuota(used, u.flow)}
                           </span>
                         </div>
                       </TableCell>
@@ -580,7 +570,7 @@ function UserPage() {
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                         <div className="mt-1 font-mono text-[11px] text-muted-foreground">
-                          {formatDate(u.expTime)}
+                          {formatDateTime(u.expTime || null)}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -944,13 +934,13 @@ function UserPage() {
                           <div className="flex items-center gap-2">
                             <Progress value={pct} className="h-1.5 w-20" />
                             <span className="font-mono text-[11px] text-muted-foreground">
-                              {formatBytes(used)}/{ut.flow}GB
+                              {formatGbQuota(used, ut.flow)}
                             </span>
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs">{ut.num}</TableCell>
                         <TableCell className="font-mono text-xs text-muted-foreground">
-                          {formatDate(ut.expTime)}
+                          {formatDateTime(ut.expTime || null)}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {ut.speedLimitName || "不限速"}

@@ -68,7 +68,8 @@ export const keyConfigMeta: KeyConfigMeta[] = [
   {
     name: "app_name",
     label: "应用名称",
-    placeholder: "Flux Panel",
+    // 空值默认显示 go-panel；此占位符不改写数据库中的历史名称。
+    placeholder: "go-panel",
     description: "用于浏览器标题、导航展示和后续站点标识。",
     type: "input",
   },

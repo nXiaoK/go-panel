@@ -1,3 +1,4 @@
+import { formatBytes, formatDateTime } from "./format";
 import type { R2BackupSettings, R2BackupSettingsUpdate } from "@/lib/types";
 
 export interface R2BackupForm {
@@ -90,12 +91,9 @@ export function buildR2BackupUpdate(
 
 export function formatR2BackupTimestamp(value: number): string {
   if (!value) return "尚无记录";
-  return new Date(value).toLocaleString();
+  return formatDateTime(value);
 }
 
 export function formatR2BackupBytes(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
-  return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
+  return formatBytes(value);
 }

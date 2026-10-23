@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,11 +35,11 @@ export function SubscriptionApiKeyDialog({
   const saveMutation = useMutation({
     mutationFn: (value: string) => updateSubscriptionApiKey(value),
     onSuccess: () => {
-      toast.success("API Key 已更新");
+      notify.success("API Key 已更新");
       onOpenChange(false);
       onSaved();
     },
-    onError: (error: Error) => toast.error(error.message || "更新失败"),
+    onError: (error: Error) => notify.error(error.message || "更新失败"),
   });
 
   return (

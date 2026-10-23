@@ -1,7 +1,7 @@
 import { errorMessage } from "@/lib/api/client";
 import { useEffect, useMemo, useState } from "react";
 import { CloudUpload, KeyRound, Play, PlugZap, Save } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -46,7 +46,7 @@ export function R2BackupCard() {
     } catch (error) {
       const message = errorMessage(error);
       setLoadError(message);
-      toast.error(message);
+      notify.error(message);
     } finally {
       setLoading(false);
     }
@@ -74,7 +74,7 @@ export function R2BackupCard() {
   const save = async () => {
     const built = buildR2BackupUpdate(form, secretAccessKey, clearSecret);
     if (!built.value) {
-      toast.error(built.error || "R2 备份设置格式无效");
+      notify.error(built.error || "R2 备份设置格式无效");
       return;
     }
     setBusy("save");
@@ -84,9 +84,9 @@ export function R2BackupCard() {
       setForm(r2BackupSettingsToForm(response));
       setSecretAccessKey("");
       setClearSecret(false);
-      toast.success("R2 备份设置已保存");
+      notify.success("R2 备份设置已保存");
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setBusy(null);
     }
@@ -94,7 +94,7 @@ export function R2BackupCard() {
 
   const requireSavedSettings = () => {
     if (!dirty) return true;
-    toast.info("请先保存 R2 设置，再执行连接测试或立即备份");
+    notify.info("请先保存 R2 设置，再执行连接测试或立即备份");
     return false;
   };
 
@@ -103,9 +103,9 @@ export function R2BackupCard() {
     setBusy("test");
     try {
       const response = await testR2BackupConnection();
-      toast.success(response || "R2 连接成功");
+      notify.success(response || "R2 连接成功");
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setBusy(null);
     }
@@ -116,9 +116,9 @@ export function R2BackupCard() {
     setBusy("run");
     try {
       const response = await runR2BackupNow();
-      toast.success(`备份已上传：${response.objectKey}`);
+      notify.success(`备份已上传：${response.objectKey}`);
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       await load();
       setBusy(null);

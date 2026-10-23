@@ -1,5 +1,5 @@
 import { Copy, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useSubscriptionQrDataUrl } from "@/lib/subscription-qr";
@@ -20,9 +20,9 @@ export function SubscriptionQrDialog({
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(value);
-      toast.success("链接已复制");
+      notify.success("链接已复制");
     } catch {
-      toast.error("复制失败");
+      notify.error("复制失败");
     }
   };
 

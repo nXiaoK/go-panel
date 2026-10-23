@@ -1,5 +1,6 @@
 const APP_NAME_CACHE_KEY = "site_app_name";
-export const DEFAULT_APP_NAME = "Flux Panel";
+// 未配置或空值时显示 go-panel；已保存的 app_name（包括旧品牌）始终优先，不迁移现有值。
+export const DEFAULT_APP_NAME = "go-panel";
 
 export function normalizeAppName(value: unknown): string {
   const name = String(value ?? "").trim();
@@ -26,7 +27,4 @@ export function setCachedAppName(value: unknown) {
   const appName = normalizeAppName(value);
   window.localStorage.setItem(APP_NAME_CACHE_KEY, appName);
   window.dispatchEvent(new CustomEvent("site-config-updated", { detail: { appName } }));
-  if (document.title.includes("Flux Panel")) {
-    document.title = document.title.replaceAll("Flux Panel", appName);
-  }
 }

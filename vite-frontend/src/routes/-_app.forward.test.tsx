@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { apiPost } from "@/lib/api/client";
+import { ConfirmProvider } from "@/components/patterns/confirm-dialog";
 import { ForwardPage } from "./_app.forward";
 
 vi.mock("@/lib/api/client", () => ({
@@ -20,7 +21,9 @@ function renderPage(role: number) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <ForwardPage />
+      <ConfirmProvider>
+        <ForwardPage />
+      </ConfirmProvider>
     </QueryClientProvider>,
   );
   return client;

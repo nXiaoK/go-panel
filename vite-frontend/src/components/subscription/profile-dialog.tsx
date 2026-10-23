@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -79,15 +79,15 @@ export function SubscriptionProfileDialog({
     mutationFn: (payload: SubscriptionProfile & { nodeIds: number[] }) =>
       payload.id ? updateSubscriptionProfile(payload) : createSubscriptionProfile(payload),
     onSuccess: () => {
-      toast.success("订阅配置已保存");
+      notify.success("订阅配置已保存");
       onOpenChange(false);
       onSaved();
     },
-    onError: (error: Error) => toast.error(error.message || "保存失败"),
+    onError: (error: Error) => notify.error(error.message || "保存失败"),
   });
 
   const save = () => {
-    if (!form.name.trim()) return toast.error("请输入订阅名称");
+    if (!form.name.trim()) return notify.error("请输入订阅名称");
     saveMutation.mutate({ ...form, nodeIds });
   };
 

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Settings2, Save, Globe, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,13 +14,13 @@ import { readPreferences, setPreference } from "@/lib/preferences";
 import { PageHeader } from "@/components/page";
 
 export const Route = createFileRoute("/_app/settings")({
-  head: () => ({ meta: [{ title: "面板设置 · Flux Panel" }] }),
+  head: () => ({ meta: [{ title: "面板设置" }] }),
   component: SettingsPage,
 });
 
 function SettingsPage() {
   const [address, setAddress] = useState("");
-  const [notify, setNotify] = useState(true);
+  const [notificationsEnabled, setNotify] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [theme, setThemeState] = useState<Theme>("dark");
 
@@ -36,7 +36,7 @@ function SettingsPage() {
     const next: Theme = v ? "dark" : "light";
     setTheme(next);
     setThemeState(next);
-    toast.success(v ? "已切换到深色模式" : "已切换到浅色模式");
+    notify.success(v ? "已切换到深色模式" : "已切换到浅色模式");
   };
 
   const saveAddress = () => {
@@ -45,12 +45,12 @@ function SettingsPage() {
     // 仅应填写可信且由当前用户管理的面板地址，保存后网络层会清理旧站点缓存。
     if (!v) {
       setPanelAddress("");
-      toast.success("已重置为同源 /api/v1/");
+      notify.success("已重置为同源 /api/v1/");
       return;
     }
-    if (!/^https?:\/\//.test(v)) return toast.error("请以 http:// 或 https:// 开头");
+    if (!/^https?:\/\//.test(v)) return notify.error("请以 http:// 或 https:// 开头");
     setPanelAddress(v);
-    toast.success("面板地址已保存");
+    notify.success("面板地址已保存");
   };
 
   const togglePref = (k: "notify" | "auto_refresh", v: boolean) => {
@@ -74,7 +74,7 @@ function SettingsPage() {
             <Globe className="h-4 w-4 text-primary" /> 后端连接
           </CardTitle>
           <CardDescription>
-            指向你的 Flux Panel Go 后端。留空则使用同源 <span className="font-mono">/api/v1/</span>
+            指向你的 go-panel Go 后端。留空则使用同源 <span className="font-mono">/api/v1/</span>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -123,7 +123,10 @@ function SettingsPage() {
               <div className="text-sm font-medium">操作通知</div>
               <div className="mt-0.5 text-xs text-muted-foreground">操作完成后弹出 Toast 提示</div>
             </div>
-            <Switch checked={notify} onCheckedChange={(v) => togglePref("notify", v)} />
+            <Switch
+              checked={notificationsEnabled}
+              onCheckedChange={(v) => togglePref("notify", v)}
+            />
           </div>
           <div className="flex items-center justify-between rounded-md border border-border p-3">
             <div>

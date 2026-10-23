@@ -21,8 +21,8 @@ const { normalizeAppName, appNameFromConfigs } = await importTs(
 
 describe("site config helpers", () => {
   it("normalizes blank app names to the default brand", () => {
-    assert.equal(normalizeAppName(""), "Flux Panel");
-    assert.equal(normalizeAppName("   "), "Flux Panel");
+    assert.equal(normalizeAppName(""), "go-panel");
+    assert.equal(normalizeAppName("   "), "go-panel");
   });
 
   it("extracts app_name from backend config data", () => {

@@ -1,3 +1,4 @@
+import { roleLabel } from "./capabilities";
 import type { Tunnel, Node, User, Forward } from "./types";
 export type GlobalSearchKind = "tunnel" | "node" | "user" | "forward";
 
@@ -85,7 +86,7 @@ export function buildGlobalSearchItems(lists: GlobalSearchLists): GlobalSearchIt
       u.name,
       `#${u.id}`,
       statusLabel(u.status),
-      Number(u.roleId ?? u.role_id) === 0 ? "管理员" : "用户",
+      roleLabel(Number(u.roleId ?? u.role_id)),
     ]).join(" · "),
     href: "/user" as const,
     keywords: compact([u.id, u.user, u.name, u.roleId]),

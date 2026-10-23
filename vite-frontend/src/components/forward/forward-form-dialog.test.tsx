@@ -1,13 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { ApiError } from "@/lib/api/client";
 import type { ReactNode } from "react";
 import { createForward, updateForward } from "@/lib/api";
 import type { Forward, Tunnel, UserTunnelOption } from "@/lib/types";
 import { ForwardFormDialog } from "./forward-form-dialog";
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/lib/notify", () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/api", () => ({ createForward: vi.fn(), updateForward: vi.fn() }));
 vi.mock("@/components/ui/select", () => ({
   Select: ({
@@ -152,7 +152,7 @@ describe("regular-user forward form", () => {
     form("user", editing);
     const save = screen.getByRole("button", { name: "保存" });
     fireEvent.click(save);
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("系统维护中，请稍后重试"));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith("系统维护中，请稍后重试"));
     expect(save.hasAttribute("disabled")).toBe(false);
     fireEvent.click(save);
     await waitFor(() => expect(updateForward).toHaveBeenCalledTimes(2));
