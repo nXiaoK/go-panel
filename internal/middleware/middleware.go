@@ -216,6 +216,8 @@ func Cors(allowOrigin string) gin.HandlerFunc {
 		c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, PUT, OPTIONS")
 		c.Header("Access-Control-Expose-Headers", "Authorization, Content-Disposition")
 		if c.Request.Method == http.MethodOptions {
+			// 预检在此提前结束，不会进入后续 SecurityHeaders；复用同一策略以覆盖 204 响应。
+			setSecurityHeaders(c.Writer.Header())
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}

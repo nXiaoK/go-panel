@@ -15,6 +15,7 @@ import (
 // Register 注册全部路由；corsAllowOrigin 为空表示允许所有来源
 func Register(r *gin.Engine, corsAllowOrigin string, allowLegacyNftReports bool) {
 	r.Use(middleware.Cors(corsAllowOrigin))
+	r.Use(middleware.SecurityHeaders())
 	ws.SetAllowedOrigins(corsAllowOrigin)
 
 	// 容器健康检查只确认 HTTP 进程可用，不公开版本、配置或数据库内容。
