@@ -91,7 +91,7 @@ describe("forced password route", () => {
     fireEvent.change(screen.getByLabelText("原密码"), { target: { value: "Old-Password!" } });
     fireEvent.change(screen.getByLabelText("新密码"), { target: { value: "New-Password!" } });
     fireEvent.change(screen.getByLabelText("确认新密码"), { target: { value: "New-Password!" } });
-    fireEvent.click(screen.getByRole("button", { name: "更新密码" }));
+    fireEvent.click(screen.getByRole("button", { name: "更新登录信息" }));
     await waitFor(() => expect(api.password).toHaveBeenCalledOnce());
     await waitFor(() => expect(readSession().token).toBeNull());
     expect(readSession().mustChangePassword).toBe(false);
