@@ -2,8 +2,10 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -41,6 +43,9 @@ func runR2BackupNow(c *gin.Context) {
 }
 
 func downloadBackup(c *gin.Context) {
+	if err := extendRequestDeadlines(c.Writer, time.Now(), 0, backupTransferTimeout); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		log.Printf("延长备份下载响应写期限失败：%v", err)
+	}
 	backup, err := service.CreateSiteBackup()
 	if err != nil {
 		c.JSON(http.StatusOK, result.Err(err.Error()))
@@ -54,6 +59,10 @@ func downloadBackup(c *gin.Context) {
 }
 
 func restoreBackup(c *gin.Context) {
+	// 必须在读取 multipart 前设置读期限，给慢速上传及随后的校验/恢复留出相同窗口。
+	if err := extendRequestDeadlines(c.Writer, time.Now(), backupTransferTimeout, backupTransferTimeout); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		log.Printf("延长备份恢复读写期限失败：%v", err)
+	}
 	if c.Request.ContentLength > service.MaxSiteBackupUploadSize+(1<<20) {
 		c.JSON(http.StatusOK, result.Err(fmt.Sprintf("备份文件不能超过 %d MB", service.MaxSiteBackupUploadSize>>20)))
 		return

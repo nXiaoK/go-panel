@@ -54,6 +54,18 @@ type TunnelSpeedTestResult struct {
 	Timestamp       int64           `json:"timestamp"`
 }
 
+// NormalizeSpeedTestDuration 统一测速与 HTTP 写期限的时长规则：非正值默认 10 秒，
+// 最长 120 秒，避免节点测速或单次请求无限占用资源；正整数 1–120 秒保持原值。
+func NormalizeSpeedTestDuration(seconds int) int {
+	if seconds <= 0 {
+		return 10
+	}
+	if seconds > 120 {
+		return 120
+	}
+	return seconds
+}
+
 func normalizeTunnelSpeedTestRequest(req dto.TunnelSpeedTestDto) dto.TunnelSpeedTestDto {
 	req.TestID = strings.TrimSpace(req.TestID)
 	if req.TestID == "" {
@@ -64,12 +76,7 @@ func normalizeTunnelSpeedTestRequest(req dto.TunnelSpeedTestDto) dto.TunnelSpeed
 	default:
 		req.Direction = speedDirectionInToOut
 	}
-	if req.DurationSeconds <= 0 {
-		req.DurationSeconds = 10
-	}
-	if req.DurationSeconds > 120 {
-		req.DurationSeconds = 120
-	}
+	req.DurationSeconds = NormalizeSpeedTestDuration(req.DurationSeconds)
 	if req.Parallel <= 0 {
 		req.Parallel = 1
 	}

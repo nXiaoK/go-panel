@@ -850,6 +850,10 @@ func changeForwardStatus(cu CurrentUser, id int64, targetStatus int, operation s
 }
 
 func DiagnoseForward(cu CurrentUser, id int64) result.R {
+	return diagnoseForwardWithPing(cu, id, performTcpPing)
+}
+
+func diagnoseForwardWithPing(cu CurrentUser, id int64, ping diagnosisPingFunc) result.R {
 	forward := validateForwardExists(id, cu.UserID, cu.RoleID)
 	if forward == nil {
 		return result.Err("转发不存在")
@@ -863,7 +867,7 @@ func DiagnoseForward(cu CurrentUser, id int64) result.R {
 		return result.Err("入口节点不存在")
 	}
 
-	var results []DiagnosisResult
+	var probes []diagnosisProbe
 	remoteAddresses := splitRemoteAddresses(effectiveForwardRemoteAddr(forward))
 	if tunnel.Type == tunnelTypePortForward {
 		for _, remote := range remoteAddresses {
@@ -872,7 +876,7 @@ func DiagnoseForward(cu CurrentUser, id int64) result.R {
 			if targetIP == "" || targetPort == -1 {
 				return result.Err("无法解析目标地址: " + remote)
 			}
-			results = append(results, performTcpPing(&inNode, targetIP, targetPort, "转发->目标", 2, 3000))
+			probes = append(probes, diagnosisProbe{inNode, targetIP, targetPort, "转发->目标", 2, 3000})
 		}
 	} else {
 		member := activeForwardExitMember(forward, &tunnel)
@@ -891,15 +895,15 @@ func DiagnoseForward(cu CurrentUser, id int64) result.R {
 			if member.RelayPort <= 0 || member.OutPort <= 0 {
 				return result.Err("三节点转发端口配置不完整")
 			}
-			results = append(results, performTcpPing(&inNode, relayNode.ServerIP, member.RelayPort, "入口->中继", 1, 2500))
-			results = append(results, performTcpPing(&relayNode, outNode.ServerIP, member.OutPort, "中继->出口", 1, 2500))
+			probes = append(probes, diagnosisProbe{inNode, relayNode.ServerIP, member.RelayPort, "入口->中继", 1, 2500})
+			probes = append(probes, diagnosisProbe{relayNode, outNode.ServerIP, member.OutPort, "中继->出口", 1, 2500})
 			for _, remote := range remoteAddresses {
 				targetIP := extractHost(remote)
 				targetPort := extractPort(remote)
 				if targetIP == "" || targetPort == -1 {
 					return result.Err("无法解析目标地址: " + remote)
 				}
-				results = append(results, performTcpPing(&outNode, targetIP, targetPort, "出口->目标", 1, 2500))
+				probes = append(probes, diagnosisProbe{outNode, targetIP, targetPort, "出口->目标", 1, 2500})
 			}
 		} else {
 			// 两节点链路入口->出口：优先测 forward 的 OutPort；缺失时回退测 SSH 22。
@@ -910,14 +914,14 @@ func DiagnoseForward(cu CurrentUser, id int64) result.R {
 			} else {
 				desc = "入口->出口(无出口端口,默认测SSH 22)"
 			}
-			results = append(results, performTcpPing(&inNode, outNode.ServerIP, outPort, desc, 2, 3000))
+			probes = append(probes, diagnosisProbe{inNode, outNode.ServerIP, outPort, desc, 2, 3000})
 			for _, remote := range remoteAddresses {
 				targetIP := extractHost(remote)
 				targetPort := extractPort(remote)
 				if targetIP == "" || targetPort == -1 {
 					return result.Err("无法解析目标地址: " + remote)
 				}
-				results = append(results, performTcpPing(&outNode, targetIP, targetPort, "出口->目标", 2, 3000))
+				probes = append(probes, diagnosisProbe{outNode, targetIP, targetPort, "出口->目标", 2, 3000})
 			}
 		}
 	}
@@ -930,7 +934,7 @@ func DiagnoseForward(cu CurrentUser, id int64) result.R {
 		"forwardId":   id,
 		"forwardName": forward.Name,
 		"tunnelType":  tunnelTypeName,
-		"results":     results,
+		"results":     runDiagnosisProbes(probes, ping),
 		"timestamp":   time.Now().UnixMilli(),
 	})
 }

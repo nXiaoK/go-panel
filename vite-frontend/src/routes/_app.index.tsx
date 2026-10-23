@@ -149,8 +149,8 @@ function Dashboard() {
   const [stressOpen, setStressOpen] = useState(false);
   const [stressTunnelId, setStressTunnelId] = useState("");
   const [stressDirection, setStressDirection] = useState("in-to-out");
-  const [stressDuration, setStressDuration] = useState(10);
-  const [stressParallel, setStressParallel] = useState(1);
+  const [stressDuration, setStressDuration] = useState("10");
+  const [stressParallel, setStressParallel] = useState("1");
   const [stressPort, setStressPort] = useState("");
   const [stressLoading, setStressLoading] = useState(false);
   const [stressResult, setStressResult] = useState<any>(null);
@@ -459,7 +459,8 @@ function Dashboard() {
     ? Math.min(
         100,
         Math.round(
-          (Number(latestStressProgress.endSeconds || 0) / Math.max(1, stressDuration)) * 100,
+          (Number(latestStressProgress.endSeconds || 0) / Math.max(1, Number(stressDuration))) *
+            100,
         ),
       )
     : 0;
@@ -529,6 +530,22 @@ function Dashboard() {
   const runStressTest = async () => {
     const tunnelId = Number(stressTunnelId);
     if (!tunnelId) return toast.error("请选择要测试的隧道");
+    // 输入时保留空值以便替换数字；提交时恢复默认值并按节点限制钳制为整数，避免无限测速或并发。
+    const durationInput = Number(stressDuration);
+    const parallelInput = Number(stressParallel);
+    const duration =
+      stressDuration.trim() === "" || !Number.isFinite(durationInput)
+        ? 10
+        : Math.max(1, Math.min(120, Math.trunc(durationInput)));
+    const parallel =
+      stressParallel.trim() === "" || !Number.isFinite(parallelInput)
+        ? 1
+        : Math.max(1, Math.min(32, Math.trunc(parallelInput)));
+    if (String(duration) !== stressDuration || String(parallel) !== stressParallel) {
+      toast.warning(`测试参数已调整为 ${duration} 秒、${parallel} 个并发连接`);
+    }
+    setStressDuration(String(duration));
+    setStressParallel(String(parallel));
     const testId = createSpeedTestId();
     activeStressTestIdRef.current = testId;
     setStressTestId(testId);
@@ -541,8 +558,8 @@ function Dashboard() {
         tunnelId,
         testId,
         direction: stressDirection,
-        durationSeconds: stressDuration,
-        parallel: stressParallel,
+        durationSeconds: duration,
+        parallel,
         port: Number(stressPort) || 0,
       });
       if (res.code === 0) {
@@ -986,26 +1003,46 @@ function Dashboard() {
                 </Select>
               </div>
               <div className="grid gap-2">
-                <div className="text-xs font-medium text-muted-foreground">测试时长</div>
+                <label
+                  htmlFor="stress-duration"
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  测试时长
+                </label>
                 <Input
                   type="number"
                   min={1}
                   max={120}
+                  id="stress-duration"
+                  aria-describedby="stress-duration-hint"
                   value={stressDuration}
                   disabled={stressLoading}
-                  onChange={(e) => setStressDuration(Number(e.target.value) || 10)}
+                  onChange={(e) => setStressDuration(e.target.value)}
                 />
+                <p id="stress-duration-hint" className="text-xs text-muted-foreground">
+                  1–120 秒，留空默认 10 秒；开始时自动调整
+                </p>
               </div>
               <div className="grid gap-2">
-                <div className="text-xs font-medium text-muted-foreground">并发连接</div>
+                <label
+                  htmlFor="stress-parallel"
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  并发连接
+                </label>
                 <Input
                   type="number"
                   min={1}
                   max={32}
+                  id="stress-parallel"
+                  aria-describedby="stress-parallel-hint"
                   value={stressParallel}
                   disabled={stressLoading}
-                  onChange={(e) => setStressParallel(Number(e.target.value) || 1)}
+                  onChange={(e) => setStressParallel(e.target.value)}
                 />
+                <p id="stress-parallel-hint" className="text-xs text-muted-foreground">
+                  1–32 个连接，留空默认 1 个；开始时自动调整
+                </p>
               </div>
               <div className="grid gap-2">
                 <div className="text-xs font-medium text-muted-foreground">iperf3 端口</div>
