@@ -32,7 +32,7 @@ function show(Page: React.ComponentType) {
   return render(
     <QueryClientProvider client={client}>
       <ConfirmProvider>
-        {Page === TunnelPage ? (
+        {Page === TunnelPage || Page === NodePage ? (
           <TooltipProvider>
             <RouterProvider
               router={createRouter({

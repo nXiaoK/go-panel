@@ -12,11 +12,11 @@ export const resourceKeys = {
   },
   node: {
     all: ["node"] as const,
-    // list() 仅作为批量失效前缀；原始节点与附带 WebSocket 运行态的节点结构不同，
-    // 必须使用独立缓存键，避免先访问隧道/转发页后节点页误读缺少运行态的数据。
+    // list() 是批量失效前缀；所有页面共用 REST 缓存，实时指标由 node/live-store 独立维护。
+    // runtimeList 只兼容旧调用并返回相同键，避免节点页与控制台重复获取列表。
     list: () => ["node", "list"] as const,
     rawList: () => ["node", "list", "raw"] as const,
-    runtimeList: () => ["node", "list", "runtime"] as const,
+    runtimeList: () => ["node", "list", "raw"] as const,
     install: (id: number, forwardMode?: string) =>
       ["node", "install", { id, forwardMode }] as const,
   },
