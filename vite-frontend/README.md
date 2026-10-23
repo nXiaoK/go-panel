@@ -94,7 +94,7 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 
 `index.html` 固定 `class="dark"`、`color-scheme: dark` 和暗色元数据；主题无脚本、无切换或持久化读写，旧浏览器 `theme` 值不影响结果。`src/styles.css` 按根设计规范提供语义颜色与 shadcn 兼容映射，圆角 `sm=6px`、`md=8px`，命名间距使用 `space-` 前缀（例如 `p-space-sm`），避免与 `max-w-sm` / `max-w-xl` 等容器尺寸冲突；普通卡片只使用边线，只有浮层和交互卡片悬停使用阴影。`destructive` 仅用于图形/边界，危险确认实心按钮使用 `destructive-solid` 与 `ink`，避免文字对比不足。焦点轮廓始终显示；减弱动态偏好关闭动画与过渡但保留布局定位。
 
-`test/design-tokens.test.mjs` 扫描所有 TSX 字符串（包含变量和模板字符串），禁止新增原生色板、旧特效与小于 12px 字号。`test/design-token-legacy.mjs` 仅记录 U01 前既有页面的具体违规值和精确次数，文件内新增同值也会失败，减少/删除时必须同步收紧对应清单项，禁止保留可回填额度；清单只供 U03–U11 逐页清理，U12 必须归零。允许清单不得用于新增组件或扩大现有豁免。
+`test/design-tokens.test.mjs` 对所有 TSX 字符串、模板和词法常量拼接执行零违规门禁，覆盖完整 Tailwind 色板、渐变/光晕/网格特效、小于12px的px/rem字号。历史额度收紧回归仍保留，不能新增任何允许项。全部业务目录统一执行 no-explicit-any，不再豁免路由边界。
 
 ## U02 共享组件与开发预览
 
@@ -135,3 +135,33 @@ Node 22 下运行 `npm run dev` 后访问 `/_dev/components`，可检查基础�
 - `github_download_proxy` 默认留空直连；代理能够接触下载程序，只使用可信 HTTPS 服务。`diagnose_internet_probe` 留空沿用 `www.google.com:443`，只影响参考探测。
 - 自定义键名仅允许小写字母、数字和下划线，不能与已有键重复；新增项需统一保存。删除通过独立接口立即从服务器移除，可能使引用它的功能回退默认行为；内部凭据、迁移标记和关键站点策略不提供删除入口。
 - 恢复只接受本面板导出的 `.db`、`.sqlite` 或 `.sqlite3` 文件，最大 256 MB；后端继续校验 SQLite 内容。输入“恢复”确认后将覆盖当前数据库和节点配置，过程不可取消。成功页仅显示后端真实的恢复时间与恢复前数据库备份名，3 秒后清理会话并要求重新登录。
+
+## 新界面目录与新增页面
+
+`src/features/<资源>/` 保存该资源的页面、API、React Query hooks、纯模型和行为测试；`src/routes/` 只维护路由、权限、URL 参数与标题。共享表单、列表、状态、诊断、确认与反馈来自 `src/components/patterns/`。业务界面遵守根 `DESIGN.md`，只使用语义颜色令牌。
+
+新增页面时先定义类型化 API 和查询键，再实现主状态、空态、加载、错误及真实 Router 行为测试，最后增加路由和按角色可见的导航。可分享筛选在 `validateSearch` 规范化并保留无关键，通过 `useUrlState` 更新。不得复制共享组件，不得在普通用户查询路径调用管理员接口。
+
+## 无障碍与端到端测试配置
+
+`package.json` / `package-lock.json` 的开发依赖 `@playwright/test` 和 `@axe-core/playwright` 提供真实 Chromium 冒烟和 axe 检查，不进入生产 JS。`scripts.test:e2e` 运行真实 Go 后端的登录、强制改密、创建用户和限速、配置保存和放弃、普通用户导航及转发表单、退出和四页两宽截图。axe 对主要页面、配置分区及关键表单执行 serious/critical 零违规断言，不跳过规则。另在真实390px配置和账户布局检查页签宽高至少40px，防止桌面拉伸掩盖中文短标签的触控缺陷。Vitest 同主版本更新到4.1.12；锁文件的 mocker、brace-expansion、undici 采用兼容安全补丁。更新后仍需 Node22 正常 `npm ci` 和全部门禁，不使用强制依赖覆盖或降低审计级别。
+
+```bash
+npm ci
+npx playwright install chromium
+npm run build
+cd .. && bash scripts/sync-web-dist.sh && cd vite-frontend
+npm run test:e2e
+```
+
+`playwright.config.ts` 串行运行，固定中文、上海时区、暗色与减弱动态，只访问回环6401端口。`e2e/start-backend.mjs` 用 `GOTOOLCHAIN=go1.26.10 go run .`、固定本地测试密码及每次随机的 JWT_SECRET 启动临时后端，仅操作 `/tmp/go-panel-U12.db`。已有该路径或夹具标记时立即失败；操作者应确认是自己的临时库后完整保留移开。脚本不会删库或覆盖现有数据。它只给新库设置强制改密夹具。冒烟在该标记存在时读取临时节点密钥，以本机 WebSocket 模拟节点命令回执，再通过真实 API 创建隧道和限速，并断言收到 AddLimiters；测试结束关闭连接，不运行真实代理或转发数据平面，不改正式在线门槛。
+
+截图基线位于 `e2e/smoke.spec.mjs-snapshots/`，由 macOS26 arm64 和锁定的 Playwright Chromium 实际生成。时间使用固定测试时钟，动态 `<time>` 文本明确遮蔽，不增加像素差容忍。`npm run test:e2e -- --update-snapshots` 后必须人工审图。不同系统、字体或浏览器版本需单独审查基线，不能宣称跨平台逐像素一致。`test-results/` 与 `playwright-report/` 是忽略的临时证据，trace 可能含测试凭据。`.github/workflows/ui-smoke.yml` 仅手动触发、只读权限、匹配 macOS26 runner，失败证据保留一天，不改变 PR 门槛或发布流程。
+
+## 性能采集工具
+
+`scripts.test:performance` 读取仓库外 `U12_PERFORMANCE_OUTPUT`，在已启动的生产内嵌回环实例上用官方 Chromium CDP 关闭缓存，设置 Fast3G（延迟150ms、下载1.6Mbps、上传750Kbps）及4倍 CPU 降速，通过真实 PerformanceObserver 记录登录页和控制台 LCP 及外源请求。`U12_ADMIN_PASSWORD` 覆盖临时管理员密码，只用于测试实例；不得上传凭据。存在外源请求时保存完整测量结果并以非0退出。数值属于本机单次测量，不能代表真实用户分位数。
+
+开发模式访问 `/node?__profileNodes=1` 加载 `src/dev/node-profiler.tsx`，对实际节点页面记录 React Profiler commit，结果在 `#node-profiler-samples` 的可访问输出。DEV 常量使整个测量器从生产构建移除；不能把生产版 Profiler 的0ms当作证据。运行 `npm run dev -- --host 127.0.0.1 --port 5201 --strictPort` 后，设置仓库外 `U12_NODE_PERFORMANCE_OUTPUT` 并运行 `node e2e/node-performance.mjs`：仅拦截本地测试 API 和 WebSocket，建立50个内存节点，每2秒发送50条指标事件，记录真实浏览器开发构建的 commit（不含初次加载）。它不连接真实节点，不证明数据面性能；每次 commit 目标小于8ms，轮数不足、未确认50个节点、有效commit不足或最大耗时达到8ms时保存结果并以非0退出，必须报告实际结果或能力边界。
+
+`tsconfig.json` 的 `include` 同时覆盖 `playwright.config.ts`，新增测试配置也必须通过正式 typecheck；生产源码的严格检查范围不会缩小。
