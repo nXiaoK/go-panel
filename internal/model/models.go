@@ -61,6 +61,9 @@ type Node struct {
 
 	LatestVersion    string `gorm:"-" json:"latestVersion,omitempty"`
 	UpgradeAvailable bool   `gorm:"-" json:"upgradeAvailable"`
+	// 同步摘要只用于管理员节点列表，不持久化；unknown 表示尚无同步记录。
+	SyncState     string `gorm:"-" json:"syncState"`
+	SyncLastError string `gorm:"-" json:"syncLastError,omitempty"`
 }
 
 func (Node) TableName() string { return "node" }

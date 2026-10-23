@@ -2,6 +2,7 @@ import type {
   BuildInfo,
   Forward,
   Node,
+  NodeStatusCheck,
   PanelUpdateStatus,
   PanelUpdateTriggerResult,
   R2BackupRunResult,
@@ -70,8 +71,8 @@ export const getNodeUninstallCommand = (id: number, forwardMode?: string) =>
   Network.post("/node/uninstall", { id, forwardMode });
 export const upgradeNode = (id: number) =>
   Network.postWithTimeout("/node/upgrade", { id }, nodeUpgradeRequestTimeoutMs);
-export const checkNodeStatus = (nodeId?: number) =>
-  Network.post("/node/check-status", nodeId ? { nodeId } : {});
+export const checkNodeStatus = (nodeId: number) =>
+  Network.post<NodeStatusCheck>("/node/check-status", { nodeId });
 
 // ---------- Tunnels ----------
 export const createTunnel = (data: TunnelForm | Record<string, unknown>) =>

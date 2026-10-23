@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Activity,
+  AlertCircle,
   Copy,
   Cpu,
   Download,
@@ -57,7 +58,7 @@ import { reconnectDelay } from "@/lib/reconnect";
 import { listData, queries, unwrap } from "@/lib/api/query";
 import { usePreferences } from "@/hooks/use-preferences";
 import { invalidateGlobalSearch } from "@/lib/search-cache";
-import type { Node, NodeSystemInfo } from "@/lib/types";
+import type { Node, NodeStatusCheck, NodeSystemInfo } from "@/lib/types";
 import { FormField, KpiCard, PageHeader, QueryErrorNotice } from "@/components/page";
 
 export const Route = createFileRoute("/_app/node")({
@@ -166,7 +167,7 @@ function NodePage() {
 
   const [diagOpen, setDiagOpen] = useState(false);
   const [diagLoading, setDiagLoading] = useState(false);
-  const [diagResult, setDiagResult] = useState<any>(null);
+  const [diagResult, setDiagResult] = useState<NodeStatusCheck | null>(null);
   const [diagNode, setDiagNode] = useState<Node | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -547,8 +548,11 @@ function NodePage() {
     setDiagNode(n);
     try {
       const res = await checkNodeStatus(n.id);
-      if (res.code !== 0) toast.error(res.msg || "检测失败");
-      setDiagResult(res.data ?? res);
+      if (res.code !== 0) {
+        toast.error(res.msg || "检测失败");
+        return;
+      }
+      setDiagResult(res.data);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "检测失败");
     } finally {
@@ -912,6 +916,15 @@ function NodeCard({
           </Row>
         </div>
 
+        {node.syncState === "failed" && (
+          <div
+            className="flex items-center gap-1 text-xs text-destructive"
+            title={node.syncLastError}
+          >
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" /> 规则同步失败
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <MetricBar
             label="CPU"
@@ -1127,64 +1140,43 @@ function ProtoTile({
   );
 }
 
-function DiagResult({ data }: { data: any }) {
-  if (!data) return <div className="text-sm text-muted-foreground">暂无数据</div>;
-  // 后端返回结构可能是 { nodes: [{id, name, status, latency, message}], ...}
-  const list: any[] = Array.isArray(data)
-    ? data
-    : Array.isArray(data.nodes)
-      ? data.nodes
-      : Array.isArray(data.results)
-        ? data.results
-        : [];
-  if (list.length > 0) {
-    return (
-      <div className="space-y-2">
-        {list.map((r, i) => {
-          const ok = r.status === 1 || r.success === true || r.online === true;
-          return (
-            <div
-              key={i}
-              className={`rounded-md border p-3 text-sm ${
-                ok
-                  ? "border-emerald-500/30 bg-emerald-500/5"
-                  : "border-destructive/40 bg-destructive/5"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="font-medium">{r.name || r.nodeName || `节点 #${r.id}`}</div>
-                <Badge variant={ok ? "default" : "destructive"}>{ok ? "在线" : "离线"}</Badge>
-              </div>
-              <div className="mt-1 font-mono text-[11px] text-muted-foreground">
-                {r.serverIp || r.ip || ""}
-                {typeof r.latency === "number" && ` · ${r.latency}ms`}
-                {r.version && ` · v${r.version}`}
-              </div>
-              {r.message && (
-                <div className="mt-1 text-[12px] text-muted-foreground">{r.message}</div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-  // 单节点返回：{ status: 1|0, latency, ...}
-  const single = data as any;
-  const ok = single.status === 1 || single.online === true || single.success === true;
+const nodeSyncLabels = {
+  synced: "已同步",
+  pending: "待同步",
+  failed: "失败",
+  unknown: "未知",
+};
+
+function DiagResult({ data }: { data: NodeStatusCheck | null }) {
+  if (!data) return <div className="text-sm text-muted-foreground">暂无检测结果</div>;
   return (
-    <div
-      className={`rounded-md border p-4 text-sm ${
-        ok ? "border-emerald-500/30 bg-emerald-500/5" : "border-destructive/40 bg-destructive/5"
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div className="font-medium">检测结果</div>
-        <Badge variant={ok ? "default" : "destructive"}>{ok ? "在线" : "离线"}</Badge>
-      </div>
-      <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">
-        {JSON.stringify(single, null, 2)}
-      </pre>
+    <div className="space-y-3 rounded-md border border-border p-4 text-sm">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3">
+        <dt className="text-muted-foreground">连接</dt>
+        <dd>{data.connected ? "已连接" : "未连接"}</dd>
+        <dt className="text-muted-foreground">响应</dt>
+        <dd className="font-mono">{data.responsive ? `${data.roundTripMs} ms` : "无响应"}</dd>
+        <dt className="text-muted-foreground">版本</dt>
+        <dd className="break-all font-mono">
+          {data.version || "未知"}
+          {data.upgradeAvailable && data.latestVersion && (
+            <span className="ml-2 text-muted-foreground">可升级至 {data.latestVersion}</span>
+          )}
+        </dd>
+        <dt className="text-muted-foreground">同步</dt>
+        <dd className={data.syncState === "failed" ? "text-destructive" : ""}>
+          {data.syncState === "failed" && <AlertCircle className="mr-1 inline h-3.5 w-3.5" />}
+          {nodeSyncLabels[data.syncState]}
+        </dd>
+        <dt className="text-muted-foreground">检测时间</dt>
+        <dd className="break-words font-mono">
+          {new Date(data.checkedAt).toLocaleString("zh-CN")}
+        </dd>
+      </dl>
+      {data.syncState === "failed" && data.syncLastError && (
+        <div className="break-words text-xs text-destructive">{data.syncLastError}</div>
+      )}
+      {data.message && <p className="text-xs text-muted-foreground">{data.message}</p>}
     </div>
   );
 }

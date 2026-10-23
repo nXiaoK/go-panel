@@ -219,6 +219,26 @@ export interface NodeSystemInfo {
   uptime: number;
 }
 
+export type NodeSyncState = "synced" | "pending" | "failed" | "unknown";
+
+export interface NodeStatusCheck {
+  nodeId: number;
+  name: string;
+  forwardMode: string;
+  dbStatus: number;
+  connected: boolean;
+  responsive: boolean;
+  roundTripMs: number;
+  version: string;
+  latestVersion: string;
+  upgradeAvailable: boolean;
+  syncState: NodeSyncState;
+  syncLastError?: string;
+  syncLastAttempt: number;
+  checkedAt: number;
+  message?: string;
+}
+
 export interface Node {
   id: number;
   name: string;
@@ -232,6 +252,8 @@ export interface Node {
   version?: string;
   latestVersion?: string;
   upgradeAvailable?: boolean;
+  syncState?: NodeSyncState;
+  syncLastError?: string;
   forwardMode?: "gost" | "nftables" | string;
   http?: number;
   tls?: number;

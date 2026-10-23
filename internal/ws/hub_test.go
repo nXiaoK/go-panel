@@ -29,6 +29,9 @@ func TestSendMsgLifecycleReturnsNodeResponseWithoutDeadline(t *testing.T) {
 	if got.OutcomeUnknown {
 		t.Fatal("normal node response was marked outcome-unknown")
 	}
+	if !got.Responded {
+		t.Fatal("real node response was not marked responded")
+	}
 }
 
 func TestSendMsgLifecycleFailsWhenCurrentSessionDisconnects(t *testing.T) {
@@ -49,6 +52,9 @@ func TestSendMsgLifecycleFailsWhenCurrentSessionDisconnects(t *testing.T) {
 	case got := <-result:
 		if got.Msg != "节点连接已断开" {
 			t.Fatalf("disconnect result=%+v", got)
+		}
+		if got.Responded {
+			t.Fatal("disconnect was marked responded")
 		}
 		if !got.OutcomeUnknown {
 			t.Fatal("disconnect after write was not marked outcome-unknown")

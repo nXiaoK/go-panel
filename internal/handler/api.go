@@ -116,7 +116,13 @@ func listNodes(c *gin.Context) {
 }
 
 func checkNodeStatus(c *gin.Context) {
-	c.JSON(http.StatusOK, service.GetAllNodes())
+	var req struct {
+		NodeID int64 `json:"nodeId" binding:"required,min=1"`
+	}
+	if !bindJSON(c, &req) {
+		return
+	}
+	c.JSON(http.StatusOK, service.CheckNodeStatus(req.NodeID))
 }
 
 func updateNode(c *gin.Context) {
