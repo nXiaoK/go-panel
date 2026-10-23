@@ -124,6 +124,8 @@ export function TunnelList({
       onSortingChange={onSortingChange}
       emptyState={
         <EmptyState
+          filtered={filtered}
+          onClearFilters={onClearFilters}
           title="暂无隧道"
           description="创建隧道来连接节点并提供转发链路"
           action={

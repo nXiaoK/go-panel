@@ -7,7 +7,7 @@ import {
   createMemoryHistory,
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmProvider } from "@/components/patterns/confirm-dialog";
@@ -79,6 +79,22 @@ async function show(url: string) {
   return router;
 }
 describe("真实隧道路由与URL状态", () => {
+  it("筛选无结果显示清除操作，恢复真实列表并保留无关URL状态", async () => {
+    const router = await show("/tunnel?q=missing&type=2&status=0&sort=name%3Adesc&bookmark=keep");
+    expect(await screen.findByText("没有匹配的结果")).toBeTruthy();
+    expect(screen.queryByText("暂无隧道")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "新建隧道" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+    expect(await screen.findByText("定位隧道")).toBeTruthy();
+    expect(screen.getByText("禁用隧道")).toBeTruthy();
+    expect(screen.queryByText("没有匹配的结果")).toBeNull();
+    expect((screen.getByRole("textbox", { name: "搜索" }) as HTMLInputElement).value).toBe("");
+    expect(router.state.location.search).toEqual(
+      expect.objectContaining({ q: "", type: "", status: "", sort: "name:desc", bookmark: "keep" }),
+    );
+    expect(router.state.location.search.focus).toBeUndefined();
+  });
+
   it.each([
     ["0", "禁用隧道", "定位隧道"],
     ["1", "定位隧道", "禁用隧道"],
