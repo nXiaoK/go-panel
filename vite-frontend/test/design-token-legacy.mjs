@@ -11,16 +11,6 @@ export const legacyViolations = {
       "text-[11px]": 1,
     },
   },
-  "src/features/dashboard/page.tsx": {
-    owner: "U04",
-    values: {
-      "text-[10px]": 10,
-      "text-[11px]": 12,
-      "emerald-500": 2,
-      "amber-500": 2,
-      "text-[9px]": 1,
-    },
-  },
   "src/features/subscription/page.tsx": {
     owner: "U10",
     values: {

@@ -6,7 +6,7 @@ export const Route = createFileRoute("/_app/")({
   head: () => ({
     meta: [
       { title: "控制台" },
-      { name: "description", content: "控制台：实时流量、节点状态与最近活动。" },
+      { name: "description", content: "控制台：流量趋势、资源状态与账户配额。" },
     ],
   }),
   component: Dashboard,
