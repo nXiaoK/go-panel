@@ -1,7 +1,7 @@
 module github.com/go-gost/x
 
-// 协议扩展依赖新版 QUIC、WebTransport 与 DTLS API；1.26.7 包含当前标准库安全修复，不能降级。
-go 1.26.7
+// 协议扩展依赖新版 QUIC、WebTransport 与 DTLS API；1.26.10 修复网络服务和证书校验漏洞，降级会恢复已知安全风险。
+go 1.26.10
 
 require github.com/shirou/gopsutil/v3 v3.24.5
 
@@ -45,15 +45,15 @@ require (
 	github.com/xtaci/tcpraw v1.2.25
 	github.com/yl2chen/cidranger v1.0.2
 	github.com/zalando/go-keyring v0.2.4
-	// SSH 安全基线：v0.56.0 修复 GO-2026-6303/6354/6355；降级会恢复认证来源约束绕过和通道死锁风险。
-	golang.org/x/crypto v0.56.0
+	// SSH 安全基线：v0.57.0 随 x/net 升级并包含 GO-2026-6303/6354/6355 修复；降级会恢复认证来源约束绕过和通道死锁风险。
+	golang.org/x/crypto v0.57.0
 	golang.org/x/exp v0.0.0-20241210194714-1829a127f884
-	// HTTP/2 等网络扩展；采用 gRPC v1.83.2 所需的 v0.58.0，单独降级可能恢复协议漏洞或破坏兼容性。
-	golang.org/x/net v0.58.0
+	// HTTP/2 安全基线：v0.60.0 修复协议处理资源耗尽风险；与面板模块同步，单独降级会恢复漏洞。
+	golang.org/x/net v0.60.0
 	// 操作系统调用封装；与新版加密依赖同步，影响节点跨平台编译兼容性。
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	// 文本编码与规范化支持；与网络扩展依赖图同步，避免版本回退引发兼容问题。
-	golang.org/x/text v0.41.0
+	golang.org/x/text v0.42.0
 	golang.org/x/time v0.14.0
 	golang.zx2c4.com/wireguard v0.0.0-20231211153847-12269c276173
 	// gRPC 安全基线：v1.83.2 覆盖 GO-2026-6443/6348，降级会恢复缺失 Host 导致崩溃及 HTTP/2 内存耗尽风险。
@@ -130,14 +130,14 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	// Go 模块解析工具；版本由 SSH 安全升级后的依赖图要求，需与主模块保持一致。
-	golang.org/x/mod v0.38.0 // indirect
+	// Go 模块解析工具；版本由网络安全升级后的依赖图要求，需与主模块保持一致。
+	golang.org/x/mod v0.41.0 // indirect
 	// 并发同步原语；跟随安全升级的依赖图，避免主模块与协议扩展选择不同实现。
-	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
 	// 终端处理支持；使用新版 SSH 依赖所需版本，保持终端交互兼容。
-	golang.org/x/term v0.45.0 // indirect
+	golang.org/x/term v0.46.0 // indirect
 	// Go 分析工具依赖；随安全升级同步，并与 x/mod、x/sync 保持兼容。
-	golang.org/x/tools v0.48.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	// RPC 协议类型跟随 gRPC v1.83.2 的依赖要求，与主模块保持一致，避免独立构建版本漂移。
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect

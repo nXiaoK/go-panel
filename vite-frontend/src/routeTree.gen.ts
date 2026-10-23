@@ -9,26 +9,26 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
-import { Route as AppUserRouteImport } from './routes/_app.user'
-import { Route as AppTunnelRouteImport } from './routes/_app.tunnel'
-import { Route as AppSubscriptionRouteImport } from './routes/_app.subscription'
-import { Route as AppSettingsRouteImport } from './routes/_app.settings'
-import { Route as AppProfileRouteImport } from './routes/_app.profile'
-import { Route as AppNodeRouteImport } from './routes/_app.node'
-import { Route as AppLimitRouteImport } from './routes/_app.limit'
-import { Route as AppForwardRouteImport } from './routes/_app.forward'
 import { Route as AppConfigRouteImport } from './routes/_app.config'
+import { Route as AppForwardRouteImport } from './routes/_app.forward'
+import { Route as AppLimitRouteImport } from './routes/_app.limit'
+import { Route as AppNodeRouteImport } from './routes/_app.node'
+import { Route as AppProfileRouteImport } from './routes/_app.profile'
+import { Route as AppSettingsRouteImport } from './routes/_app.settings'
+import { Route as AppSubscriptionRouteImport } from './routes/_app.subscription'
+import { Route as AppTunnelRouteImport } from './routes/_app.tunnel'
+import { Route as AppUserRouteImport } from './routes/_app.user'
 
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AppRoute = AppRouteImport.update({
-  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -36,39 +36,9 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppUserRoute = AppUserRouteImport.update({
-  id: '/user',
-  path: '/user',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppTunnelRoute = AppTunnelRouteImport.update({
-  id: '/tunnel',
-  path: '/tunnel',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppSubscriptionRoute = AppSubscriptionRouteImport.update({
-  id: '/subscription',
-  path: '/subscription',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppSettingsRoute = AppSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppProfileRoute = AppProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppNodeRoute = AppNodeRouteImport.update({
-  id: '/node',
-  path: '/node',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppLimitRoute = AppLimitRouteImport.update({
-  id: '/limit',
-  path: '/limit',
+const AppConfigRoute = AppConfigRouteImport.update({
+  id: '/config',
+  path: '/config',
   getParentRoute: () => AppRoute,
 } as any)
 const AppForwardRoute = AppForwardRouteImport.update({
@@ -76,9 +46,39 @@ const AppForwardRoute = AppForwardRouteImport.update({
   path: '/forward',
   getParentRoute: () => AppRoute,
 } as any)
-const AppConfigRoute = AppConfigRouteImport.update({
-  id: '/config',
-  path: '/config',
+const AppLimitRoute = AppLimitRouteImport.update({
+  id: '/limit',
+  path: '/limit',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNodeRoute = AppNodeRouteImport.update({
+  id: '/node',
+  path: '/node',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSubscriptionRoute = AppSubscriptionRouteImport.update({
+  id: '/subscription',
+  path: '/subscription',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTunnelRoute = AppTunnelRouteImport.update({
+  id: '/tunnel',
+  path: '/tunnel',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppUserRoute = AppUserRouteImport.update({
+  id: '/user',
+  path: '/user',
   getParentRoute: () => AppRoute,
 } as any)
 
@@ -173,18 +173,18 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_app': {
       id: '/_app'
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -194,53 +194,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/user': {
-      id: '/_app/user'
-      path: '/user'
-      fullPath: '/user'
-      preLoaderRoute: typeof AppUserRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/tunnel': {
-      id: '/_app/tunnel'
-      path: '/tunnel'
-      fullPath: '/tunnel'
-      preLoaderRoute: typeof AppTunnelRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/subscription': {
-      id: '/_app/subscription'
-      path: '/subscription'
-      fullPath: '/subscription'
-      preLoaderRoute: typeof AppSubscriptionRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/settings': {
-      id: '/_app/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AppSettingsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/profile': {
-      id: '/_app/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof AppProfileRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/node': {
-      id: '/_app/node'
-      path: '/node'
-      fullPath: '/node'
-      preLoaderRoute: typeof AppNodeRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/limit': {
-      id: '/_app/limit'
-      path: '/limit'
-      fullPath: '/limit'
-      preLoaderRoute: typeof AppLimitRouteImport
+    '/_app/config': {
+      id: '/_app/config'
+      path: '/config'
+      fullPath: '/config'
+      preLoaderRoute: typeof AppConfigRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/forward': {
@@ -250,11 +208,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppForwardRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/config': {
-      id: '/_app/config'
-      path: '/config'
-      fullPath: '/config'
-      preLoaderRoute: typeof AppConfigRouteImport
+    '/_app/limit': {
+      id: '/_app/limit'
+      path: '/limit'
+      fullPath: '/limit'
+      preLoaderRoute: typeof AppLimitRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/node': {
+      id: '/_app/node'
+      path: '/node'
+      fullPath: '/node'
+      preLoaderRoute: typeof AppNodeRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/profile': {
+      id: '/_app/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/subscription': {
+      id: '/_app/subscription'
+      path: '/subscription'
+      fullPath: '/subscription'
+      preLoaderRoute: typeof AppSubscriptionRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/tunnel': {
+      id: '/_app/tunnel'
+      path: '/tunnel'
+      fullPath: '/tunnel'
+      preLoaderRoute: typeof AppTunnelRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/user': {
+      id: '/_app/user'
+      path: '/user'
+      fullPath: '/user'
+      preLoaderRoute: typeof AppUserRouteImport
       parentRoute: typeof AppRoute
     }
   }

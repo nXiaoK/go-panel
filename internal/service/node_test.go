@@ -808,6 +808,7 @@ func TestNodeVersionComparison(t *testing.T) {
 	}{
 		{latest: "1.2.5", current: "1.2.4", want: true},
 		{latest: latestGostNodeVersion, current: "1.2.6", want: true},
+		{latest: latestGostNodeVersion, current: "1.2.7", want: true},
 		{latest: latestGostNodeVersion, current: latestGostNodeVersion, want: false},
 		{latest: latestNftNodeVersion, current: "nftables-go-1.3.2", want: true},
 		{latest: latestNftNodeVersion, current: "nftables-go-1.3.4", want: true},
@@ -819,6 +820,7 @@ func TestNodeVersionComparison(t *testing.T) {
 		{latest: latestNftNodeVersion, current: "nftables-go-1.3.10", want: true},
 		{latest: latestNftNodeVersion, current: "nftables-go-1.3.11", want: true},
 		{latest: latestNftNodeVersion, current: "nftables-go-1.3.12", want: true},
+		{latest: latestNftNodeVersion, current: "nftables-go-1.3.13", want: true},
 		{latest: latestNftNodeVersion, current: latestNftNodeVersion, want: false},
 		{latest: "1.2.5", current: "1.2.5", want: false},
 		{latest: "1.2.5", current: "1.3.0", want: false},
