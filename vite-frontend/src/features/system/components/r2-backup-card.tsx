@@ -1,18 +1,8 @@
-import { errorMessage } from "@/lib/api/client";
-import { useEffect, useMemo, useState } from "react";
-import { CloudUpload, KeyRound, Play, PlugZap, Save } from "lucide-react";
-import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  getR2BackupSettings,
-  runR2BackupNow,
-  testR2BackupConnection,
-  updateR2BackupSettings,
-} from "@/lib/api";
 import {
   buildR2BackupUpdate,
   defaultR2BackupForm,
@@ -22,8 +12,18 @@ import {
   r2BackupSettingsToForm,
   toggleR2BackupSecretClear,
   type R2BackupForm,
-} from "@/lib/r2-backup";
+} from "@/features/system/model";
+import {
+  getR2BackupSettings,
+  runR2BackupNow,
+  testR2BackupConnection,
+  updateR2BackupSettings,
+} from "@/lib/api";
+import { errorMessage } from "@/lib/api/client";
+import { notify } from "@/lib/notify";
 import type { R2BackupSettings } from "@/lib/types";
+import { CloudUpload, KeyRound, Play, PlugZap, Save } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 export function R2BackupCard() {
   const [settings, setSettings] = useState<R2BackupSettings | null>(null);

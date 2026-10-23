@@ -1,5 +1,5 @@
-import { formatBytes, formatDateTime } from "./format";
 import type { R2BackupSettings, R2BackupSettingsUpdate } from "@/lib/types";
+import { formatBytes, formatDateTime } from "@/lib/format";
 
 export interface R2BackupForm {
   enabled: boolean;

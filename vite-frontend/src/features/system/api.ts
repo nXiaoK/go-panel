@@ -1,9 +1,9 @@
-import { apiPost, type RequestOptions } from "./client";
+import { apiPost, type RequestOptions } from "@/lib/api/client";
 import type {
-  SystemStatus,
   BuildInfo,
   PanelUpdateStatus,
   PanelUpdateTriggerResult,
+  SystemStatus,
 } from "@/lib/types";
 export const getSystemStatus = (opts?: RequestOptions): Promise<SystemStatus> =>
   apiPost("/system/status", {}, opts);

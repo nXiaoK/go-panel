@@ -1,11 +1,11 @@
-import { apiDownload, apiUpload, apiPost, type RequestOptions } from "./client";
+import { apiDownload, apiPost, apiUpload, type RequestOptions } from "@/lib/api/client";
 import type {
-  R2BackupSettings,
-  R2BackupSettingsUpdate,
-  R2BackupRunResult,
+  ExtraRuleAction,
   ExtraRulesDetection,
   ExtraRulesHandled,
-  ExtraRuleAction,
+  R2BackupRunResult,
+  R2BackupSettings,
+  R2BackupSettingsUpdate,
 } from "@/lib/types";
 // 备份最大 256 MB，上传和下载都保留服务端 10 分钟传输窗口。
 const backupTransferTimeoutMs = 10 * 60 * 1000;

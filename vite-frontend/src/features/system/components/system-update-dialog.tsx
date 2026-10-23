@@ -1,6 +1,6 @@
 import { errorMessage } from "@/lib/api/client";
-import { useState } from "react";
 import { Check, Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { useState } from "react";
 
 import {
   AlertDialog,
@@ -12,9 +12,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { useSession } from "@/hooks/use-session";
 import { applyPanelUpdate, getSystemVersion } from "@/lib/api";
 import { notify } from "@/lib/notify";
-import { useSession } from "@/hooks/use-session";
 import type { PanelUpdateStatus } from "@/lib/types";
 import { dismissUpdate, MANUAL_UPDATE_COMMAND } from "@/lib/update";
 
