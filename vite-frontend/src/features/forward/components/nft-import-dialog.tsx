@@ -1,12 +1,6 @@
-import { errorMessage } from "@/lib/api/client";
-import { useEffect, useMemo, useState } from "react";
-import { notify } from "@/lib/notify";
-import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +8,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -21,9 +18,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { completeFromNft, detectNftRules, detectTunnelRules } from "@/lib/api";
-import type { Node, NftDetection, TunnelDetection, CompleteForwardRule } from "@/lib/types";
+import { errorMessage } from "@/lib/api/client";
+import { notify } from "@/lib/notify";
+import type { CompleteForwardRule, NftDetection, Node, TunnelDetection } from "@/lib/types";
+import { Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

@@ -1,12 +1,12 @@
-import { apiPost, type RequestOptions } from "./client";
+import { apiPost, type RequestOptions } from "@/lib/api/client";
 import type {
+  CompleteForwardRule,
+  DiagnosisResult,
   Forward,
   ForwardWrite,
-  DiagnosisResult,
+  NftCompletion,
   NftDetection,
   TunnelDetection,
-  CompleteForwardRule,
-  NftCompletion,
 } from "@/lib/types";
 export const createForward = (data: ForwardWrite, opts?: RequestOptions): Promise<string> =>
   apiPost("/forward/create", data, opts);

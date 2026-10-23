@@ -1,11 +1,4 @@
-import { errorMessage } from "@/lib/api/client";
-import { useEffect, useMemo, useState } from "react";
-import { notify } from "@/lib/notify";
-import { Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +6,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -20,15 +15,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createForward, updateForward } from "@/lib/api";
+import { Switch } from "@/components/ui/switch";
+import { ExitMemberPicker } from "@/features/forward/components/exit-member-picker";
+import {
+  defaultExitMembers,
+  isTunnelForward,
+  normalizeExitMembersForMode,
+} from "@/features/forward/exit-members";
 import {
   joinTargetAddresses,
   normalizeTargetAddressInput,
   splitTargetAddresses,
   targetAddressFields,
   validateForwardForm,
-} from "@/lib/forward-form";
-import { invalidateGlobalSearch } from "@/lib/search-cache";
+} from "@/features/forward/model";
+import { createForward, updateForward } from "@/lib/api";
+import { errorMessage } from "@/lib/api/client";
+import { notify } from "@/lib/notify";
 import type {
   Forward,
   ForwardExitMember,
@@ -37,8 +40,8 @@ import type {
   ForwardTunnelOption,
   Node,
 } from "@/lib/types";
-import { ExitMemberPicker } from "./exit-member-picker";
-import { defaultExitMembers, isTunnelForward, normalizeExitMembersForMode } from "./exit-members";
+import { Loader2, Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 export interface ForwardFormState {
   id?: number;
@@ -281,7 +284,6 @@ export function ForwardFormDialog({
     };
     try {
       await (editing ? updateForward(payload) : createForward(payload));
-      invalidateGlobalSearch("forward");
       notify.success(editing ? "已更新" : "已创建");
       onOpenChange(false);
       onSaved();

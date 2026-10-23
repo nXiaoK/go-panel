@@ -9,8 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { normalizeExitMembersForMode } from "@/features/forward/exit-members";
 import type { ForwardExitMember, ForwardExitMode, Node, Tunnel } from "@/lib/types";
-import { normalizeExitMembersForMode } from "./exit-members";
 
 export function ExitMemberPicker({
   className = "",
