@@ -16,7 +16,7 @@ const AlertDialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Overlay
     className={cn(
-      "fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "fixed inset-0 z-50 bg-canvas/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className,
     )}
     {...props}
@@ -28,29 +28,67 @@ AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
->(({ className, ...props }, ref) => (
+>(({ className, children, ...props }, ref) => (
   <AlertDialogPortal>
     <AlertDialogOverlay />
     <AlertDialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-lg",
+        "fixed left-[50%] top-[50%] z-50 flex flex-col w-[calc(100%-2rem)] max-w-[480px] max-h-[calc(100dvh-2rem)] overflow-hidden translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-level-3 duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 rounded-md",
         className,
       )}
       {...props}
-    />
+    >
+      {layoutAlertDialogChildren(children)}
+    </AlertDialogPrimitive.Content>
   </AlertDialogPortal>
 ));
 AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName;
 
+// 标题和操作保持固定；Description也可能承载批量结果，必须置于独立滚动区。
+function layoutAlertDialogChildren(children: React.ReactNode) {
+  const items = React.Children.toArray(children);
+  const headers = items.filter(
+    (item) => React.isValidElement(item) && item.type === AlertDialogHeader,
+  ) as React.ReactElement<{ children?: React.ReactNode }>[];
+  const footer = items.filter(
+    (item) => React.isValidElement(item) && item.type === AlertDialogFooter,
+  );
+  const title = headers.flatMap((header) =>
+    React.Children.toArray(header.props.children).filter(
+      (item) => React.isValidElement(item) && item.type === AlertDialogTitle,
+    ),
+  );
+  const description = headers.flatMap((header) =>
+    React.Children.toArray(header.props.children).filter(
+      (item) => !React.isValidElement(item) || item.type !== AlertDialogTitle,
+    ),
+  );
+  const body = items.filter(
+    (item) =>
+      !React.isValidElement(item) ||
+      (item.type !== AlertDialogHeader && item.type !== AlertDialogFooter),
+  );
+  return (
+    <>
+      {title.length > 0 && <AlertDialogHeader>{title}</AlertDialogHeader>}
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+        {description}
+        {body}
+      </div>
+      {footer}
+    </>
+  );
+}
+
 const AlertDialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex flex-col space-y-2 text-center sm:text-left", className)} {...props} />
+  <div className={cn("flex flex-col space-y-2 shrink-0 text-left", className)} {...props} />
 );
 AlertDialogHeader.displayName = "AlertDialogHeader";
 
 const AlertDialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2", className)}
+    className={cn("flex shrink-0 flex-wrap items-center justify-end gap-2", className)}
     {...props}
   />
 );
@@ -62,7 +100,7 @@ const AlertDialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Title
     ref={ref}
-    className={cn("text-lg font-semibold", className)}
+    className={cn("text-section-title", className)}
     {...props}
   />
 ));

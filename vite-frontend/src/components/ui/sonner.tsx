@@ -1,23 +1,50 @@
+import { useEffect, useState, type CSSProperties } from "react";
 import { Toaster as Sonner } from "sonner";
-
+import "./sonner.css";
 type ToasterProps = React.ComponentProps<typeof Sonner>;
-
-const Toaster = ({ ...props }: ToasterProps) => {
+const Toaster = ({ toastOptions, style, ...props }: ToasterProps) => {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia?.("(max-width: 767px)");
+    if (!media) return;
+    const update = () => setMobile(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
   return (
     <Sonner
+      {...props}
+      theme="dark"
+      richColors={false}
+      position={mobile ? "top-center" : "top-right"}
       className="toaster group"
+      style={
+        {
+          ...style,
+          "--normal-bg": "var(--canvas-soft)",
+          "--normal-text": "var(--ink)",
+          "--normal-border": "var(--hairline)",
+        } as CSSProperties
+      }
       toastOptions={{
+        ...toastOptions,
+        style: {
+          ...toastOptions?.style,
+          background: "var(--canvas-soft)",
+          color: "var(--ink)",
+          border: "1px solid var(--hairline)",
+          boxShadow: "var(--shadow-level-3)",
+        },
         classNames: {
-          toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg",
-          description: "group-[.toast]:text-muted-foreground",
-          actionButton: "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
-          cancelButton: "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
+          ...toastOptions?.classNames,
+          toast: "toast text-sm leading-5",
+          description: "text-body!",
+          actionButton: "bg-primary! text-on-primary!",
+          cancelButton: "bg-canvas! text-body!",
         },
       }}
-      {...props}
     />
   );
 };
-
 export { Toaster };

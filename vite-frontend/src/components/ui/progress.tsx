@@ -1,3 +1,4 @@
+/** 旧页面兼容入口；新页面使用 patterns/Meter 的配额阈值与 meter 语义。 */
 "use client";
 
 import * as React from "react";
@@ -11,11 +12,11 @@ const Progress = React.forwardRef<
 >(({ className, value, ...props }, ref) => (
   <ProgressPrimitive.Root
     ref={ref}
-    className={cn("relative h-2 w-full overflow-hidden rounded-full bg-primary/20", className)}
+    className={cn("relative h-2 w-full overflow-hidden rounded-full bg-hairline-subtle", className)}
     {...props}
   >
     <ProgressPrimitive.Indicator
-      className="h-full w-full flex-1 bg-primary transition-all"
+      className="h-full w-full flex-1 bg-status-good transition-all"
       style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
     />
   </ProgressPrimitive.Root>
