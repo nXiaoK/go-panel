@@ -2,6 +2,10 @@
 
 本目录是 go-panel 的 React/Vite SPA。`package.json` 与 `package-lock.json` 都是严格 JSON，语法不允许内联注释，因此在本文按模块说明配置和风险。
 
+## 视觉规范
+
+界面开发以仓库根目录的 [DESIGN.md](../DESIGN.md) 为准。控制台只保留暗色主题，使用语义令牌、自托管字体和统一组件；不得使用 Tailwind 原生色板。新增颜色组合必须计算对比度，文字至少 4.5:1，控件边界和图形至少 3:1。
+
 ## 运行版本
 
 - GitHub Actions 与 Dockerfile 固定使用 Node.js 22；Vite 8 / Vitest 4 的本地开发基线为 Node.js 22.12+。
