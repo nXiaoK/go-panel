@@ -65,7 +65,12 @@ describe("session", () => {
 
     clearSession();
 
-    expect(readSession()).toEqual({ token: null, roleID: null, name: null });
+    expect(readSession()).toEqual({
+      token: null,
+      roleId: null,
+      name: null,
+      mustChangePassword: false,
+    });
     expect(storage.getItem("must_change_pwd")).toBeNull();
     expect(navigate).not.toHaveBeenCalled();
   });
@@ -84,7 +89,12 @@ describe("session", () => {
   it("reads the current session snapshot and role", () => {
     const storage = createMemoryStorage({ token: "t", role_id: "0", name: "root" });
     configureSessionForTest({ storage, navigate: vi.fn(), pathname: "/" });
-    expect(readSession()).toEqual({ token: "t", roleID: 0, name: "root" });
+    expect(readSession()).toEqual({
+      token: "t",
+      roleId: 0,
+      name: "root",
+      mustChangePassword: false,
+    });
     expect(getRoleID()).toBe(0);
   });
 });

@@ -1,8 +1,9 @@
+import { useConfirm, usePrompt } from "@/hooks/use-confirm";
 import { errorMessage } from "@/lib/api/client";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import {
   Globe2,
   SlidersHorizontal,
@@ -46,12 +47,14 @@ import {
 import { setCachedAppName } from "@/lib/site-config";
 
 export const Route = createFileRoute("/_app/config")({
-  head: () => ({ meta: [{ title: "系统配置 · Flux Panel" }] }),
+  head: () => ({ meta: [{ title: "系统配置" }] }),
   component: ConfigPage,
 });
 
 function ConfigPage() {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
   const [draftItems, setDraftItems] = useState<ConfigKV[]>([]);
   const [dirty, setDirty] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<"backup" | "restore" | null>(null);
@@ -95,11 +98,11 @@ function ConfigPage() {
     mutationFn: (payload: Record<string, string>) => updateConfigs(payload),
     onSuccess: (_data, payload) => {
       if (payload.app_name !== undefined) setCachedAppName(payload.app_name);
-      toast.success("已保存");
+      notify.success("已保存");
       setDirty({});
       void queryClient.invalidateQueries({ queryKey: queries.config.list() });
     },
-    onError: (error: Error) => toast.error(error.message || "保存失败"),
+    onError: (error: Error) => notify.error(error.message || "保存失败"),
   });
   const saving = saveMutation.isPending;
 
@@ -118,11 +121,16 @@ function ConfigPage() {
 
   const setValue = (name: string, value: string) => applyValues({ [name]: value });
 
-  const addKey = () => {
-    const name = window.prompt("新配置项名称？");
+  const addKey = async () => {
+    const name = await prompt({
+      title: "新增配置项",
+      description: "填写配置项名称，随后编辑值并保存。",
+      inputLabel: "配置项名称",
+      confirmText: "添加配置项",
+    });
     if (!name?.trim()) return;
     const cleanName = name.trim();
-    if (items.some((it) => it.name === cleanName)) return toast.error("名称已存在");
+    if (items.some((it) => it.name === cleanName)) return notify.error("名称已存在");
     applyValues({ [cleanName]: "" });
   };
   const remove = (name: string) => {
@@ -134,7 +142,7 @@ function ConfigPage() {
       delete n[name];
       return n;
     });
-    toast.info("已从列表移除（后端未提供删除接口，保存不会同步）");
+    notify.info("已从列表移除（后端未提供删除接口，保存不会同步）");
   };
 
   const normalizeForSave = (payload: Record<string, string>) => {
@@ -148,10 +156,10 @@ function ConfigPage() {
   };
 
   const save = async () => {
-    if (Object.keys(dirty).length === 0) return toast.info("没有需要保存的更改");
+    if (Object.keys(dirty).length === 0) return notify.info("没有需要保存的更改");
     const payload = normalizeForSave(dirty);
     if (payload.ip !== undefined && !isPanelAddressLike(payload.ip)) {
-      toast.error("面板公网地址格式不正确，请填写 host:port 或 http(s)://host:port");
+      notify.error("面板公网地址格式不正确，请填写 host:port 或 http(s)://host:port");
       return;
     }
     saveMutation.mutate(payload);
@@ -167,22 +175,31 @@ function ConfigPage() {
       a.download = filename || "backup.db";
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("备份已下载");
+      notify.success("备份已下载");
     } catch (e) {
-      toast.error(errorMessage(e));
+      notify.error(errorMessage(e));
     } finally {
       setBusy(null);
     }
   };
 
   const restore = async (file: File) => {
-    if (!confirm(`确认使用 "${file.name}" 恢复站点？将覆盖当前数据。`)) return;
+    if (
+      !(await confirm({
+        title: "恢复站点备份",
+        description: `使用「${file.name}」恢复将覆盖当前站点数据，无法撤销。请先备份当前数据。`,
+        confirmText: "恢复备份",
+        tone: "danger",
+        requireText: file.name,
+      }))
+    )
+      return;
     setBusy("restore");
     try {
       await restoreSiteBackup(file);
-      toast.success("已恢复，稍后请重新登录");
+      notify.success("已恢复，稍后请重新登录");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "恢复失败");
+      notify.error(error instanceof Error ? error.message : "恢复失败");
     } finally {
       setBusy(null);
     }

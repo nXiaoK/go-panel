@@ -1,7 +1,7 @@
 import type { ProxyNodeWrite } from "@/lib/types";
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,15 +59,15 @@ export function SubscriptionNodeDialog({
   const saveMutation = useMutation({
     mutationFn: (payload: ProxyNodeWrite) => updateProxyNode(payload),
     onSuccess: () => {
-      toast.success("节点已保存");
+      notify.success("节点已保存");
       onOpenChange(false);
       onSaved();
     },
-    onError: (error: Error) => toast.error(error.message || "节点保存失败"),
+    onError: (error: Error) => notify.error(error.message || "节点保存失败"),
   });
 
   const save = () => {
-    if (!form.name.trim() || !form.server.trim()) return toast.error("节点名称和地址不能为空");
+    if (!form.name.trim() || !form.server.trim()) return notify.error("节点名称和地址不能为空");
     saveMutation.mutate({
       ...form,
       port: Number(form.port),

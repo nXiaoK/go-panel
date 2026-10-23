@@ -1,9 +1,10 @@
 import { diagnosisStatus, diagnosisSummary, internetProbeNotice } from "@/lib/diagnosis";
+import { useConfirm } from "@/hooks/use-confirm";
 import type { TunnelWrite } from "@/lib/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import {
   Activity,
   Cable,
@@ -68,7 +69,7 @@ export const Route = createFileRoute("/_app/tunnel")({
   validateSearch: (search: Record<string, unknown>) => ({
     action: search.action === "create" ? "create" : undefined,
   }),
-  head: () => ({ meta: [{ title: "隧道管理 · Flux Panel" }] }),
+  head: () => ({ meta: [{ title: "隧道管理" }] }),
   component: TunnelPage,
 });
 
@@ -93,6 +94,7 @@ const emptyForm = (): TunnelForm => ({
 function TunnelPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const search = Route.useSearch();
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -147,25 +149,25 @@ function TunnelPage() {
       isEdit ? updateTunnel(payload) : createTunnel(payload),
     onSuccess: (_data, { isEdit }) => {
       invalidateGlobalSearch("tunnel");
-      toast.success(isEdit ? "隧道已更新" : "隧道已创建");
+      notify.success(isEdit ? "隧道已更新" : "隧道已创建");
       setFormOpen(false);
       void queryClient.invalidateQueries({ queryKey: queries.tunnel.list() });
       void queryClient.invalidateQueries({ queryKey: queries.forward.all });
       void queryClient.invalidateQueries({ queryKey: queries.dashboard.all });
     },
-    onError: (error: Error) => toast.error(error.message || "操作失败"),
+    onError: (error: Error) => notify.error(error.message || "操作失败"),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteTunnel(id),
     onSuccess: () => {
       invalidateGlobalSearch("tunnel");
-      toast.success("已删除");
+      notify.success("已删除");
       void queryClient.invalidateQueries({ queryKey: queries.tunnel.list() });
       void queryClient.invalidateQueries({ queryKey: queries.forward.all });
       void queryClient.invalidateQueries({ queryKey: queries.dashboard.all });
     },
-    onError: (error: Error) => toast.error(error.message || "删除失败"),
+    onError: (error: Error) => notify.error(error.message || "删除失败"),
   });
 
   const filtered = useMemo(() => {
@@ -233,18 +235,18 @@ function TunnelPage() {
   }, [form.inNodeId, form.relayNodeId, form.outNodeId, form.type, nodeMap]);
 
   const submit = async () => {
-    if (!form.name.trim()) return toast.error("请输入隧道名称");
-    if (!form.inNodeId) return toast.error("请选择入口节点");
-    if (form.type === 2 && !form.outNodeId) return toast.error("隧道转发需要选择出口节点");
+    if (!form.name.trim()) return notify.error("请输入隧道名称");
+    if (!form.inNodeId) return notify.error("请选择入口节点");
+    if (form.type === 2 && !form.outNodeId) return notify.error("隧道转发需要选择出口节点");
     if (
       form.type === 2 &&
       form.relayNodeId &&
       (form.relayNodeId === form.inNodeId || form.relayNodeId === form.outNodeId)
     ) {
-      return toast.error("入口、中继和出口节点不能重复");
+      return notify.error("入口、中继和出口节点不能重复");
     }
     if (form.type === 2 && form.relayNodeId && !isNftForm) {
-      return toast.error("三节点串联要求入口、中继和出口均为 nftables 模式");
+      return notify.error("三节点串联要求入口、中继和出口均为 nftables 模式");
     }
     const payload = {
       ...form,
@@ -256,7 +258,15 @@ function TunnelPage() {
   };
 
   const remove = async (t: Tunnel) => {
-    if (!confirm(`确认删除隧道「${t.name}」吗？`)) return;
+    if (
+      !(await confirm({
+        title: `删除隧道「${t.name}」`,
+        description: "删除后依赖该隧道的转发将无法继续工作，此操作无法恢复。",
+        confirmText: "删除隧道",
+        tone: "danger",
+      }))
+    )
+      return;
     deleteMutation.mutate(t.id);
   };
 
@@ -268,7 +278,7 @@ function TunnelPage() {
       const res = await diagnoseTunnel(t.id);
       setDiagResult(res);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "诊断失败");
+      notify.error(error instanceof Error ? error.message : "诊断失败");
     } finally {
       setDiagLoading(false);
     }

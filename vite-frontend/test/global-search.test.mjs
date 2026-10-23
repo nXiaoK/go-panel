@@ -1,20 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
-import ts from "typescript";
-
-async function importTs(path) {
-  const source = await readFile(path, "utf8");
-  const compiled = ts.transpileModule(source, {
-    compilerOptions: {
-      module: ts.ModuleKind.ES2022,
-      target: ts.ScriptTarget.ES2022,
-      verbatimModuleSyntax: false,
-    },
-  }).outputText;
-  return import(`data:text/javascript;charset=utf-8,${encodeURIComponent(compiled)}`);
-}
+import { importTs } from "./import-ts.mjs";
 
 const { buildGlobalSearchItems, filterGlobalSearchItems, normalizeApiList } = await importTs(
   new URL("../src/lib/global-search.ts", import.meta.url),

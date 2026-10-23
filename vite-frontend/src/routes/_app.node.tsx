@@ -1,9 +1,12 @@
+import { formatBytes, formatRate, formatDuration, formatDateTime } from "@/lib/format";
+import { useConfirm } from "@/hooks/use-confirm";
+import { useSession } from "@/hooks/use-session";
 import { errorMessage } from "@/lib/api/client";
 import type { NodeWrite } from "@/lib/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import {
   Activity,
   AlertCircle,
@@ -64,7 +67,7 @@ import type { Node, NodeStatusCheck, NodeSystemInfo } from "@/lib/types";
 import { FormField, KpiCard, PageHeader, QueryErrorNotice } from "@/components/page";
 
 export const Route = createFileRoute("/_app/node")({
-  head: () => ({ meta: [{ title: "节点管理 · Flux Panel" }] }),
+  head: () => ({ meta: [{ title: "节点管理" }] }),
   component: NodePage,
 });
 
@@ -95,24 +98,6 @@ const emptyForm = (): NodeForm => ({
 });
 
 /* ============ helpers ============ */
-
-function formatBytes(bytes: number, perSec = false): string {
-  if (!bytes || bytes <= 0) return perSec ? "0 B/s" : "0 B";
-  const k = 1024;
-  const units = perSec ? ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"] : ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), units.length - 1);
-  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${units[i]}`;
-}
-
-function formatUptime(seconds: number): string {
-  if (!seconds) return "-";
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (d > 0) return `${d}天${h}小时`;
-  if (h > 0) return `${h}小时${m}分`;
-  return `${m}分钟`;
-}
 
 function numeric(obj: Record<string, unknown>, ...keys: string[]): number {
   for (const k of keys) {
@@ -153,6 +138,7 @@ function validAddr(a: string): boolean {
 function NodePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
 
   const [formOpen, setFormOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -176,11 +162,7 @@ function NodePage() {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
 
-  const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => {
-    const r = window.localStorage.getItem("role_id");
-    setIsAdmin(r === "0");
-  }, []);
+  const { isAdmin } = useSession();
 
   const { autoRefresh: autoRefreshEnabled } = usePreferences();
 
@@ -209,27 +191,27 @@ function NodePage() {
       isEdit ? updateNode(payload) : createNode(payload),
     onSuccess: (_data, { isEdit }) => {
       invalidateGlobalSearch("node");
-      toast.success(isEdit ? "已更新" : "已创建");
+      notify.success(isEdit ? "已更新" : "已创建");
       setFormOpen(false);
       void queryClient.invalidateQueries({ queryKey: queries.node.list() });
       void queryClient.invalidateQueries({ queryKey: queries.tunnel.all });
       void queryClient.invalidateQueries({ queryKey: queries.forward.all });
       void queryClient.invalidateQueries({ queryKey: queries.dashboard.all });
     },
-    onError: (error: Error) => toast.error(error.message || "保存失败"),
+    onError: (error: Error) => notify.error(error.message || "保存失败"),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteNode(id),
     onSuccess: () => {
       invalidateGlobalSearch("node");
-      toast.success("已删除");
+      notify.success("已删除");
       void queryClient.invalidateQueries({ queryKey: queries.node.list() });
       void queryClient.invalidateQueries({ queryKey: queries.tunnel.all });
       void queryClient.invalidateQueries({ queryKey: queries.forward.all });
       void queryClient.invalidateQueries({ queryKey: queries.dashboard.all });
     },
-    onError: (error: Error) => toast.error(error.message || "删除失败"),
+    onError: (error: Error) => notify.error(error.message || "删除失败"),
   });
 
   /* ---- ws ---- */
@@ -462,7 +444,17 @@ function NodePage() {
   };
 
   const remove = async (n: Node) => {
-    if (!confirm(`确认删除节点「${n.name}」？该操作不可撤销。`)) return;
+    if (
+      !(await confirm({
+        title: `删除节点「${n.name}」`,
+        description:
+          "删除后该节点的连接配置将被移除。请先处理依赖该节点的隧道和转发，此操作无法恢复。",
+        confirmText: "删除节点",
+        tone: "danger",
+        requireText: n.name,
+      }))
+    )
+      return;
     deleteMutation.mutate(n.id);
   };
 
@@ -476,9 +468,9 @@ function NodePage() {
       if (typeof navigator !== "undefined" && navigator.clipboard) {
         try {
           await navigator.clipboard.writeText(commandText);
-          toast.success(`${label}已复制到剪贴板`);
+          notify.success(`${label}已复制到剪贴板`);
         } catch {
-          toast.error("自动复制失败，请在弹窗中手动复制");
+          notify.error("自动复制失败，请在弹窗中手动复制");
         }
         openCommandModal(label, commandText, n.name);
       } else {
@@ -487,10 +479,10 @@ function NodePage() {
     } catch (error) {
       const msg = errorMessage(error);
       if (isMissingPanelAddressError(msg)) {
-        toast.error("请先在系统配置中设置面板公网地址", {
+        notify.error("请先在系统配置中设置面板公网地址", {
           action: { label: "去设置", onClick: () => navigate({ to: "/config" }) },
         });
-      } else toast.error(msg);
+      } else notify.error(msg);
     } finally {
       setCopyBusy(null);
     }
@@ -506,23 +498,30 @@ function NodePage() {
   const manualCopy = async () => {
     try {
       await navigator.clipboard.writeText(cmdText);
-      toast.success(`${cmdTitle}已复制`);
+      notify.success(`${cmdTitle}已复制`);
     } catch {
-      toast.error("复制失败，请手动选择文本");
+      notify.error("复制失败，请手动选择文本");
     }
   };
 
   const runUpgrade = async (n: Node) => {
     if (!n.upgradeAvailable) return;
     const latest = n.latestVersion || "最新版本";
-    if (!confirm(`确认升级节点「${n.name}」到 ${latest}？节点会自动重启并短暂离线。`)) return;
+    if (
+      !(await confirm({
+        title: `升级节点「${n.name}」`,
+        description: `升级到 ${latest} 后节点会自动重启并短暂离线，期间转发可能中断。`,
+        confirmText: "升级节点",
+      }))
+    )
+      return;
     setUpgradeBusy(n.id);
     try {
       await upgradeNode(n.id);
-      toast.success("升级已触发，节点稍后会自动重连");
+      notify.success("升级已触发，节点稍后会自动重连");
       window.setTimeout(refresh, 3000);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "升级失败");
+      notify.error(error instanceof Error ? error.message : "升级失败");
     } finally {
       setUpgradeBusy(null);
     }
@@ -537,7 +536,7 @@ function NodePage() {
     try {
       setDiagResult(await checkNodeStatus(n.id));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "检测失败");
+      notify.error(error instanceof Error ? error.message : "检测失败");
     } finally {
       setDiagLoading(false);
     }
@@ -895,7 +894,7 @@ function NodeCard({
             </span>
           </Row>
           <Row label="开机">
-            <span className="font-mono">{online && info ? formatUptime(info.uptime) : "-"}</span>
+            <span className="font-mono">{online && info ? formatDuration(info.uptime) : "-"}</span>
           </Row>
         </div>
 
@@ -927,12 +926,12 @@ function NodeCard({
           <MiniStat
             icon={<Upload className="h-3 w-3" />}
             label="上传"
-            value={online && info ? formatBytes(info.uploadSpeed, true) : "-"}
+            value={online && info ? formatRate(info.uploadSpeed) : "-"}
           />
           <MiniStat
             icon={<Download className="h-3 w-3" />}
             label="下载"
-            value={online && info ? formatBytes(info.downloadSpeed, true) : "-"}
+            value={online && info ? formatRate(info.downloadSpeed) : "-"}
           />
           <MiniStat
             icon={<Activity className="h-3 w-3" />}
@@ -1152,9 +1151,7 @@ function DiagResult({ data }: { data: NodeStatusCheck | null }) {
           {nodeSyncLabels[data.syncState]}
         </dd>
         <dt className="text-muted-foreground">检测时间</dt>
-        <dd className="break-words font-mono">
-          {new Date(data.checkedAt).toLocaleString("zh-CN")}
-        </dd>
+        <dd className="break-words font-mono">{formatDateTime(data.checkedAt)}</dd>
       </dl>
       {data.syncState === "failed" && data.syncLastError && (
         <div className="break-words text-xs text-destructive">{data.syncLastError}</div>

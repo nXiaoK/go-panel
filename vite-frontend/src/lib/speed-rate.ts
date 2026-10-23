@@ -1,24 +1,4 @@
-export type FormattedSpeedRate = {
-  value: string;
-  unit: "MB/s" | "GB/s";
-};
-
-export function formatSpeedRateFromMbps(mbps: unknown): FormattedSpeedRate {
-  const value = Number(mbps);
-  const mbPerSecond = Number.isFinite(value) && value > 0 ? value / 8 : 0;
-
-  if (mbPerSecond >= 1024) {
-    return {
-      value: (mbPerSecond / 1024).toFixed(2),
-      unit: "GB/s",
-    };
-  }
-
-  return {
-    value: mbPerSecond.toFixed(2),
-    unit: "MB/s",
-  };
-}
+export { formatMbps as formatSpeedRateFromMbps, type FormattedSpeedRate } from "./format";
 
 function numericMetric(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;

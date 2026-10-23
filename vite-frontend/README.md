@@ -73,3 +73,13 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 ### 构建预压缩（package.json 的 scripts.build）
 
 `npm run build` 先运行 Vite，再执行 `scripts/precompress.mjs`。脚本递归为 `dist/assets/` 中的 JS、CSS、SVG 生成 gzip level 9 的 `.gz` 和 Brotli quality 11 的 `.br` 文件，不添加依赖；原始文件始终保留，供不支持压缩的客户端回退。高压缩级别只增加构建时间，不增加服务时的压缩开销。`scripts/sync-web-dist.sh` 会一起复制这些旁路文件；带哈希资源缓存一年，页面入口保持 `no-store`，因此发布时必须同步完整构建目录。
+
+### 会话、通知与站点标题
+
+身份通过 `lib/session.ts` 的快照和 `useSession()` 订阅，沿用 `token`、`role_id`、`name`、`must_change_pwd` 四个持久化键，旧会话无需迁移。只有角色 `0` 显示为“管理员”，其他角色均显示“普通用户”。跨标签页身份变化会同步界面并清空查询和搜索缓存；强制改密期间继续停止业务请求。
+
+所有业务通知使用 `lib/notify.ts`，ESLint 禁止业务代码直接导入 `sonner`。本地 `pref_notify=0` 会关闭成功、信息及长操作加载提示；错误与警告始终显示，避免隐藏失败。`notify.promise()` 保留原操作结果与 rejection。
+
+`app_name` 优先使用已有数据库配置，空值回退 `go-panel`；新库只在该项缺失时写入默认值，已有名称不会迁移。页面标题由根组件统一组合为“页面名 · 站点名称”，配置保存和路由切换即时更新，`HeadContent` 继续管理其余 meta。
+
+字节和速率统一使用 1024 进制，数值小于 10 保留两位、小于 100 保留一位，否则取整；测速保留原有 Mbps 转 MB/s 的两位小数。日期使用 `zh-CN`，无效值显示破折号。危险操作使用共享异步确认框，节点删除及备份恢复需输入名称或备份文件名；这只加强操作确认，不改变后端权限。

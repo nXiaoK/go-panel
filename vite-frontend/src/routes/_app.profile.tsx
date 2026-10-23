@@ -1,8 +1,11 @@
+import { useSession } from "@/hooks/use-session";
+import { roleLabel } from "@/lib/capabilities";
+import { formatBytes } from "@/lib/format";
 import type { UserPackage, PasswordUpdate } from "@/lib/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { UserCircle2, KeyRound, LogOut, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,33 +17,16 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { updatePassword, getUserPackageInfo } from "@/lib/api";
 import { queries } from "@/lib/api/query";
-import { clearSession, isPasswordChangeRequired } from "@/lib/session";
+import { clearSession } from "@/lib/session";
 import { PageHeader, QueryErrorNotice } from "@/components/page";
 
 export const Route = createFileRoute("/_app/profile")({
   // forcePassword=1 仅开启改密引导；默认不强制，真实权限始终由后端与持久会话标记判定。
   validateSearch: (search: Record<string, unknown>): { forcePassword?: number } =>
     search.forcePassword === 1 || search.forcePassword === "1" ? { forcePassword: 1 } : {},
-  head: () => ({ meta: [{ title: "个人资料 · Flux Panel" }] }),
+  head: () => ({ meta: [{ title: "个人资料" }] }),
   component: ProfilePage,
 });
-
-function roleLabel(id: string | null) {
-  if (id === "0") return { label: "超级管理员", tone: "text-primary" };
-  if (id === "1") return { label: "普通用户", tone: "text-muted-foreground" };
-  if (id === "2") return { label: "运维", tone: "text-blue-400" };
-  return { label: "普通用户", tone: "text-muted-foreground" };
-}
-function fmtBytes(n: number) {
-  if (!n) return "0 B";
-  const u = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0;
-  while (n >= 1024 && i < u.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n.toFixed(2)} ${u[i]}`;
-}
 
 type PackageSummary = { flow: number; num: number; used: number };
 
@@ -53,55 +39,53 @@ function normalizePackageInfo(data: UserPackage | null): PackageSummary | null {
 function ProfilePage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
-  const forcePassword = isPasswordChangeRequired() || search.forcePassword === 1;
-  const [name, setName] = useState("admin");
-  const [newUsername, setNewUsername] = useState("admin");
-  const [roleId, setRoleId] = useState<string | null>("1");
+  const { name: sessionName, roleId, isAdmin, mustChangePassword, token } = useSession();
+  const name = sessionName || "admin";
+  const forcePassword = mustChangePassword || search.forcePassword === 1;
+  const [newUsername, setNewUsername] = useState(name);
   const [oldPwd, setOldPwd] = useState("");
   const [newPwd, setNewPwd] = useState("");
   const [confirmPwd, setConfirmPwd] = useState("");
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const storedName = window.localStorage.getItem("name") || "admin";
-    setName(storedName);
-    setNewUsername(storedName);
-    setRoleId(window.localStorage.getItem("role_id"));
-  }, []);
+    setNewUsername(name);
+  }, [name]);
 
   const packageQuery = useQuery({
     queryKey: queries.user.package(),
     queryFn: ({ signal }) => getUserPackageInfo({}, { signal }),
-    // 强制改密期间停止套餐请求，避免受保护业务接口反复返回 4032。
-    enabled: !forcePassword,
+    // 强制改密或退出后停止套餐请求；改密成功至导航的短暂间隔也不能用空令牌重启业务请求。
+    enabled: Boolean(token) && !forcePassword,
   });
   const pkg = forcePassword ? null : normalizePackageInfo(packageQuery.data ?? null);
 
   const passwordMutation = useMutation({
     mutationFn: (payload: PasswordUpdate) => updatePassword(payload),
     onSuccess: () => {
-      toast.success("密码已更新，请重新登录");
+      notify.success("密码已更新，请重新登录");
       setOldPwd("");
       setNewPwd("");
       setConfirmPwd("");
-      setName(newUsername.trim());
       clearSession("password changed");
       setTimeout(() => navigate({ to: "/login" }), 800);
     },
-    onError: (error: Error) => toast.error(error.message || "修改失败"),
+    onError: (error: Error) => notify.error(error.message || "修改失败"),
   });
 
-  const role = roleLabel(roleId);
+  const role = {
+    label: roleLabel(roleId),
+    tone: isAdmin ? "text-primary" : "text-muted-foreground",
+  };
   const initials = name.slice(0, 2).toUpperCase();
   const usedGB = pkg ? pkg.used : 0;
   const totalGB = pkg ? pkg.flow : 0;
   const pct = totalGB > 0 ? Math.min(100, Math.round((usedGB / totalGB) * 100)) : 0;
 
   const submit = async () => {
-    if (!newUsername.trim()) return toast.error("请填写用户名");
-    if (!oldPwd || !newPwd) return toast.error("请填写原密码与新密码");
-    if (newPwd.length < 6) return toast.error("新密码至少 6 位");
-    if (newPwd !== confirmPwd) return toast.error("两次输入的新密码不一致");
+    if (!newUsername.trim()) return notify.error("请填写用户名");
+    if (!oldPwd || !newPwd) return notify.error("请填写原密码与新密码");
+    if (newPwd.length < 6) return notify.error("新密码至少 6 位");
+    if (newPwd !== confirmPwd) return notify.error("两次输入的新密码不一致");
     passwordMutation.mutate({
       newUsername: newUsername.trim(),
       currentPassword: oldPwd,
@@ -175,7 +159,7 @@ function ProfilePage() {
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground">已用流量</div>
-                  <div className="mt-1 font-mono text-xl">{fmtBytes(usedGB * 1024 ** 3)}</div>
+                  <div className="mt-1 font-mono text-xl">{formatBytes(usedGB * 1024 ** 3)}</div>
                   <Progress
                     value={pct}
                     className={`mt-2 h-1.5 ${pct >= 90 ? "[&>div]:bg-destructive" : ""}`}

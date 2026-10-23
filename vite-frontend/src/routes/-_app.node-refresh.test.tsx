@@ -1,3 +1,4 @@
+import { ConfirmProvider } from "@/components/patterns/confirm-dialog";
 import { act, cleanup, render } from "@testing-library/react";
 import {
   focusManager,
@@ -34,7 +35,9 @@ async function renderPage() {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <NodePage />
+      <ConfirmProvider>
+        <NodePage />
+      </ConfirmProvider>
     </QueryClientProvider>,
   );
   await advance(0);

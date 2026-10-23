@@ -1,3 +1,4 @@
+import { useConfirm } from "@/hooks/use-confirm";
 import { errorMessage } from "@/lib/api/client";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,7 +21,7 @@ import {
   Wifi,
   XCircle,
 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,7 +85,7 @@ import type {
 } from "@/lib/types";
 
 export const Route = createFileRoute("/_app/subscription")({
-  head: () => ({ meta: [{ title: "订阅管理 · Flux Panel" }] }),
+  head: () => ({ meta: [{ title: "订阅管理" }] }),
   component: SubscriptionPage,
 });
 
@@ -118,14 +119,15 @@ const protocolClass = (p: string) => {
 const copy = async (text: string, msg = "已复制") => {
   try {
     await navigator.clipboard.writeText(text);
-    toast.success(msg);
+    notify.success(msg);
   } catch {
-    toast.error("复制失败");
+    notify.error("复制失败");
   }
 };
 
 function SubscriptionPage() {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
 
   const settingsQuery = useQuery({
     queryKey: queries.subscription.settings(),
@@ -256,24 +258,32 @@ function SubscriptionPage() {
     setProfileOpen(true);
   };
   const removeProfile = async (p: SubscriptionProfile) => {
-    if (!window.confirm(`删除订阅「${p.name}」？`)) return;
+    if (
+      !(await confirm({
+        title: `删除订阅「${p.name}」`,
+        description: "删除后该订阅链接将立即失效，且无法恢复。",
+        confirmText: "删除订阅",
+        tone: "danger",
+      }))
+    )
+      return;
     try {
       await deleteSubscriptionProfile(p.id);
 
-      toast.success("订阅已删除");
+      notify.success("订阅已删除");
       await loadSettings();
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     }
   };
   const refreshProfileToken = async (p: SubscriptionProfile) => {
     try {
       await regenerateSubscriptionToken(p.id);
 
-      toast.success("Token 已重新生成");
+      notify.success("Token 已重新生成");
       await loadSettings();
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     }
   };
   const toggleProfileStatus = async (p: SubscriptionProfile) => {
@@ -284,10 +294,10 @@ function SubscriptionPage() {
         nodeIds: profileNodeIdsOf(p.id),
       });
 
-      toast.success(p.status === 1 ? "已禁用" : "已启用");
+      notify.success(p.status === 1 ? "已禁用" : "已启用");
       await loadSettings();
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     }
   };
   const showQr = (p: SubscriptionProfile, fmt: SubscriptionFormat) => {
@@ -308,18 +318,32 @@ function SubscriptionPage() {
     setNodeOpen(true);
   };
   const removeNode = async (n: ProxyNode) => {
-    if (!window.confirm(`删除节点「${n.name}」？`)) return;
+    if (
+      !(await confirm({
+        title: `删除订阅节点「${n.name}」`,
+        description: "删除后该节点将从关联订阅中移除，且无法恢复。",
+        confirmText: "删除节点",
+        tone: "danger",
+        requireText: n.name,
+      }))
+    )
+      return;
     let del = false;
     if (n.forwardId || (n.relayChildCount || 0) > 0) {
-      del = window.confirm(`节点「${n.name}」有关联中转规则/节点，是否一并删除？`);
+      del = await confirm({
+        title: "一并删除关联中转",
+        description: `节点「${n.name}」有关联中转规则/节点，一并删除后对应中转将停止工作。取消则保留关联中转。`,
+        confirmText: "一并删除",
+        tone: "danger",
+      });
     }
     try {
       await deleteProxyNode(n.id, del);
 
-      toast.success("节点已删除");
+      notify.success("节点已删除");
       await (n.forwardId || (n.relayChildCount || 0) > 0 ? loadRelayData() : loadSettings());
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     }
   };
   const toggleNodeStatus = async (n: ProxyNode) => {
@@ -332,10 +356,10 @@ function SubscriptionPage() {
         status: n.status === 1 ? 0 : 1,
       });
 
-      toast.success(n.status === 1 ? "已禁用" : "已启用");
+      notify.success(n.status === 1 ? "已禁用" : "已启用");
       await loadSettings();
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     }
   };
   const openAssign = (n: ProxyNode) => {
@@ -352,30 +376,38 @@ function SubscriptionPage() {
     setRelayOpen(true);
   };
   const closeRelay = async (n: ProxyNode) => {
-    if (!window.confirm(`关闭节点「${n.name}」的中转？`)) return;
+    if (
+      !(await confirm({
+        title: `关闭节点「${n.name}」的中转`,
+        description: "关闭后通过该中转地址连接的流量将中断。",
+        confirmText: "关闭中转",
+        tone: "danger",
+      }))
+    )
+      return;
     try {
       const res = await closeProxyNodeRelay(n.id);
 
       const d = res;
-      toast.success(
+      notify.success(
         `已关闭：删除 ${d.deletedForwards || 0} 中转规则、${d.deletedNodes || 0} 中转节点`,
       );
       await loadRelayData();
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     }
   };
   const diagRelay = async (n: ProxyNode) => {
-    if (!n.forwardId) return toast.error("该节点没有可测试的中转规则");
+    if (!n.forwardId) return notify.error("该节点没有可测试的中转规则");
     try {
       const res = await diagnoseForward(n.forwardId);
 
       const r = res.results?.[0];
-      toast.success(
+      notify.success(
         r?.success ? `连通 · ${r.averageTime?.toFixed?.(0) || "?"}ms` : r?.message || "已完成",
       );
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     }
   };
 
@@ -417,7 +449,7 @@ function SubscriptionPage() {
     const items = profiles.filter(
       (p) => selectedProfileIds.includes(p.id) && p.status !== targetStatus,
     );
-    if (items.length === 0) return toast.info("所选订阅已是目标状态");
+    if (items.length === 0) return notify.info("所选订阅已是目标状态");
     const label = targetStatus === 1 ? "启用" : "禁用";
     const key = targetStatus === 1 ? "profile-enable" : "profile-disable";
     askConfirm({
@@ -466,7 +498,7 @@ function SubscriptionPage() {
   const batchNodeStatus = (targetStatus: 0 | 1) => {
     if (batchRunning) return;
     const items = nodes.filter((n) => selectedNodeIds.includes(n.id) && n.status !== targetStatus);
-    if (items.length === 0) return toast.info("所选节点已是目标状态");
+    if (items.length === 0) return notify.info("所选节点已是目标状态");
     const label = targetStatus === 1 ? "启用" : "禁用";
     const key = targetStatus === 1 ? "node-enable" : "node-disable";
     askConfirm({

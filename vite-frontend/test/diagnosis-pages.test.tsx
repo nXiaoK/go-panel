@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { apiPost } from "../src/lib/api/client";
+import { ConfirmProvider } from "../src/components/patterns/confirm-dialog";
 import { ForwardPage } from "../src/routes/_app.forward";
 import { Route as TunnelRoute } from "../src/routes/_app.tunnel";
 
@@ -72,7 +73,9 @@ describe("diagnosis result displays", () => {
         kind === "forward" ? ForwardPage : (TunnelRoute.options.component as ComponentType);
       render(
         <QueryClientProvider client={client}>
-          <Page />
+          <ConfirmProvider>
+            <Page />
+          </ConfirmProvider>
         </QueryClientProvider>,
       );
       const trigger = await screen.findByRole("button", {

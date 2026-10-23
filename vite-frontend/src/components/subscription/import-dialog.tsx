@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,15 +33,15 @@ export function SubscriptionImportDialog({
   const importMutation = useMutation({
     mutationFn: (value: string) => importProxyNodeLink(value),
     onSuccess: () => {
-      toast.success("节点已导入");
+      notify.success("节点已导入");
       onOpenChange(false);
       onSaved();
     },
-    onError: (error: Error) => toast.error(error.message || "导入失败"),
+    onError: (error: Error) => notify.error(error.message || "导入失败"),
   });
 
   const submit = () => {
-    if (!link.trim()) return toast.error("请输入分享链接");
+    if (!link.trim()) return notify.error("请输入分享链接");
     importMutation.mutate(link.trim());
   };
 

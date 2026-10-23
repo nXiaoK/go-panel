@@ -5,10 +5,13 @@ import {
   HeadContent,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { pageTitle, useDocumentTitle } from "@/lib/title";
+import { ConfirmProvider } from "@/components/patterns/confirm-dialog";
 import { initTheme } from "../lib/theme";
 import { Toaster } from "@/components/ui/sonner";
 import { PANEL_ADDRESS_CHANGED_EVENT } from "@/lib/api/client";
@@ -78,15 +81,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Flux Panel — 转发管理控制台" },
+      { title: "转发管理控制台" },
       {
         name: "description",
-        content: "Flux Panel 深色科技风控制台：隧道 · 转发 · 节点 · 用户 · 订阅一站式管理。",
+        content: "管理控制台：隧道 · 转发 · 节点 · 用户 · 订阅一站式管理。",
       },
-      { property: "og:title", content: "Flux Panel — 转发管理控制台" },
+      { property: "og:title", content: "转发管理控制台" },
       {
         property: "og:description",
-        content: "Flux Panel 深色科技风控制台：隧道 · 转发 · 节点 · 用户 · 订阅一站式管理。",
+        content: "管理控制台：隧道 · 转发 · 节点 · 用户 · 订阅一站式管理。",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -100,6 +103,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const router = useRouter();
+  const currentTitle = useRouterState({ select: (state) => pageTitle(state.matches) });
+  useDocumentTitle(currentTitle);
   const [themeMode, setThemeMode] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" && document.documentElement.classList.contains("light")
       ? "light"
@@ -119,6 +125,7 @@ function RootComponent() {
     const clearDataCaches = () => {
       queryClient.clear();
       getGlobalSearchCache().clear();
+      void router.invalidate();
     };
     window.addEventListener(SESSION_CHANGED_EVENT, clearDataCaches);
     window.addEventListener(SESSION_INVALIDATED_EVENT, clearDataCaches);
@@ -128,12 +135,14 @@ function RootComponent() {
       window.removeEventListener(SESSION_INVALIDATED_EVENT, clearDataCaches);
       window.removeEventListener(PANEL_ADDRESS_CHANGED_EVENT, clearDataCaches);
     };
-  }, [queryClient]);
+  }, [queryClient, router]);
 
   return (
     <QueryClientProvider client={queryClient}>
       <HeadContent />
-      <Outlet />
+      <ConfirmProvider>
+        <Outlet />
+      </ConfirmProvider>
       <Toaster richColors theme={themeMode} position="top-right" />
     </QueryClientProvider>
   );

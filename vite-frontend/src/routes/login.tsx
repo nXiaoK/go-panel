@@ -1,7 +1,7 @@
 import { errorMessage } from "@/lib/api/client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Loader2, LogIn, Settings2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,13 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { login } from "@/lib/api";
 import { getPanelAddress, setPanelAddress } from "@/lib/api/client";
-import { markSessionActive, setPasswordChangeRequired } from "@/lib/session";
+import { readSession, setSession } from "@/lib/session";
 
 export const Route = createFileRoute("/login")({
   // 仅接受会话失效和账号禁用两个提示原因；未提供或未知值时沿用普通登录界面。
   validateSearch: (search: Record<string, unknown>): { reason?: "expired" | "disabled" } =>
     search.reason === "expired" || search.reason === "disabled" ? { reason: search.reason } : {},
-  head: () => ({ meta: [{ title: "登录 · Flux Panel" }] }),
+  head: () => ({ meta: [{ title: "登录" }] }),
   component: LoginPage,
 });
 
@@ -30,7 +30,7 @@ function LoginPage() {
 
   useEffect(() => {
     setPanelInput(getPanelAddress());
-    if (typeof window !== "undefined" && window.localStorage.getItem("token")) {
+    if (typeof window !== "undefined" && readSession().token) {
       navigate({ to: "/" });
     }
   }, [navigate]);
@@ -38,40 +38,41 @@ function LoginPage() {
   const savePanel = () => {
     const v = panelInput.trim();
     if (v && !/^https?:\/\//i.test(v)) {
-      toast.error("请以 http:// 或 https:// 开头");
+      notify.error("请以 http:// 或 https:// 开头");
       return;
     }
     setPanelAddress(v);
-    toast.success("面板地址已保存");
+    notify.success("面板地址已保存");
     setPanelOpen(false);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) {
-      toast.error("请输入用户名和密码");
+      notify.error("请输入用户名和密码");
       return;
     }
     setLoading(true);
     try {
       const res = await login({ username, password });
       if (res.token) {
-        window.localStorage.setItem("token", res.token);
-        window.localStorage.setItem("role_id", String(res.role_id));
-        window.localStorage.setItem("name", res.name);
-        setPasswordChangeRequired(Boolean(res.requirePasswordChange));
-        markSessionActive();
-        toast.success("登录成功");
+        setSession({
+          token: res.token,
+          roleId: res.role_id,
+          name: res.name,
+          mustChangePassword: Boolean(res.requirePasswordChange),
+        });
+        notify.success("登录成功");
         if (res.requirePasswordChange) {
           navigate({ to: "/profile", search: { forcePassword: 1 } });
         } else {
           navigate({ to: "/" });
         }
       } else {
-        toast.error("登录响应缺少令牌");
+        notify.error("登录响应缺少令牌");
       }
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -85,7 +86,7 @@ function LoginPage() {
           <div className="flex items-center gap-2 text-primary">
             <ShieldCheck className="h-5 w-5" />
             <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
-              Flux Panel
+              go-panel
             </span>
           </div>
           <CardTitle className="text-2xl">登录控制台</CardTitle>

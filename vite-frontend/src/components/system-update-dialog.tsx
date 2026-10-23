@@ -13,9 +13,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { applyPanelUpdate, getSystemVersion } from "@/lib/api";
-import { isAdministrator } from "@/lib/capabilities";
 import { notify } from "@/lib/notify";
-import { getRoleID } from "@/lib/session";
+import { useSession } from "@/hooks/use-session";
 import type { PanelUpdateStatus } from "@/lib/types";
 import { dismissUpdate, MANUAL_UPDATE_COMMAND } from "@/lib/update";
 
@@ -45,7 +44,7 @@ async function waitForUpdatedPanel(targetVersion: string) {
 export function SystemUpdateDialog({ open, status, onOpenChange }: SystemUpdateDialogProps) {
   const [applying, setApplying] = useState(false);
   const [copied, setCopied] = useState(false);
-  const administrator = isAdministrator(getRoleID());
+  const { isAdmin: administrator } = useSession();
   const latestVersion = status?.latestVersion || "新版本";
 
   const dismiss = () => {
@@ -67,13 +66,22 @@ export function SystemUpdateDialog({ open, status, onOpenChange }: SystemUpdateD
     if (!status?.latestVersion || applying) return;
     setApplying(true);
     try {
-      const response = await applyPanelUpdate();
-      if (!response.started) throw new Error("更新请求失败，请检查更新侧车日志");
-      notify.success(`已备份数据库并开始更新到 ${response.targetVersion}`);
+      const response = await notify.promise(
+        async () => {
+          const result = await applyPanelUpdate();
+          if (!result.started) throw new Error("更新请求失败，请检查更新侧车日志");
+          return result;
+        },
+        {
+          loading: "正在准备面板更新…",
+          success: (result) => `已备份数据库并开始更新到 ${result.targetVersion}`,
+          error: errorMessage,
+        },
+      );
       onOpenChange(false);
       void waitForUpdatedPanel(response.targetVersion);
-    } catch (error) {
-      notify.error(errorMessage(error));
+    } catch {
+      // notify.promise 已展示失败消息；保持弹窗打开，允许重试。
     } finally {
       setApplying(false);
     }

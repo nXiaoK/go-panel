@@ -2,7 +2,7 @@ import type { SpeedLimitWrite } from "@/lib/types";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Gauge, Plus, Pencil, Trash2, Search, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,7 +55,7 @@ import { invalidateGlobalSearch } from "@/lib/search-cache";
 import { PageHeader, QueryErrorNotice } from "@/components/page";
 
 export const Route = createFileRoute("/_app/limit")({
-  head: () => ({ meta: [{ title: "限速策略 · Flux Panel" }] }),
+  head: () => ({ meta: [{ title: "限速策略" }] }),
   component: LimitPage,
 });
 
@@ -98,21 +98,21 @@ function LimitPage() {
       form.id ? updateSpeedLimit(payload) : createSpeedLimit(payload),
     onSuccess: () => {
       invalidateGlobalSearch("all");
-      toast.success(form.id ? "已更新" : "已创建");
+      notify.success(form.id ? "已更新" : "已创建");
       setDialogOpen(false);
       void queryClient.invalidateQueries({ queryKey: queries.limit.list() });
     },
-    onError: (error: Error) => toast.error(error.message || "保存失败"),
+    onError: (error: Error) => notify.error(error.message || "保存失败"),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteSpeedLimit(id),
     onSuccess: () => {
       invalidateGlobalSearch("all");
-      toast.success("已删除");
+      notify.success("已删除");
       void queryClient.invalidateQueries({ queryKey: queries.limit.list() });
     },
-    onError: (error: Error) => toast.error(error.message || "删除失败"),
+    onError: (error: Error) => notify.error(error.message || "删除失败"),
   });
 
   const tunnelName = (id: number) => tunnels.find((t) => t.id === id)?.name || `#${id}`;
@@ -135,9 +135,9 @@ function LimitPage() {
   };
 
   const save = async () => {
-    if (!form.name.trim()) return toast.error("请输入策略名称");
-    if (!form.tunnelId) return toast.error("请选择关联隧道");
-    if (form.speed <= 0) return toast.error("速率必须大于 0");
+    if (!form.name.trim()) return notify.error("请输入策略名称");
+    if (!form.tunnelId) return notify.error("请选择关联隧道");
+    if (form.speed <= 0) return notify.error("速率必须大于 0");
     const selectedTunnel = tunnels.find((t) => t.id === form.tunnelId);
     const payload = { ...form, tunnelId: form.tunnelId, tunnelName: selectedTunnel?.name || "" };
     saveMutation.mutate(payload);

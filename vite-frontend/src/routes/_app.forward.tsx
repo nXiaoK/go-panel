@@ -1,10 +1,12 @@
 import { diagnosisStatus, diagnosisSummary, internetProbeNotice } from "@/lib/diagnosis";
+import { formatBytes } from "@/lib/format";
+import { useConfirm } from "@/hooks/use-confirm";
 import { ApiError, errorMessage } from "@/lib/api/client";
 import type { DiagnosisResult } from "@/lib/types";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import {
   Activity,
   ArrowDown,
@@ -74,7 +76,7 @@ import type {
   Node,
   Tunnel,
 } from "@/lib/types";
-import { getRoleID } from "@/lib/session";
+import { useSession } from "@/hooks/use-session";
 import { queries } from "@/lib/api/query";
 import { loadSortedForwards } from "@/lib/forward-list";
 import { usePreferences } from "@/hooks/use-preferences";
@@ -90,24 +92,13 @@ import {
 import { KpiCard, PageHeader, QueryErrorNotice } from "@/components/page";
 
 export const Route = createFileRoute("/_app/forward")({
-  head: () => ({ meta: [{ title: "转发管理 · Flux Panel" }] }),
+  head: () => ({ meta: [{ title: "转发管理" }] }),
   component: ForwardPage,
 });
 
-function formatFlow(bytes?: number): string {
-  if (!bytes || bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let v = bytes;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v >= 10 ? 0 : 1)} ${units[i]}`;
-}
-
 export function ForwardPage() {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [query, setQuery] = useState("");
   const [tunnelFilter, setTunnelFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -121,7 +112,7 @@ export function ForwardPage() {
 
   const [nftOpen, setNftOpen] = useState(false);
 
-  const [isAdmin] = useState(() => getRoleID() === 0);
+  const { isAdmin } = useSession();
 
   const { autoRefresh: autoRefreshEnabled } = usePreferences();
 
@@ -173,7 +164,7 @@ export function ForwardPage() {
   const orderMutation = useMutation({
     mutationFn: (reindexed: Forward[]) =>
       updateForwardOrder({ forwards: reindexed.map((x) => ({ id: x.id, inx: x.inx! })) }),
-    onError: (error: Error) => toast.error(error.message || "保存排序失败"),
+    onError: (error: Error) => notify.error(error.message || "保存排序失败"),
   });
 
   const filtered = useMemo(() => {
@@ -225,11 +216,19 @@ export function ForwardPage() {
   };
 
   const remove = async (f: Forward) => {
-    if (!confirm(`确认删除转发「${f.name}」？`)) return;
+    if (
+      !(await confirm({
+        title: `删除转发「${f.name}」`,
+        description: "删除后入口端口将立即停止转发，且无法恢复。",
+        confirmText: "删除转发",
+        tone: "danger",
+      }))
+    )
+      return;
     try {
       await deleteForward(f.id);
       invalidateGlobalSearch("forward");
-      toast.success("已删除");
+      notify.success("已删除");
       refresh();
     } catch (error) {
       if (
@@ -237,17 +236,25 @@ export function ForwardPage() {
         error.httpStatus !== 200 ||
         [401, 4031, 4032].includes(error.code)
       ) {
-        toast.error(errorMessage(error));
+        notify.error(errorMessage(error));
         return;
       }
-      if (confirm(`删除失败：${errorMessage(error)}。是否强制删除？`)) {
+      if (
+        await confirm({
+          title: `强制删除转发「${f.name}」`,
+          description: `删除失败：${errorMessage(error)}。强制删除会移除面板记录；即使显示成功，节点仍可能残留转发规则，需要检查并手动清理。`,
+          confirmText: "强制删除",
+          tone: "danger",
+          requireText: f.name,
+        })
+      ) {
         try {
           await forceDeleteForward(f.id);
           invalidateGlobalSearch("forward");
-          toast.success("已强制删除");
+          notify.success("已强制删除");
           refresh();
         } catch (forcedError) {
-          toast.error(errorMessage(forcedError));
+          notify.error(errorMessage(forcedError));
         }
       }
     }
@@ -263,10 +270,10 @@ export function ForwardPage() {
     patch(nextStatus);
     try {
       await (f.status === 1 ? pauseForwardService(f.id) : resumeForwardService(f.id));
-      toast.success(f.status === 1 ? "已暂停" : "已恢复");
+      notify.success(f.status === 1 ? "已暂停" : "已恢复");
       void queryClient.invalidateQueries({ queryKey: queries.dashboard.all });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "操作失败");
+      notify.error(error instanceof Error ? error.message : "操作失败");
       patch(f.status);
     }
   };
@@ -279,7 +286,7 @@ export function ForwardPage() {
       const res = await diagnoseForward(f.id);
       setDiagResult(res);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "诊断失败");
+      notify.error(error instanceof Error ? error.message : "诊断失败");
     } finally {
       setDiagLoading(false);
     }
@@ -320,9 +327,9 @@ export function ForwardPage() {
   const copy = async (text: string, hint: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success(`${hint}已复制`);
+      notify.success(`${hint}已复制`);
     } catch {
-      toast.error("复制失败");
+      notify.error("复制失败");
     }
   };
 
@@ -529,8 +536,8 @@ export function ForwardPage() {
                     </TableCell>
                     <TableCell>{renderStatus(f.status)}</TableCell>
                     <TableCell className="font-mono text-[11px] text-muted-foreground">
-                      <div>↓ {formatFlow(f.inFlow)}</div>
-                      <div>↑ {formatFlow(f.outFlow)}</div>
+                      <div>↓ {formatBytes(f.inFlow)}</div>
+                      <div>↑ {formatBytes(f.outFlow)}</div>
                     </TableCell>
                     {isAdmin && (
                       <TableCell className="text-xs text-muted-foreground">

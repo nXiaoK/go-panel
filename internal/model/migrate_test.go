@@ -92,3 +92,32 @@ func TestFlowReporterStateMigrationEnforcesUniqueReporterPerNode(t *testing.T) {
 		})
 	}
 }
+
+func TestAppNameDefaultsWithoutOverwritingExistingValue(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "panel.db")
+	if err := Init(dbPath); err != nil {
+		t.Fatal(err)
+	}
+	defer Close()
+	var config ViteConfig
+	if err := DB.Where("name = ?", "app_name").First(&config).Error; err != nil {
+		t.Fatal(err)
+	}
+	if config.Value != "go-panel" {
+		t.Fatalf("default app_name = %q", config.Value)
+	}
+	for _, existing := range []string{"flux", "我的面板"} {
+		if err := DB.Model(&ViteConfig{}).Where("name = ?", "app_name").Update("value", existing).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := seed(DB, BootstrapOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		if err := DB.Where("name = ?", "app_name").First(&config).Error; err != nil {
+			t.Fatal(err)
+		}
+		if config.Value != existing {
+			t.Fatalf("existing app_name changed: want %q, got %q", existing, config.Value)
+		}
+	}
+}

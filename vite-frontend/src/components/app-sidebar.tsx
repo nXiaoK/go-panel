@@ -1,3 +1,4 @@
+import { useSession } from "@/hooks/use-session";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { LogOut, RefreshCw, Zap } from "lucide-react";
@@ -19,18 +20,16 @@ import { getConfigs, getSystemStatus } from "@/lib/api";
 import { checkPanelUpdate, getSystemVersion } from "@/lib/api";
 import { SystemUpdateDialog } from "@/components/system-update-dialog";
 import { appNameFromConfigs, getCachedAppName, setCachedAppName } from "@/lib/site-config";
-import { formatUptimeSeconds } from "@/lib/uptime";
-import { isAdministrator } from "@/lib/capabilities";
+import { formatDuration } from "@/lib/format";
 import { navigationForRole } from "@/lib/navigation";
-import { clearSession, getRoleID, isPasswordChangeRequired } from "@/lib/session";
+import { clearSession } from "@/lib/session";
 import type { BuildInfo, PanelUpdateStatus } from "@/lib/types";
 import { displayVersion, shouldPromptForUpdate } from "@/lib/update";
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const navigate = useNavigate();
-  const forcePassword = isPasswordChangeRequired();
-  const administrator = isAdministrator(getRoleID());
+  const { mustChangePassword: forcePassword, isAdmin: administrator, roleId } = useSession();
   const collapsed = state === "collapsed";
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const [appName, setAppName] = useState(getCachedAppName);
@@ -42,7 +41,7 @@ export function AppSidebar() {
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   // 按角色过滤导航：普通用户不显示管理员专属入口（后端仍是最终权限裁决方）。
   const navGroups = useMemo(() => {
-    const groups = navigationForRole(getRoleID());
+    const groups = navigationForRole(roleId);
     return forcePassword
       ? groups
           .map((group) => ({
@@ -51,7 +50,7 @@ export function AppSidebar() {
           }))
           .filter((group) => group.items.length)
       : groups;
-  }, [forcePassword]);
+  }, [forcePassword, roleId]);
   const isActive = (url: string) =>
     url === "/" ? currentPath === "/" : currentPath === url || currentPath.startsWith(url + "/");
 
@@ -238,7 +237,7 @@ export function AppSidebar() {
               <span className="text-xs font-medium">{statusText}</span>
             </div>
             <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-              面板已运行 {formatUptimeSeconds(uptimeSeconds)}
+              面板已运行 {formatDuration(uptimeSeconds)}
             </p>
           </div>
         ) : (

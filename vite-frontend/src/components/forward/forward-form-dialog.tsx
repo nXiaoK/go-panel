@@ -1,6 +1,6 @@
 import { errorMessage } from "@/lib/api/client";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -236,13 +236,13 @@ export function ForwardFormDialog({
       tunnelType: isAdmin ? tunnel?.type : undefined,
       exitMembers,
     });
-    if (validationError) return toast.error(validationError);
+    if (validationError) return notify.error(validationError);
     if (
       hasRelay &&
       form.targetMode !== "manual" &&
       form.targetAddrs.filter((item) => item.trim()).length > 1
     ) {
-      return toast.error("三节点 nftables 串联暂不支持多目标自动负载，请使用手动目标");
+      return notify.error("三节点 nftables 串联暂不支持多目标自动负载，请使用手动目标");
     }
     if (
       isAdmin &&
@@ -250,7 +250,7 @@ export function ForwardFormDialog({
       entryMode === "nftables" &&
       form.exitMode === "balance"
     ) {
-      return toast.error("nftables 隧道暂不支持自动出口负载均衡，请使用手动负载");
+      return notify.error("nftables 隧道暂不支持自动出口负载均衡，请使用手动负载");
     }
     setSaving(true);
     // 普通用户只能使用隧道默认出口；编辑时必须省略全部出口键，保留管理员已有配置。
@@ -282,11 +282,11 @@ export function ForwardFormDialog({
     try {
       await (editing ? updateForward(payload) : createForward(payload));
       invalidateGlobalSearch("forward");
-      toast.success(editing ? "已更新" : "已创建");
+      notify.success(editing ? "已更新" : "已创建");
       onOpenChange(false);
       onSaved();
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setSaving(false);
     }

@@ -153,8 +153,9 @@ func seed(db *gorm.DB, options BootstrapOptions) error {
 	if err := db.Model(&ViteConfig{}).Where("name = ?", "app_name").Count(&cfgCount).Error; err != nil {
 		return fmt.Errorf("检查基础配置失败: %w", err)
 	}
+	// app_name 只在缺失时初始化；默认品牌为 go-panel，保留已有数据库中的自定义值。
 	if cfgCount == 0 {
-		if err := db.Create(&ViteConfig{Name: "app_name", Value: "flux", Time: time.Now().UnixMilli()}).Error; err != nil {
+		if err := db.Create(&ViteConfig{Name: "app_name", Value: "go-panel", Time: time.Now().UnixMilli()}).Error; err != nil {
 			return fmt.Errorf("初始化基础配置失败: %w", err)
 		}
 	}

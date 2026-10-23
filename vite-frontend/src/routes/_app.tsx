@@ -2,13 +2,14 @@ import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
-import { passwordChangeRedirect } from "@/lib/session";
+import { passwordChangeRedirect, readSession } from "@/lib/session";
+import { useSession } from "@/hooks/use-session";
 import { canAccessPath } from "@/lib/capabilities";
 
 export const Route = createFileRoute("/_app")({
   beforeLoad: ({ location }) => {
     if (typeof window === "undefined") return;
-    const token = window.localStorage.getItem("token");
+    const { token, roleId } = readSession();
     if (!token) {
       throw redirect({ to: "/login" });
     }
@@ -18,9 +19,7 @@ export const Route = createFileRoute("/_app")({
     }
     // The backend stays authoritative; this only stops a normal user from
     // opening an administrator route they can never use.
-    const rawRole = window.localStorage.getItem("role_id");
-    const roleID = rawRole === null || rawRole === "" ? null : Number(rawRole);
-    if (!canAccessPath(roleID, location.pathname)) {
+    if (!canAccessPath(roleId, location.pathname)) {
       throw redirect({ to: "/" });
     }
   },
@@ -28,6 +27,9 @@ export const Route = createFileRoute("/_app")({
 });
 
 function AppLayout() {
+  const { token } = useSession();
+  // 退出/失效到路由守卫完成导航之间立即卸载业务树，避免空令牌重建查询。
+  if (!token) return null;
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-background text-foreground">

@@ -28,3 +28,7 @@ export function canAccessPath(roleID: number | null | undefined, path: string): 
   if (isAdministrator(roleID)) return true;
   return !isAdminPath(path);
 }
+
+export function roleLabel(roleId: number | null | undefined): string {
+  return isAdministrator(roleId) ? "管理员" : "普通用户";
+}

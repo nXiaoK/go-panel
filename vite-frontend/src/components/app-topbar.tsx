@@ -1,4 +1,5 @@
-import { toast } from "sonner";
+import { useSession } from "@/hooks/use-session";
+import { notify } from "@/lib/notify";
 import { errorMessage } from "@/lib/api/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Command, Loader2 } from "lucide-react";
@@ -16,8 +17,8 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getAllUsers, getForwardList, getNodeList, getTunnelList } from "@/lib/api";
-import { isAdministrator } from "@/lib/capabilities";
-import { clearSession, getRoleID, isPasswordChangeRequired } from "@/lib/session";
+import { isAdministrator, roleLabel } from "@/lib/capabilities";
+import { clearSession, getRoleID } from "@/lib/session";
 import {
   buildGlobalSearchItems,
   filterGlobalSearchItems,
@@ -25,21 +26,11 @@ import {
 } from "@/lib/global-search";
 import { getGlobalSearchCache, searchCacheKeyForRole } from "@/lib/search-cache";
 
-function getStoredName() {
-  if (typeof window === "undefined") return "admin";
-  return window.localStorage.getItem("name") || "admin";
-}
-function getStoredRole() {
-  if (typeof window === "undefined") return "user";
-  const r = window.localStorage.getItem("role_id");
-  return r === "0" ? "super-admin" : r === "2" ? "operator" : "user";
-}
-
 export function AppTopbar() {
   const navigate = useNavigate();
-  const forcePassword = isPasswordChangeRequired();
-  const name = getStoredName();
-  const role = getStoredRole();
+  const { mustChangePassword: forcePassword, name: sessionName, roleId } = useSession();
+  const name = sessionName || "admin";
+  const role = roleLabel(roleId);
   const initials = name.slice(0, 2).toUpperCase();
   const searchRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -76,7 +67,7 @@ export function AppTopbar() {
 
         setSearchItems(items);
       } catch (error) {
-        toast.error(errorMessage(error));
+        notify.error(errorMessage(error));
       } finally {
         setSearchLoading(false);
       }

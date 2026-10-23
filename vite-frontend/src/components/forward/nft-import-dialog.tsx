@@ -1,6 +1,6 @@
 import { errorMessage } from "@/lib/api/client";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -76,11 +76,11 @@ export function NftDetectDialog({
 
   const nextFromMode = () => {
     if (nftNodes.length === 0) {
-      toast.error("没有可用的 nftables 节点");
+      notify.error("没有可用的 nftables 节点");
       return;
     }
     if (mode === "tunnel" && nftNodes.length < 2) {
-      toast.error("隧道识别需要至少 2 个 nftables 节点");
+      notify.error("隧道识别需要至少 2 个 nftables 节点");
       return;
     }
     setStep("node");
@@ -91,11 +91,11 @@ export function NftDetectDialog({
     try {
       if (mode === "port") {
         if (!nodeId) {
-          return toast.error("请选择节点");
+          return notify.error("请选择节点");
         }
         const portData = await detectNftRules(nodeId);
         if (!portData?.total) {
-          toast.success(`节点 ${portData?.nodeName || ""} 未发现需要补全的规则`);
+          notify.success(`节点 ${portData?.nodeName || ""} 未发现需要补全的规则`);
           onOpenChange(false);
           return;
         }
@@ -106,14 +106,14 @@ export function NftDetectDialog({
         setStep("result");
       } else {
         if (!inNodeId || !outNodeId) {
-          return toast.error("请选择入口 / 出口节点");
+          return notify.error("请选择入口 / 出口节点");
         }
         if (inNodeId === outNodeId) {
-          return toast.error("入口与出口节点不能相同");
+          return notify.error("入口与出口节点不能相同");
         }
         const tunnelData = await detectTunnelRules(inNodeId, outNodeId);
         if (!tunnelData?.total) {
-          toast.success(`未发现需要补全的隧道规则`);
+          notify.success(`未发现需要补全的隧道规则`);
           onOpenChange(false);
           return;
         }
@@ -124,7 +124,7 @@ export function NftDetectDialog({
         setStep("result");
       }
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setDetecting(false);
     }
@@ -140,7 +140,7 @@ export function NftDetectDialog({
   };
 
   const complete = async () => {
-    if (selected.size === 0) return toast.error("请至少选择一条规则");
+    if (selected.size === 0) return notify.error("请至少选择一条规则");
     setCompleting(true);
     try {
       let rules: CompleteForwardRule[] = [];
@@ -177,12 +177,12 @@ export function NftDetectDialog({
         });
       }
       const { created, failed } = await completeFromNft(targetNodeId, rules);
-      if (failed === 0) toast.success(`成功补全 ${created} 条规则`);
-      else toast.warning(`成功 ${created} 条，失败 ${failed} 条`);
+      if (failed === 0) notify.success(`成功补全 ${created} 条规则`);
+      else notify.warning(`成功 ${created} 条，失败 ${failed} 条`);
       onOpenChange(false);
       onComplete();
     } catch (error) {
-      toast.error(errorMessage(error));
+      notify.error(errorMessage(error));
     } finally {
       setCompleting(false);
     }

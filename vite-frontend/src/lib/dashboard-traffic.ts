@@ -1,3 +1,4 @@
+import { bytesToGb } from "./format";
 export type TrafficRange = "24h" | "7d" | "30d";
 export type TrafficTrendState = "loading" | "empty" | "ready";
 
@@ -105,11 +106,6 @@ export const trafficRangeMeta: Record<
   "7d": { label: "7D", points: 7, description: "过去 7 天每日流量增量（含今天，GB）" },
   "30d": { label: "30D", points: 30, description: "过去 30 天每日流量增量（含今天，GB）" },
 };
-
-function bytesToGb(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  return value / 1024 / 1024 / 1024;
-}
 
 function roundGb(value: number) {
   return Number(value.toFixed(3));
