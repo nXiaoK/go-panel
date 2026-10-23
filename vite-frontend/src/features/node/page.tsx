@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { MoreHorizontal, Pencil, Plus, RefreshCw, Stethoscope, Trash2 } from "lucide-react";
@@ -93,14 +93,17 @@ export function NodePage() {
     onSuccess: () => notify.success("已删除节点"),
     onError: (error) => notify.error(errorMessage(error)),
   });
-  function openAdd() {
+  const resetSaveMutation = saveMutation.reset;
+  const openAdd = useCallback(() => {
+    resetSaveMutation();
     const next = emptyNodeForm();
     setForm(next);
     setInitialForm(next);
     setErrors({});
     setFormOpen(true);
-  }
+  }, [resetSaveMutation]);
   function openEdit(node: Node) {
+    saveMutation.reset();
     const next: NodeForm = {
       id: node.id,
       name: node.name,
@@ -126,7 +129,7 @@ export function NodePage() {
     if (state.create !== 1 && state.action !== "create") return;
     if (isAdmin) openAdd();
     void setState({ create: undefined, action: undefined });
-  }, [state.create, state.action, isAdmin, setState]);
+  }, [state.create, state.action, isAdmin, setState, openAdd]);
   useEffect(() => {
     if (!state.focus) {
       lastFocus.current = undefined;
@@ -525,10 +528,15 @@ export function NodePage() {
         errors={errors}
         online={Boolean(nodes.find((node) => node.id === form.id && online(node)))}
         saving={saveMutation.isPending}
+        error={saveMutation.error}
         dirty={JSON.stringify(form) !== JSON.stringify(initialForm)}
         onSubmit={submit}
       />
-      <NodeCommand target={command} onClose={() => setCommand(null)} />
+      <NodeCommand
+        key={command ? `${command.node.id}-${command.kind}` : "closed"}
+        target={command}
+        onClose={() => setCommand(null)}
+      />
       <DiagnosisSheet
         open={Boolean(diagnosis)}
         onOpenChange={(open) => {

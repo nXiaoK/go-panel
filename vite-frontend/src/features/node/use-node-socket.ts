@@ -65,6 +65,8 @@ export function createNodeSocketManager(deps: {
       current.onclose = () => {
         if (socket !== current) return;
         socket = null;
+        // 管理员连接没有初始快照；断流期间的离线广播可能丢失，撤销旧 live 权威以回退 REST。
+        deps.clear();
         schedule();
       };
     } catch {
@@ -107,10 +109,11 @@ export function createNodeSocketManager(deps: {
       if (first) events(true);
       connect();
       return () => {
-        leases.delete(id);
+        if (!leases.delete(id)) return;
         if (!leases.size) {
           stop();
           events(false);
+          deps.clear();
         }
       };
     },

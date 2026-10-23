@@ -257,4 +257,63 @@ describe("节点页面的真实路由和操作", () => {
     });
     expect(post).toHaveBeenCalledTimes(calls);
   });
+  it("保存失败内联显示、保留输入可重试，再次打开清理旧错误", async () => {
+    await mount("/node?create=1");
+    await waitFor(() => expect(client.getQueryData(["node", "list", "raw"])).toBeTruthy());
+    const dialog = await screen.findByRole("dialog", { name: "添加节点" });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: /节点名称/ }), {
+      target: { value: "新节点" },
+    });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: /服务器 IP/ }), {
+      target: { value: "::1" },
+    });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: /入口地址/ }), {
+      target: { value: "2001:db8::1" },
+    });
+    post.mockRejectedValueOnce(new Error("服务暂不可用"));
+    fireEvent.submit(dialog.querySelector("form")!);
+    expect(await screen.findByText("服务暂不可用")).toBeTruthy();
+    expect(
+      (within(dialog).getByRole("textbox", { name: /节点名称/ }) as HTMLInputElement).value,
+    ).toBe("新节点");
+    expect(within(dialog).getByRole("button", { name: "添加节点" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    fireEvent.click(await screen.findByRole("button", { name: "放弃修改" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加节点" }));
+    expect(await screen.findByRole("dialog", { name: "添加节点" })).toBeTruthy();
+    expect(screen.queryByText("服务暂不可用")).toBeNull();
+    expect((screen.getByRole("textbox", { name: /节点名称/ }) as HTMLInputElement).value).toBe("");
+  });
+  it("升级确认写明重启影响，长请求期间加载且防止重复提交", async () => {
+    await mount();
+    await ready();
+    let resolve!: (value: unknown) => void;
+    post.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("article", { name: "节点 香港在线" })).getByRole("button", {
+        name: "升级",
+      }),
+    );
+    expect(await screen.findByText(/节点会自动重启并短暂离线/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "升级节点" }));
+    await waitFor(() =>
+      expect(post.mock.calls.filter(([path]) => path === "/node/upgrade")).toHaveLength(1),
+    );
+    const button = within(screen.getByRole("article", { name: "节点 香港在线" })).getByRole(
+      "button",
+      { name: "升级" },
+    );
+    expect(button.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(button);
+    expect(post.mock.calls.filter(([path]) => path === "/node/upgrade")).toHaveLength(1);
+    await act(async () => resolve({ nodeId: 1, latestVersion: "1.2.7", message: "已触发" }));
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  });
 });

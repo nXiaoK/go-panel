@@ -15,7 +15,7 @@ class Socket {
   onopen: ((event: unknown) => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onerror = null;
-  onclose = null;
+  onclose: ((event: unknown) => void) | null = null;
   close = vi.fn();
   constructor(
     public url: string,
@@ -136,5 +136,81 @@ describe("实时节点订阅贯通", () => {
     expect(Socket.instances).toHaveLength(1);
     act(() => setSession({ token: "forced", roleId: 0, name: "管理员", mustChangePassword: true }));
     expect(Socket.instances).toHaveLength(1);
+  });
+  it("离开节点页后丢失的离线广播不会让重新挂载使用旧在线状态或指标", async () => {
+    const wrapper = { wrapper: Wrapper };
+    const first = renderHook(() => {
+      useNodeSocket();
+      return { nodes: useNodes(), live: useNodeLive(1) };
+    }, wrapper);
+    await waitFor(() => expect(first.result.current.nodes.data).toHaveLength(1));
+    act(() =>
+      Socket.instances[0].receive({
+        id: "1",
+        type: "info",
+        data: JSON.stringify({
+          uptime: 10,
+          cpu_usage: 38,
+          memory_usage: 60,
+          bytes_transmitted: 1000,
+          bytes_received: 2000,
+        }),
+      }),
+    );
+    expect(first.result.current.live?.connection).toBe("online");
+    first.unmount();
+    expect(Socket.instances[0].close).toHaveBeenCalledOnce();
+    expect(nodeLiveStore.getSnapshot().size).toBe(0);
+    client.setQueryData(["node", "list", "raw"], [{ id: 1, name: "节点", status: 0 }]);
+    const second = renderHook(() => {
+      useNodeSocket();
+      return { nodes: useNodes(), live: useNodeLive(1) };
+    }, wrapper);
+    expect(Socket.instances).toHaveLength(2);
+    expect(second.result.current.live).toBeUndefined();
+    expect(second.result.current.nodes.data?.[0].status).toBe(0);
+    expect(second.result.current.live?.info).toBeUndefined();
+  });
+  it("当前socket意外断线撤销在线权威、保留退避，旧close回调不清新连接", async () => {
+    const hook = renderHook(
+      () => {
+        useNodeSocket();
+        return { nodes: useNodes(), live: useNodeLive(1) };
+      },
+      { wrapper: Wrapper },
+    );
+    await waitFor(() => expect(hook.result.current.nodes.data).toHaveLength(1));
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const oldClose = Socket.instances[0].onclose;
+    act(() => Socket.instances[0].receive({ id: "1", type: "status", data: 1 }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => client.setQueryData(["node", "list", "raw"], [{ id: 1, name: "节点", status: 0 }]));
+    act(() => oldClose?.({}));
+    expect(hook.result.current.live).toBeUndefined();
+    expect(hook.result.current.nodes.data?.[0].status).toBe(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(Socket.instances).toHaveLength(2);
+    act(() =>
+      Socket.instances[1].receive({
+        id: "1",
+        type: "info",
+        data: JSON.stringify({
+          uptime: 12,
+          cpu_usage: 40,
+          memory_usage: 60,
+          bytes_transmitted: 1200,
+          bytes_received: 2400,
+        }),
+      }),
+    );
+    expect(hook.result.current.live?.info?.cpuUsage).toBe(40);
+    act(() => oldClose?.({}));
+    expect(hook.result.current.live?.info?.cpuUsage).toBe(40);
+    vi.useRealTimers();
   });
 });

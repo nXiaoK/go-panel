@@ -44,6 +44,11 @@ describe("独立节点实时指标", () => {
       downloadSpeed: 200,
     });
   });
+  it.each(["bad", "1.5", "-1", "9007199254740992", "", " "])("拒绝非法wire id %s", (id) => {
+    const store = createNodeLiveStore();
+    store.receive({ id, type: "status", data: 1 });
+    expect(store.getSnapshot().size).toBe(0);
+  });
   it("无效帧不通知、不损坏快照；清理通知订阅者", () => {
     const store = createNodeLiveStore();
     let count = 0;

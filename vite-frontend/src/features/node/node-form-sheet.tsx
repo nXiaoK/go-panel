@@ -1,3 +1,4 @@
+import { ErrorState } from "@/components/patterns/feedback";
 import { EntitySheet } from "@/components/patterns/entity-sheet";
 import { FormField } from "@/components/patterns/form-field";
 import { FormSection } from "@/components/patterns/form-section";
@@ -17,6 +18,7 @@ export function NodeFormSheet({
   saving,
   dirty,
   onSubmit,
+  error,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -27,6 +29,7 @@ export function NodeFormSheet({
   saving: boolean;
   dirty: boolean;
   onSubmit: () => Promise<void>;
+  error?: unknown;
 }) {
   const editing = form.id !== null;
   return (
@@ -40,6 +43,7 @@ export function NodeFormSheet({
       dirty={dirty}
       submitText={editing ? "保存修改" : "添加节点"}
     >
+      {Boolean(error) && <ErrorState error={error} />}
       <FormSection title="基本信息">
         <FormField label="节点名称" required error={errors.name}>
           <Input
