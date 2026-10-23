@@ -1,3 +1,10 @@
+import {
+  RouterProvider,
+  createRootRoute,
+  createRouter,
+  createMemoryHistory,
+} from "@tanstack/react-router";
+import { TooltipProvider } from "../src/components/ui/tooltip";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,12 +32,26 @@ function show(Page: React.ComponentType) {
   return render(
     <QueryClientProvider client={client}>
       <ConfirmProvider>
-        <Page />
+        {Page === TunnelPage ? (
+          <TooltipProvider>
+            <RouterProvider
+              router={createRouter({
+                routeTree: createRootRoute({ component: Page }),
+                history: createMemoryHistory({ initialEntries: ["/"] }),
+              })}
+            />
+          </TooltipProvider>
+        ) : (
+          <Page />
+        )}
       </ConfirmProvider>
     </QueryClientProvider>,
   );
 }
 beforeEach(() => {
+  window.matchMedia = vi
+    .fn()
+    .mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
   localStorage.setItem("token", "test-token");
   localStorage.setItem("role_id", "0");
   vi.spyOn(TunnelRoute, "useSearch").mockReturnValue({ action: undefined });

@@ -95,15 +95,6 @@ export const legacyViolations = {
       "amber-300": 1,
     },
   },
-  "src/features/tunnel/page.tsx": {
-    owner: "U06",
-    values: {
-      "text-[10px]": 2,
-      "text-[11px]": 2,
-      "emerald-400": 1,
-      "emerald-500": 2,
-    },
-  },
   "src/features/user/page.tsx": {
     owner: "U08",
     values: {
