@@ -229,7 +229,8 @@ func TestDeploymentUsesConsistentSQLiteBackup(t *testing.T) {
 }
 
 func TestDeploymentUsesPinnedGoToolchain(t *testing.T) {
-	const goVersion = "1.26.7"
+	// 固定已修复网络服务和证书校验漏洞的安全补丁版本，确保模块、测试和发布镜像不会漂移。
+	const goVersion = "1.26.10"
 	raw, err := os.ReadFile("Dockerfile")
 	if err != nil {
 		t.Fatal(err)

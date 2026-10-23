@@ -1,7 +1,7 @@
 module github.com/nXiaoK/go-panel
 
-// Go 版本与 Dockerfile、GitHub Actions 保持一致；1.26.7 包含当前标准库安全修复，降低版本会恢复已知漏洞。
-go 1.26.7
+// Go 版本与 Dockerfile、GitHub Actions 保持一致；1.26.10 修复 HTTP 服务和证书校验漏洞，降低版本会恢复已知安全风险。
+go 1.26.10
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.3
@@ -12,8 +12,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/robfig/cron/v3 v3.0.1
-	golang.org/x/crypto v0.51.0
-	golang.org/x/net v0.55.0
+	// 加密实现随 x/net v0.60.0 的依赖要求升级；保持安全基线，单独降级可能破坏网络协议兼容性。
+	golang.org/x/crypto v0.57.0
+	// HTTP/2 安全基线固定 v0.60.0，修复协议处理资源耗尽风险，禁止单独回退。
+	golang.org/x/net v0.60.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/gorm v1.25.12
 )
@@ -53,8 +55,10 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.39.0 // indirect
+	// 系统调用封装按网络和加密模块的最低要求同步，影响跨平台构建兼容性。
+	golang.org/x/sys v0.48.0 // indirect
+	// 文本编码支持按网络模块的最低要求同步，避免依赖图回退导致兼容性问题。
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
 	modernc.org/libc v1.22.5 // indirect
 	modernc.org/mathutil v1.5.0 // indirect
