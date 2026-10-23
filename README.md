@@ -162,18 +162,27 @@ nftables 模式安装、远程组件升级和规则刷新都会写入 `/etc/sysc
 | `UPDATE_CHECK_INTERVAL` | `6h` | 成功检查结果缓存，最小 5 分钟、最大 7 天 |
 | `ALLOW_INSECURE_NODE_DOWNLOADS` | `false` | 临时允许 HTTP 节点下载，存在泄密和篡改风险 |
 | `ALLOW_LEGACY_NFT_REPORTS` | `false` | 临时兼容旧上报，缺少完整幂等保障 |
+| `VITE_DEV_API_TARGET` | `http://127.0.0.1:6365` | 仅 Vite 本地开发代理的后端目标；生产容器不使用，不能指向不可信服务 |
 
 ## 本地开发
 
-需要 Go 1.26.10、Node.js 22 和 npm。Go 版本与三个模块、CI 和 Docker 保持一致；该补丁版本修复网络服务和证书校验漏洞，降级会恢复已知安全风险。下面显式指定工具链，避免系统 Go 版本影响验证结果：
+需要 Go 1.26.10、Node.js 22.12+ 和 npm。Go 版本与三个模块、CI 和 Docker 保持一致；该补丁版本修复网络服务和证书校验漏洞，降级会恢复已知安全风险。下面显式指定工具链，避免系统 Go 版本影响验证结果：
 
 ```bash
+# .nvmrc 选择 Node 22，.npmrc 会拒绝不满足 engines 的旧版本。
+source ~/.nvm/nvm.sh
+cd vite-frontend
+nvm install
+nvm use
+cd ..
 npm ci --prefix vite-frontend
 npm run build --prefix vite-frontend
 bash ./scripts/sync-web-dist.sh
 GOTOOLCHAIN=go1.26.10 go test ./...
 GOTOOLCHAIN=go1.26.10 go run .
 ```
+
+热更新开发先启动上面的 Go 后端，再运行 `VITE_DEV_API_TARGET=http://127.0.0.1:6365 npm run dev --prefix vite-frontend`。此变量只配置 Vite 开发代理，支持 `/api`、`/flow` 与 `/system-info` WebSocket；生产镜像和后端不读取它，正式部署仍使用同源访问。
 
 完整验证入口：
 

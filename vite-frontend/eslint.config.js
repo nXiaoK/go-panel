@@ -21,14 +21,14 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // 浏览器 SPA 不允许引入服务端专用标记；误用会把服务端假设带入客户端构建。
       "no-restricted-imports": [
         "error",
         {
           paths: [
             {
               name: "server-only",
-              message:
-                "TanStack Start does not use the Next.js `server-only` package. Rename the module to `*.server.ts` or mark it with `@tanstack/react-start/server-only`.",
+              message: "本项目为浏览器 SPA，不能导入 server-only；服务端逻辑应放在 Go 后端。",
             },
           ],
         },
