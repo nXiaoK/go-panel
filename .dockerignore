@@ -35,3 +35,6 @@ compose*.yml
 docker-compose*.yml
 docs/
 README.md
+
+# 设计规范不参与构建，避免将界面开发文档加入镜像构建上下文。
+DESIGN.md
