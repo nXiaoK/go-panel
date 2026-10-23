@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { DataTable } from "@/components/patterns/data-table";
+import type { RowSelectionState } from "@tanstack/react-table";
 import {
   Dialog,
   DialogContent,
@@ -9,13 +10,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { subscriptionFormatLabels } from "@/features/subscription/model";
 import { useSubscriptionMutation } from "@/features/subscription/queries";
 import { assignProxyNodeProfiles } from "@/lib/api";
 import { notify } from "@/lib/notify";
 import type { ProxyNode, SubscriptionProfile } from "@/lib/types";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export function SubscriptionAssignDialog({
   open,
@@ -33,13 +33,10 @@ export function SubscriptionAssignDialog({
   initialProfileIds: number[];
   onSaved?: () => void;
 }) {
-  const [profileIds, setProfileIds] = useState<number[]>([]);
-
-  useEffect(() => {
-    if (!open) return;
-    setProfileIds(initialProfileIds);
-  }, [open, initialProfileIds]);
-
+  // 仅在打开时预选，避免父级刷新覆盖用户在 Dialog 中尚未保存的选择。
+  const [selection, setSelection] = useState<RowSelectionState>(() =>
+    Object.fromEntries(initialProfileIds.map((id) => [String(id), true])),
+  );
   const saveMutation = useSubscriptionMutation("subscription.update", {
     mutationFn: ({ nodeId, ids }: { nodeId: number; ids: number[] }) =>
       assignProxyNodeProfiles(nodeId, ids),
@@ -53,41 +50,56 @@ export function SubscriptionAssignDialog({
 
   const save = () => {
     if (!node) return;
-    saveMutation.mutate({ nodeId: node.id, ids: profileIds });
+    saveMutation.mutate({
+      nodeId: node.id,
+      ids: profiles.filter((profile) => selection[String(profile.id)]).map((profile) => profile.id),
+    });
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!saveMutation.isPending) onOpenChange(next);
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>绑定订阅配置</DialogTitle>
           <DialogDescription>{node?.name}</DialogDescription>
         </DialogHeader>
-        <ScrollArea className="h-64 rounded-md border p-2">
-          {profiles.length === 0 && (
-            <div className="p-4 text-center text-sm text-muted-foreground">暂无订阅配置</div>
+        <DataTable
+          ariaLabel="选择订阅配置"
+          columns={[
+            { accessorKey: "name", header: "名称" },
+            {
+              accessorKey: "defaultFormat",
+              header: "格式",
+              cell: ({ row }) => (
+                <Badge variant="outline">
+                  {subscriptionFormatLabels[row.original.defaultFormat]}
+                </Badge>
+              ),
+            },
+          ]}
+          data={profiles}
+          getRowId={(profile) => String(profile.id)}
+          enableSelection
+          rowSelection={selection}
+          onRowSelectionChange={setSelection}
+          renderMobileCard={(profile) => (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-body">{profile.name}</span>
+              <Badge variant="outline">{subscriptionFormatLabels[profile.defaultFormat]}</Badge>
+            </div>
           )}
-          {profiles.map((p) => {
-            const checked = profileIds.includes(p.id);
-            return (
-              <label
-                key={p.id}
-                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-muted"
-              >
-                <Checkbox
-                  checked={checked}
-                  onCheckedChange={(c) => {
-                    setProfileIds(c ? [...profileIds, p.id] : profileIds.filter((x) => x !== p.id));
-                  }}
-                />
-                <span className="flex-1 text-sm">{p.name}</span>
-                <Badge variant="outline">{subscriptionFormatLabels[p.defaultFormat]}</Badge>
-              </label>
-            );
-          })}
-        </ScrollArea>
+        />
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            disabled={saveMutation.isPending}
+            onClick={() => onOpenChange(false)}
+          >
             取消
           </Button>
           <Button onClick={save} disabled={saveMutation.isPending || !node}>

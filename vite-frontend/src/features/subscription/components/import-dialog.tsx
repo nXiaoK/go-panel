@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import { FormField } from "@/components/patterns/form-field";
 import { Textarea } from "@/components/ui/textarea";
 import { useSubscriptionMutation } from "@/features/subscription/queries";
 import { importProxyNodeLink } from "@/lib/api";
@@ -25,9 +25,13 @@ export function SubscriptionImportDialog({
   onSaved?: () => void;
 }) {
   const [link, setLink] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (open) setLink("");
+    if (open) {
+      setLink("");
+      setError("");
+    }
   }, [open]);
 
   const importMutation = useSubscriptionMutation("subscription.update", {
@@ -37,16 +41,26 @@ export function SubscriptionImportDialog({
       onOpenChange(false);
       onSaved?.();
     },
-    onError: (error: Error) => notify.error(error.message || "导入失败"),
+    onError: (error: Error) => setError(error.message || "导入失败"),
   });
 
   const submit = () => {
-    if (!link.trim()) return notify.error("请输入分享链接");
+    if (!link.trim()) {
+      setError("请输入分享链接");
+      document.getElementById("subscription-import-link")?.focus();
+      return;
+    }
+    setError("");
     importMutation.mutate(link.trim());
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!importMutation.isPending) onOpenChange(next);
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>导入分享链接</DialogTitle>
@@ -54,8 +68,7 @@ export function SubscriptionImportDialog({
             支持 vless:// / vmess:// / trojan:// / ss:// / snell:// 等格式
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-1.5">
-          <Label htmlFor="subscription-import-link">分享链接</Label>
+        <FormField label="分享链接" htmlFor="subscription-import-link" required error={error}>
           <Textarea
             id="subscription-import-link"
             rows={5}
@@ -63,9 +76,13 @@ export function SubscriptionImportDialog({
             onChange={(e) => setLink(e.target.value)}
             placeholder="粘贴分享链接"
           />
-        </div>
+        </FormField>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            disabled={importMutation.isPending}
+            onClick={() => onOpenChange(false)}
+          >
             取消
           </Button>
           <Button onClick={submit} disabled={importMutation.isPending}>
