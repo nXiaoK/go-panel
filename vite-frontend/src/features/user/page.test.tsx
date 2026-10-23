@@ -162,7 +162,7 @@ it("授权有缓存后重开失败，真实页面不允许使用旧行覆盖新�
   expect(screen.getByRole("button", { name: "禁用权限" })).toBeEnabled();
   fireEvent.click(screen.getAllByRole("button", { name: /^关闭$/ })[0]);
   await openPermissions(false);
-  await waitFor(() => expect(permissionsLoad).toBeGreaterThanOrEqual(2));
+  await waitFor(() => expect(permissionsLoad).toBe(2));
   await waitFor(() => expect(screen.getByRole("button", { name: /^添加授权$/ })).toBeDisabled());
   expect(screen.queryByRole("button", { name: "禁用权限" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /^添加授权$/ }));
