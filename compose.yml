@@ -9,6 +9,8 @@ services:
     container_name: go-panel
     restart: unless-stopped
     stop_grace_period: 30s
+    # VITE_DEV_API_TARGET 只由源码目录的 Vite 开发服务器读取，不传入生产容器；
+    # 镜像内静态 SPA 与 Go 后端同源访问，不能用该变量更换生产 API 地址。
     environment:
       # 容器必须监听全部接口；宿主机暴露范围由下方 ports 和防火墙控制。
       LISTEN_ADDR: ":6365"
