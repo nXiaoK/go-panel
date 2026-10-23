@@ -20,6 +20,7 @@ import { checkPanelUpdate, getSystemVersion } from "@/lib/api";
 import { SystemUpdateDialog } from "@/components/system-update-dialog";
 import { appNameFromConfigs, getCachedAppName, setCachedAppName } from "@/lib/site-config";
 import { formatUptimeSeconds } from "@/lib/uptime";
+import { isAdministrator } from "@/lib/capabilities";
 import { navigationForRole } from "@/lib/navigation";
 import { clearSession, getRoleID, isPasswordChangeRequired } from "@/lib/session";
 import type { BuildInfo, PanelUpdateStatus } from "@/lib/types";
@@ -29,6 +30,7 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const navigate = useNavigate();
   const forcePassword = isPasswordChangeRequired();
+  const administrator = isAdministrator(getRoleID());
   const collapsed = state === "collapsed";
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const [appName, setAppName] = useState(getCachedAppName);
@@ -69,9 +71,7 @@ export function AppSidebar() {
         setCachedAppName(next);
         setAppName(next);
       })
-      .catch(() => {
-        if (alive) setSystemOnline(false);
-      });
+      .catch(() => undefined);
     return () => {
       alive = false;
       window.removeEventListener("site-config-updated", onSiteConfig);
@@ -79,7 +79,7 @@ export function AppSidebar() {
   }, [forcePassword]);
 
   useEffect(() => {
-    if (forcePassword) return;
+    if (forcePassword || !administrator) return;
     let alive = true;
     getSystemVersion()
       .then((response) => {
@@ -105,7 +105,7 @@ export function AppSidebar() {
       alive = false;
       window.clearInterval(timer);
     };
-  }, [forcePassword]);
+  }, [administrator, forcePassword]);
 
   useEffect(() => {
     if (forcePassword) return;
@@ -144,7 +144,7 @@ export function AppSidebar() {
         <div className="flex items-center gap-2.5 px-2 py-2">
           <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gradient-primary shadow-glow">
             <Zap className="h-4 w-4 text-primary-foreground" strokeWidth={2.5} />
-            {updateStatus?.updateAvailable && (
+            {administrator && !forcePassword && updateStatus?.updateAvailable && (
               <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-sidebar bg-warning" />
             )}
           </div>
@@ -153,7 +153,7 @@ export function AppSidebar() {
               <span className="max-w-36 truncate text-sm font-semibold tracking-tight">
                 {appName}
               </span>
-              {!forcePassword && (
+              {administrator && !forcePassword && (
                 <button
                   type="button"
                   className={`flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] text-muted-foreground ${
@@ -240,7 +240,7 @@ export function AppSidebar() {
               <span className="text-xs font-medium">{statusText}</span>
             </div>
             <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-              uptime · {formatUptimeSeconds(uptimeSeconds)}
+              面板已运行 {formatUptimeSeconds(uptimeSeconds)}
             </p>
           </div>
         ) : (
@@ -256,11 +256,13 @@ export function AppSidebar() {
           </div>
         )}
       </SidebarFooter>
-      <SystemUpdateDialog
-        open={updateDialogOpen}
-        status={updateStatus}
-        onOpenChange={setUpdateDialogOpen}
-      />
+      {administrator && !forcePassword && (
+        <SystemUpdateDialog
+          open={updateDialogOpen}
+          status={updateStatus}
+          onOpenChange={setUpdateDialogOpen}
+        />
+      )}
     </Sidebar>
   );
 }
