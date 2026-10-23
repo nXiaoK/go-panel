@@ -51,10 +51,4 @@ export const legacyViolations = {
       "amber-300": 1,
     },
   },
-  "src/features/user/page.tsx": {
-    owner: "U08",
-    values: {
-      "text-[11px]": 2,
-    },
-  },
 };

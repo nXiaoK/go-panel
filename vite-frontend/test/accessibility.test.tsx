@@ -50,9 +50,18 @@ function show(Page: React.ComponentType) {
   );
 }
 beforeEach(() => {
-  window.matchMedia = vi
-    .fn()
-    .mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+  );
   localStorage.setItem("token", "test-token");
   localStorage.setItem("role_id", "0");
   vi.spyOn(TunnelRoute, "useSearch").mockReturnValue({ action: undefined });
@@ -92,15 +101,17 @@ afterEach(() => {
   cleanup();
   client?.clear();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   localStorage.clear();
 });
 describe("真实页面的无障碍契约", () => {
-  it("真实用户表单的标签关联用户名、昵称、密码、配额字段", async () => {
+  it("真实用户表单的标签关联用户名、密码、配额与必填到期字段", async () => {
     show(UserPage);
     await screen.findByText("@alice");
     fireEvent.click(screen.getByRole("button", { name: /新增用户|新建用户/ }));
-    for (const name of ["用户名", "昵称", "密码", "流量限制 (GB)", "转发数量"])
-      expect(screen.getByLabelText(name)).toBeTruthy();
+    for (const name of [/用户名/, /初始密码/, /流量配额（GB）/, /转发数量上限/, /^到期日期/])
+      expect(screen.getByLabelText(name, { selector: "input" })).toBeTruthy();
+    expect(screen.getByLabelText(/到期日期/, { selector: "input" })).toBeTruthy();
   });
   it("真实限速表单可按标签操作，行编辑/删除按钮有名称", async () => {
     show(LimitPage);
@@ -120,7 +131,7 @@ describe("真实页面的无障碍契约", () => {
   });
   it("真实用户列表操作按钮有名称", async () => {
     show(UserPage);
-    expect(await screen.findByRole("button", { name: "用户操作" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "用户操作：alice" })).toBeTruthy();
   });
   it("announces query failures and exposes a retry action", () => {
     render(<QueryErrorNotice error={new Error("network unavailable")} onRetry={() => {}} />);
