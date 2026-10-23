@@ -1,5 +1,5 @@
-import { apiPost, type RequestOptions } from "./client";
-import type { User, UserWrite, UserPackage } from "@/lib/types";
+import { apiPost, type RequestOptions } from "@/lib/api/client";
+import type { User, UserWrite } from "@/lib/types";
 export const createUser = (data: UserWrite, opts?: RequestOptions): Promise<string> =>
   apiPost("/user/create", data, opts);
 export const updateUser = (data: UserWrite, opts?: RequestOptions): Promise<string> =>
@@ -10,10 +10,6 @@ export const getAllUsers = async (opts?: RequestOptions): Promise<User[]> => {
 };
 export const deleteUser = (id: number, opts?: RequestOptions): Promise<string> =>
   apiPost("/user/delete", { id }, opts);
-export const getUserPackageInfo = (
-  data: { range?: string; tunnelId?: number } = {},
-  opts?: RequestOptions,
-): Promise<UserPackage> => apiPost("/user/package", data, opts);
 export const resetUserFlow = (
   data: { id: number; type: number },
   opts?: RequestOptions,
