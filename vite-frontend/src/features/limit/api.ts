@@ -1,4 +1,4 @@
-import { apiPost, type RequestOptions } from "./client";
+import { apiPost, type RequestOptions } from "@/lib/api/client";
 import type { SpeedLimit, SpeedLimitWrite } from "@/lib/types";
 export const createSpeedLimit = (
   data: SpeedLimitWrite,
