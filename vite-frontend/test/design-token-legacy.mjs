@@ -1,37 +1,4 @@
 // U01 前既有违规的精确数量；减少时必须同步收紧，不得新增文件/值/次数。
 // 旧值/次数不再存在时必须移除对应项，不能保留可回填额度。
 // owner 是负责清理的任务，U12 必须删除全部允许项并将计数归零。
-export const legacyViolations = {
-  "src/features/subscription/page.tsx": {
-    owner: "U10",
-    values: {
-      "blue-100": 1,
-      "blue-700": 1,
-      "blue-950": 1,
-      "blue-300": 1,
-      "indigo-100": 1,
-      "indigo-700": 1,
-      "indigo-950": 1,
-      "indigo-300": 1,
-      "purple-100": 1,
-      "purple-700": 1,
-      "purple-950": 1,
-      "purple-300": 1,
-      "amber-100": 1,
-      "amber-700": 1,
-      "amber-950": 1,
-      "amber-300": 1,
-      "emerald-100": 1,
-      "emerald-700": 1,
-      "emerald-950": 1,
-      "emerald-300": 1,
-      "cyan-100": 1,
-      "cyan-700": 1,
-      "cyan-950": 1,
-      "cyan-300": 1,
-      "emerald-500": 3,
-      "emerald-600": 2,
-      "emerald-400": 2,
-    },
-  },
-};
+export const legacyViolations = {};

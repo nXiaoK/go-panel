@@ -1,44 +1,36 @@
-import { runBatch as runSharedBatch } from "@/lib/batch";
-import { useConfirm } from "@/hooks/use-confirm";
-import { errorMessage } from "@/lib/api/client";
-import { notify } from "@/lib/notify";
-import { invalidateFor } from "@/lib/query-keys";
+import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
 import {
-  Copy,
   ExternalLink,
   Import,
   KeyRound,
-  Link2,
-  Loader2,
   MoreHorizontal,
   Pencil,
   Plus,
   QrCode,
-  RefreshCcw,
-  Search,
-  Shuffle,
-  Trash2,
-  Wifi,
-  XCircle,
+  RefreshCw,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useSubscriptionSettings } from "./queries";
-
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/patterns/page-header";
+import { DataTable } from "@/components/patterns/data-table";
+import { CodeBlock } from "@/components/patterns/code-block";
+import { StatusPill } from "@/components/patterns/status-pill";
+import { DiagnosisSheet } from "@/components/patterns/diagnosis-sheet";
+import { EmptyState, ErrorState, LoadingRows } from "@/components/patterns/feedback";
+import { TableToolbar } from "@/components/patterns/table-toolbar";
+import { FilterSelect } from "@/components/patterns/filter-select";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,1170 +38,841 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-
-import { KpiCard, PageHeader, QueryErrorNotice } from "@/components/page";
-import { SubscriptionApiKeyDialog } from "@/features/subscription/components/api-key-dialog";
-import { SubscriptionAssignDialog } from "@/features/subscription/components/assign-dialog";
-import { SubscriptionImportDialog } from "@/features/subscription/components/import-dialog";
-import { SubscriptionNodeDialog } from "@/features/subscription/components/node-dialog";
-import { SubscriptionProfileDialog } from "@/features/subscription/components/profile-dialog";
-import { SubscriptionQrDialog } from "@/features/subscription/components/qr-dialog";
-import { SubscriptionRelayDialog } from "@/features/subscription/components/relay-dialog";
-import { subscriptionFormatLabels, subscriptionFormats } from "@/features/subscription/model";
+import { useConfirm } from "@/hooks/use-confirm";
+import { useUrlState } from "@/hooks/use-url-state";
+import { errorMessage } from "@/lib/api/client";
+import { diagnoseForward } from "@/lib/api";
+import { runBatch, type BatchResult } from "@/lib/batch";
+import { formatDateTime, formatRelative } from "@/lib/format";
+import { notify } from "@/lib/notify";
+import { invalidateFor } from "@/lib/query-keys";
+import { currentPanelEndpoint } from "@/lib/panel-endpoint";
+import { tunnelStatus } from "@/lib/status";
+import type {
+  DiagnosisResult,
+  ProxyNode,
+  SubscriptionFormat,
+  SubscriptionProfile,
+} from "@/lib/types";
 import {
   closeProxyNodeRelay,
   deleteProxyNode,
   deleteSubscriptionProfile,
-  diagnoseForward,
   regenerateSubscriptionToken,
   updateProxyNode,
   updateSubscriptionProfile,
-} from "@/lib/api";
-import { currentPanelEndpoint } from "@/lib/panel-endpoint";
-import type { ProxyNode, SubscriptionFormat, SubscriptionProfile } from "@/lib/types";
+} from "./api";
+import { useSubscriptionSettings } from "./queries";
+import { subscriptionFormatLabels, subscriptionFormats } from "./model";
+import { SubscriptionApiKeyDialog } from "./components/api-key-dialog";
+import { SubscriptionAssignDialog } from "./components/assign-dialog";
+import { SubscriptionImportDialog } from "./components/import-dialog";
+import { SubscriptionNodeDialog } from "./components/node-dialog";
+import { SubscriptionProfileDialog } from "./components/profile-dialog";
+import { SubscriptionQrDialog } from "./components/qr-dialog";
+import { SubscriptionRelayDialog } from "./components/relay-dialog";
+import { SubscriptionDeleteNodesDialog } from "./components/delete-nodes-dialog";
 
-const buildSubUrl = (token: string, format?: string) => {
-  if (typeof window === "undefined") return "";
-  return currentPanelEndpoint().subscriptionURL(token, format);
-};
-
-const effectiveAddress = (node: ProxyNode) =>
+// 默认打开订阅配置；节点筛选只影响协议节点，不清除其他标签页的书签参数。
+const defaults = { tab: "profiles", q: "", protocol: "", status: "", relay: "" };
+const addressOf = (node: ProxyNode) =>
   node.resolvedAddress || `${node.resolvedServer || node.server}:${node.resolvedPort || node.port}`;
-
-const protocolClass = (p: string) => {
-  switch ((p || "").toLowerCase()) {
-    case "vless":
-      return "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300";
-    case "vmess":
-      return "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300";
-    case "trojan":
-      return "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300";
-    case "snell":
-      return "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300";
-    case "ss":
-      return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300";
-    case "socks5":
-      return "bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300";
-    default:
-      return "bg-muted text-muted-foreground";
-  }
-};
-
-const copy = async (text: string, msg = "已复制") => {
+const hasRelay = (node: ProxyNode) => Boolean(node.forwardId || node.relayChildCount);
+const derived = (node: ProxyNode) => node.relayMode === "append" || Boolean(node.sourceProxyNodeId);
+const subUrl = (token: string, format: SubscriptionFormat) =>
+  currentPanelEndpoint().subscriptionURL(token, format);
+async function copy(value: string, message = "已复制") {
   try {
-    await navigator.clipboard.writeText(text);
-    notify.success(msg);
+    await navigator.clipboard.writeText(value);
+    notify.success(message);
   } catch {
     notify.error("复制失败");
   }
-};
+}
 
 export function SubscriptionPage() {
+  const { state, setState } = useUrlState(defaults);
   const queryClient = useQueryClient();
   const confirm = useConfirm();
-
-  const settingsQuery = useSubscriptionSettings();
-  const settings = settingsQuery.data;
-  const loading = settingsQuery.isPending;
-  const apiKey = settings?.apiKey ?? "";
-  const profiles = useMemo(() => settings?.profiles ?? [], [settings]);
-  const nodes = useMemo(() => settings?.nodes ?? [], [settings]);
-  const profileNodes = useMemo(() => settings?.profileNodes ?? [], [settings]);
-  const tunnels = useMemo(() => settings?.tunnels ?? [], [settings]);
-  const bootstrap = settings?.vlessBootstrapScript ?? "";
-
-  const loadSettings = () => invalidateFor(queryClient, "subscription.update");
-  const loadRelayData = () => invalidateFor(queryClient, "subscription.relay");
-
-  const [nodeSearch, setNodeSearch] = useState("");
-  const [protocolFilter, setProtocolFilter] = useState<string>("all");
-
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [editingProfile, setEditingProfile] = useState<SubscriptionProfile | null>(null);
-
-  const [nodeOpen, setNodeOpen] = useState(false);
-  const [editingNode, setEditingNode] = useState<ProxyNode | null>(null);
-
-  const [assignOpen, setAssignOpen] = useState(false);
+  const query = useSubscriptionSettings();
+  const profiles = useMemo(() => query.data?.profiles ?? [], [query.data]);
+  const nodes = useMemo(() => query.data?.nodes ?? [], [query.data]);
+  const bindings = query.data?.profileNodes ?? [];
+  const [profileEditor, setProfileEditor] = useState<SubscriptionProfile | "new" | null>(null);
+  const [nodeEditor, setNodeEditor] = useState<ProxyNode | null>(null);
   const [assignNode, setAssignNode] = useState<ProxyNode | null>(null);
-  const [assignInitialIds, setAssignInitialIds] = useState<number[]>([]);
-
-  const [relayOpen, setRelayOpen] = useState(false);
   const [relayNode, setRelayNode] = useState<ProxyNode | null>(null);
-
-  const [qrOpen, setQrOpen] = useState(false);
-  const [qrTitle, setQrTitle] = useState("");
-  const [qrValue, setQrValue] = useState("");
-
+  const [deletingNodes, setDeletingNodes] = useState<ProxyNode[] | null>(null);
+  const [qr, setQr] = useState<{ title: string; value: string } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [apiKeyOpen, setApiKeyOpen] = useState(false);
-
-  const [selectedProfileIds, setSelectedProfileIds] = useState<number[]>([]);
-  const [selectedNodeIds, setSelectedNodeIds] = useState<number[]>([]);
-  const [batchAction, setBatchAction] = useState<null | {
-    key:
-      | "profile-enable"
-      | "profile-disable"
-      | "profile-delete"
-      | "node-enable"
-      | "node-disable"
-      | "node-delete";
-    done: number;
-    total: number;
-    label: string;
-  }>(null);
-  const batchRunning = batchAction !== null;
-  const [batchResult, setBatchResult] = useState<null | {
-    label: string;
-    items: { name: string; success: boolean; reason?: string }[];
-  }>(null);
-  const [confirmState, setConfirmState] = useState<{
-    open: boolean;
-    title: string;
-    description: string;
-    confirmText?: string;
-    destructive?: boolean;
-    pending?: boolean;
-    onConfirm?: () => void | Promise<void>;
-  }>({ open: false, title: "", description: "" });
-  const askConfirm = (opts: Omit<typeof confirmState, "open" | "pending">) =>
-    setConfirmState({ open: true, pending: false, ...opts });
-
-  const profilesById = useMemo(() => {
-    const m = new Map<number, SubscriptionProfile>();
-    profiles.forEach((p) => m.set(p.id, p));
-    return m;
-  }, [profiles]);
-
-  const nodeProfileIds = (nid: number) =>
-    profileNodes
-      .filter((p) => p.proxyNodeId === nid)
+  const [profileSelection, setProfileSelection] = useState<number[]>([]);
+  const [nodeSelection, setNodeSelection] = useState<RowSelectionState>({});
+  const [busy, setBusy] = useState(false);
+  const actionLock = useRef(false);
+  const [progress, setProgress] = useState("");
+  const [batchResults, setBatchResults] = useState<BatchResult<{ name: string }>[] | null>(null);
+  const [diagnosis, setDiagnosis] = useState<{
+    node: ProxyNode;
+    data?: DiagnosisResult;
+    error?: unknown;
+    loading: boolean;
+  } | null>(null);
+  const diagnosisSequence = useRef(0);
+  const refresh = (relay = false) =>
+    invalidateFor(queryClient, relay ? "subscription.relay" : "subscription.update");
+  const profileNodeIds = (id: number) =>
+    bindings
+      .filter((binding) => binding.subscriptionId === id)
       .sort((a, b) => a.sort - b.sort)
-      .map((p) => p.subscriptionId);
-  const profileNodeIdsOf = (pid: number) =>
-    profileNodes
-      .filter((p) => p.subscriptionId === pid)
-      .sort((a, b) => a.sort - b.sort)
-      .map((p) => p.proxyNodeId);
-
-  const protocols = useMemo(() => {
-    const s = new Set<string>();
-    nodes.forEach((n) => n.protocol && s.add(n.protocol.toLowerCase()));
-    return Array.from(s);
-  }, [nodes]);
-
-  const filteredNodes = useMemo(() => {
-    const kw = nodeSearch.trim().toLowerCase();
-    return nodes.filter((n) => {
-      if (protocolFilter !== "all" && (n.protocol || "").toLowerCase() !== protocolFilter)
-        return false;
-      if (!kw) return true;
-      return [n.name, n.protocol, n.server, `${n.server}:${n.port}`, effectiveAddress(n)]
-        .join(" ")
-        .toLowerCase()
-        .includes(kw);
-    });
-  }, [nodes, nodeSearch, protocolFilter]);
-
-  const activeProfileCount = useMemo(
-    () => profiles.filter((p) => p.status === 1).length,
-    [profiles],
-  );
-  const activeNodeCount = useMemo(() => nodes.filter((n) => n.status === 1).length, [nodes]);
-  const relayNodeCount = useMemo(() => nodes.filter((n) => !!n.forwardId).length, [nodes]);
-
-  // ---------- Profile actions ----------
-  const openCreateProfile = () => {
-    setEditingProfile(null);
-    setProfileOpen(true);
-  };
-  const openEditProfile = (p: SubscriptionProfile) => {
-    setEditingProfile(p);
-    setProfileOpen(true);
-  };
-  const removeProfile = async (p: SubscriptionProfile) => {
+      .map((binding) => binding.proxyNodeId);
+  const nodeProfileIds = (node: ProxyNode) =>
+    node.profileIds?.length
+      ? node.profileIds
+      : bindings
+          .filter((binding) => binding.proxyNodeId === node.id)
+          .sort((a, b) => a.sort - b.sort)
+          .map((binding) => binding.subscriptionId);
+  const protocols = [...new Set(nodes.map((node) => node.protocol.toLowerCase()))].sort();
+  const filteredNodes = nodes.filter((node) => {
+    const q = state.q.trim().toLowerCase();
+    return (
+      (!state.protocol || node.protocol.toLowerCase() === state.protocol) &&
+      (!state.status || String(node.status) === state.status) &&
+      (!state.relay || hasRelay(node) === (state.relay === "yes")) &&
+      (!q || [node.name, node.server, addressOf(node)].join(" ").toLowerCase().includes(q))
+    );
+  });
+  const filtered = Boolean(state.q || state.protocol || state.status || state.relay);
+  const selectedNodes = nodes.filter((node) => nodeSelection[String(node.id)]);
+  const selectedProfiles = profiles.filter((profile) => profileSelection.includes(profile.id));
+  async function act(action: () => Promise<unknown>, message: string, relay = false) {
+    if (actionLock.current) return;
+    actionLock.current = true;
+    setBusy(true);
+    try {
+      await action();
+      notify.success(message);
+      await refresh(relay);
+    } catch (error) {
+      notify.error(errorMessage(error));
+    } finally {
+      actionLock.current = false;
+      setBusy(false);
+    }
+  }
+  async function rotate(profile: SubscriptionProfile) {
     if (
       !(await confirm({
-        title: `删除订阅「${p.name}」`,
+        tone: "danger",
+        title: "更换订阅 Token",
+        description: "旧链接会立即失效，所有已导入该订阅的客户端都需要重新导入新链接。",
+        confirmText: "更换 Token",
+      }))
+    )
+      return;
+    await act(() => regenerateSubscriptionToken(profile.id), "Token 已重新生成");
+  }
+  async function removeProfile(profile: SubscriptionProfile) {
+    if (
+      !(await confirm({
+        tone: "danger",
+        title: `删除订阅「${profile.name}」`,
         description: "删除后该订阅链接将立即失效，且无法恢复。",
+        confirmText: "删除订阅",
+      }))
+    )
+      return;
+    await act(() => deleteSubscriptionProfile(profile.id), "订阅已删除");
+  }
+  function updateProfile(profile: SubscriptionProfile, status: 0 | 1) {
+    return updateSubscriptionProfile({ ...profile, status, nodeIds: profileNodeIds(profile.id) });
+  }
+  function updateNode(node: ProxyNode, status: 0 | 1) {
+    return updateProxyNode({
+      ...node,
+      status,
+      allowInsecure: node.allowInsecure === 1,
+      udp: node.udp === 1,
+    });
+  }
+  async function batch<T extends { name: string }>(
+    items: T[],
+    action: (item: T) => Promise<unknown>,
+    label: string,
+    relay = false,
+  ) {
+    if (actionLock.current) return;
+    actionLock.current = true;
+    setBusy(true);
+    try {
+      const results = await runBatch(items, action, {
+        nameOf: (item) => item.name,
+        onProgress: ({ done, total }) => setProgress(`${label} ${done}/${total}`),
+      });
+      setBatchResults(results);
+      setProfileSelection([]);
+      setNodeSelection({});
+      await refresh(relay);
+    } catch (error) {
+      notify.error(errorMessage(error));
+    } finally {
+      actionLock.current = false;
+      setBusy(false);
+      setProgress("");
+    }
+  }
+  async function batchStatus(kind: "订阅" | "节点", status: 0 | 1) {
+    const label = `批量${status ? "启用" : "禁用"}${kind}`;
+    const items = (kind === "订阅" ? selectedProfiles : selectedNodes).filter(
+      (item) => item.status !== status,
+    );
+    if (!items.length) return notify.info("所选项目已是目标状态");
+    if (
+      !(await confirm({
+        title: label,
+        description: `即将${status ? "启用" : "禁用"} ${items.length} 个${kind}，是否继续？`,
+        confirmText: label,
+      }))
+    )
+      return;
+    if (kind === "订阅")
+      await batch(
+        selectedProfiles.filter((item) => item.status !== status),
+        (item) => updateProfile(item, status),
+        label,
+      );
+    else
+      await batch(
+        selectedNodes.filter((item) => item.status !== status),
+        (item) => updateNode(item, status),
+        label,
+      );
+  }
+  async function deleteProfiles() {
+    if (
+      !(await confirm({
+        title: "批量删除订阅",
+        description: `将删除 ${selectedProfiles.length} 个订阅，旧链接将立即失效，且无法恢复。`,
         confirmText: "删除订阅",
         tone: "danger",
       }))
     )
       return;
-    try {
-      await deleteSubscriptionProfile(p.id);
-
-      notify.success("订阅已删除");
-      await loadSettings();
-    } catch (error) {
-      notify.error(errorMessage(error));
-    }
-  };
-  const refreshProfileToken = async (p: SubscriptionProfile) => {
-    try {
-      await regenerateSubscriptionToken(p.id);
-
-      notify.success("Token 已重新生成");
-      await loadSettings();
-    } catch (error) {
-      notify.error(errorMessage(error));
-    }
-  };
-  const toggleProfileStatus = async (p: SubscriptionProfile) => {
-    try {
-      await updateSubscriptionProfile({
-        ...p,
-        status: p.status === 1 ? 0 : 1,
-        nodeIds: profileNodeIdsOf(p.id),
-      });
-
-      notify.success(p.status === 1 ? "已禁用" : "已启用");
-      await loadSettings();
-    } catch (error) {
-      notify.error(errorMessage(error));
-    }
-  };
-  const showQr = (p: SubscriptionProfile, fmt: SubscriptionFormat) => {
-    setQrTitle(`${p.name} · ${subscriptionFormatLabels[fmt]}`);
-    setQrValue(buildSubUrl(p.token, fmt));
-    setQrOpen(true);
-  };
-  const setQrDialogOpen = (open: boolean) => {
-    setQrOpen(open);
-    if (!open) {
-      setQrTitle("");
-      setQrValue("");
-    }
-  };
-  // ---------- Node actions ----------
-  const openEditNode = (n: ProxyNode) => {
-    setEditingNode(n);
-    setNodeOpen(true);
-  };
-  const removeNode = async (n: ProxyNode) => {
+    await batch(selectedProfiles, (item) => deleteSubscriptionProfile(item.id), "批量删除订阅");
+  }
+  async function deleteNodesBatch() {
+    const items = selectedNodes;
+    const withRelay = items.filter(hasRelay).length;
     if (
+      !items.length ||
       !(await confirm({
-        title: `删除订阅节点「${n.name}」`,
-        description: "删除后该节点将从关联订阅中移除，且无法恢复。",
+        title: "批量删除节点",
+        description: `将删除 ${items.length} 个协议节点${withRelay ? `，其中 ${withRelay} 个存在关联中转，将一并删除中转规则和中转节点` : ""}，且无法恢复。`,
         confirmText: "删除节点",
         tone: "danger",
-        requireText: n.name,
       }))
     )
       return;
-    let del = false;
-    if (n.forwardId || (n.relayChildCount || 0) > 0) {
-      del = await confirm({
-        title: "一并删除关联中转",
-        description: `节点「${n.name}」有关联中转规则/节点，一并删除后对应中转将停止工作。取消则保留关联中转。`,
-        confirmText: "一并删除",
-        tone: "danger",
-      });
-    }
-    try {
-      await deleteProxyNode(n.id, del);
-
-      notify.success("节点已删除");
-      await (n.forwardId || (n.relayChildCount || 0) > 0 ? loadRelayData() : loadSettings());
-    } catch (error) {
-      notify.error(errorMessage(error));
-    }
-  };
-  const toggleNodeStatus = async (n: ProxyNode) => {
-    try {
-      await updateProxyNode({
-        ...n,
-        port: Number(n.port),
-        allowInsecure: n.allowInsecure === 1,
-        udp: n.udp === 1,
-        status: n.status === 1 ? 0 : 1,
-      });
-
-      notify.success(n.status === 1 ? "已禁用" : "已启用");
-      await loadSettings();
-    } catch (error) {
-      notify.error(errorMessage(error));
-    }
-  };
-  const openAssign = (n: ProxyNode) => {
-    setAssignNode(n);
-    setAssignInitialIds(
-      n.profileIds && n.profileIds.length > 0 ? n.profileIds : nodeProfileIds(n.id),
+    // 沿用既有批量语义：确认后，有中转的节点连同关联中转一起删除；单节点对话框可单独选择保留规则。
+    await batch(
+      items,
+      (node) => deleteProxyNode(node.id, hasRelay(node)),
+      "批量删除节点",
+      withRelay > 0,
     );
-    setAssignOpen(true);
-  };
-
-  // ---------- Relay ----------
-  const openRelay = (n: ProxyNode) => {
-    setRelayNode(n);
-    setRelayOpen(true);
-  };
-  const closeRelay = async (n: ProxyNode) => {
+  }
+  async function closeRelay(node: ProxyNode) {
+    const ruleCount = Number(Boolean(node.forwardId)) + (node.relayChildCount || 0);
     if (
       !(await confirm({
-        title: `关闭节点「${n.name}」的中转`,
-        description: "关闭后通过该中转地址连接的流量将中断。",
+        title: `关闭节点「${node.name}」的中转`,
+        description: `将删除 ${ruleCount} 条关联中转规则${node.relayChildCount ? `和 ${node.relayChildCount} 个中转节点` : derived(node) ? "和当前中转节点" : ""}，通过中转地址连接的流量将中断。`,
         confirmText: "关闭中转",
         tone: "danger",
       }))
     )
       return;
+    await act(() => closeProxyNodeRelay(node.id), "中转已关闭", true);
+  }
+  async function diagnose(node: ProxyNode) {
+    if (!node.forwardId) return notify.error("该节点没有可测试的中转规则");
+    const sequence = ++diagnosisSequence.current;
+    setDiagnosis({ node, loading: true });
     try {
-      const res = await closeProxyNodeRelay(n.id);
-
-      const d = res;
-      notify.success(
-        `已关闭：删除 ${d.deletedForwards || 0} 中转规则、${d.deletedNodes || 0} 中转节点`,
-      );
-      await loadRelayData();
+      const data = await diagnoseForward(node.forwardId);
+      if (sequence === diagnosisSequence.current) setDiagnosis({ node, data, loading: false });
     } catch (error) {
-      notify.error(errorMessage(error));
+      if (sequence === diagnosisSequence.current) setDiagnosis({ node, error, loading: false });
     }
-  };
-  const diagRelay = async (n: ProxyNode) => {
-    if (!n.forwardId) return notify.error("该节点没有可测试的中转规则");
-    try {
-      const res = await diagnoseForward(n.forwardId);
-
-      const r = res.results?.[0];
-      notify.success(
-        r?.success ? `连通 · ${r.averageTime?.toFixed?.(0) || "?"}ms` : r?.message || "已完成",
-      );
-    } catch (error) {
-      notify.error(errorMessage(error));
-    }
-  };
-
-  // ---------- API Key ----------
-  const openApiKey = () => {
-    setApiKeyOpen(true);
-  };
-
-  // ---------- Batch ops ----------
-  const runBatch = async <T,>(
-    key: NonNullable<typeof batchAction>["key"],
-    items: T[],
-    fn: (item: T) => Promise<unknown>,
-    label: string,
-    nameOf: (item: T) => string,
-  ) => {
-    setBatchAction({ key, done: 0, total: items.length, label });
-    try {
-      const results = await runSharedBatch(items, fn, {
-        nameOf,
-        onProgress: ({ done }) => setBatchAction((a) => (a ? { ...a, done } : a)),
-      });
-      await loadSettings();
-      setBatchResult({ label, items: results });
-    } finally {
-      setBatchAction(null);
-    }
-  };
-
-  const batchProfileStatus = (targetStatus: 0 | 1) => {
-    if (batchRunning) return;
-    const items = profiles.filter(
-      (p) => selectedProfileIds.includes(p.id) && p.status !== targetStatus,
-    );
-    if (items.length === 0) return notify.info("所选订阅已是目标状态");
-    const label = targetStatus === 1 ? "启用" : "禁用";
-    const key = targetStatus === 1 ? "profile-enable" : "profile-disable";
-    askConfirm({
-      title: `批量${label}订阅`,
-      description: `即将${label} ${items.length} 个订阅配置，是否继续？`,
-      confirmText: label,
-      onConfirm: async () => {
-        await runBatch(
-          key,
-          items,
-          (p) =>
-            updateSubscriptionProfile({
-              ...p,
-              status: targetStatus,
-              nodeIds: profileNodeIdsOf(p.id),
-            }),
-          `批量${label}`,
-          (p) => p.name,
-        );
-        setSelectedProfileIds([]);
-      },
+  }
+  function showQr(profile: SubscriptionProfile, format: SubscriptionFormat) {
+    setQr({
+      title: `${profile.name} · ${subscriptionFormatLabels[format]}`,
+      value: subUrl(profile.token, format),
     });
-  };
-  const batchProfileDelete = () => {
-    if (batchRunning) return;
-    const items = profiles.filter((p) => selectedProfileIds.includes(p.id));
-    if (items.length === 0) return;
-    askConfirm({
-      title: "批量删除订阅",
-      description: `将删除 ${items.length} 个订阅配置，删除后无法恢复，其订阅链接将立即失效。是否继续？`,
-      confirmText: "删除",
-      destructive: true,
-      onConfirm: async () => {
-        await runBatch(
-          "profile-delete",
-          items,
-          (p) => deleteSubscriptionProfile(p.id),
-          "批量删除",
-          (p) => p.name,
-        );
-        setSelectedProfileIds([]);
-      },
-    });
-  };
-
-  const batchNodeStatus = (targetStatus: 0 | 1) => {
-    if (batchRunning) return;
-    const items = nodes.filter((n) => selectedNodeIds.includes(n.id) && n.status !== targetStatus);
-    if (items.length === 0) return notify.info("所选节点已是目标状态");
-    const label = targetStatus === 1 ? "启用" : "禁用";
-    const key = targetStatus === 1 ? "node-enable" : "node-disable";
-    askConfirm({
-      title: `批量${label}节点`,
-      description: `即将${label} ${items.length} 个协议节点，是否继续？`,
-      confirmText: label,
-      onConfirm: async () => {
-        await runBatch(
-          key,
-          items,
-          (n) =>
-            updateProxyNode({
-              ...n,
-              port: Number(n.port),
-              allowInsecure: n.allowInsecure === 1,
-              udp: n.udp === 1,
-              status: targetStatus,
-            }),
-          `批量${label}`,
-          (n) => n.name,
-        );
-        setSelectedNodeIds([]);
-      },
-    });
-  };
-  const batchNodeDelete = () => {
-    if (batchRunning) return;
-    const items = nodes.filter((n) => selectedNodeIds.includes(n.id));
-    if (items.length === 0) return;
-    const withRelay = items.filter((n) => !!n.forwardId || (n.relayChildCount || 0) > 0).length;
-    askConfirm({
-      title: "批量删除节点",
-      description: `将删除 ${items.length} 个协议节点${withRelay > 0 ? `（其中 ${withRelay} 个存在关联中转，将一并删除）` : ""}，是否继续？`,
-      confirmText: "删除",
-      destructive: true,
-      onConfirm: async () => {
-        await runBatch(
-          "node-delete",
-          items,
-          (n) => deleteProxyNode(n.id, !!n.forwardId || (n.relayChildCount || 0) > 0),
-          "批量删除",
-          (n) => n.name,
-        );
-        if (withRelay > 0) {
-          await invalidateFor(queryClient, "subscription.relay");
-        }
-        setSelectedNodeIds([]);
-      },
-    });
-  };
-
-  if (loading) {
+  }
+  function profileMenu(profile: SubscriptionProfile) {
     return (
-      <div className="flex min-h-[420px] items-center justify-center text-sm text-muted-foreground">
-        加载订阅管理...
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`${profile.name} 更多操作`}
+            disabled={busy}
+          >
+            <MoreHorizontal />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => copy(profile.token, "Token 已复制")}>
+            复制 Token
+          </DropdownMenuItem>
+          {subscriptionFormats.map((format) => (
+            <DropdownMenuItem key={format} onClick={() => showQr(profile, format)}>
+              {subscriptionFormatLabels[format]} 二维码
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuItem
+            onClick={() =>
+              act(
+                () => updateProfile(profile, profile.status === 1 ? 0 : 1),
+                profile.status === 1 ? "已禁用" : "已启用",
+              )
+            }
+          >
+            {profile.status === 1 ? "禁用订阅" : "启用订阅"}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => rotate(profile)}>更换 Token</DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-status-critical-text"
+            onClick={() => removeProfile(profile)}
+          >
+            删除订阅
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+  function nodeActions(node: ProxyNode) {
+    return (
+      <div className="flex items-center justify-end gap-1">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`编辑节点 ${node.name}`}
+          onClick={() => setNodeEditor(node)}
+          disabled={busy}
+        >
+          <Pencil />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`${node.name} 更多操作`}
+              disabled={busy}
+            >
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setAssignNode(node)}>绑定订阅</DropdownMenuItem>
+            {!derived(node) && (
+              <DropdownMenuItem onClick={() => setRelayNode(node)}>配置中转</DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={() => copy(addressOf(node), "地址已复制")}>
+              复制地址
+            </DropdownMenuItem>
+            {node.link && (
+              <DropdownMenuItem onClick={() => copy(node.link!, "链接已复制")}>
+                复制分享链接
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              onClick={() =>
+                act(
+                  () => updateNode(node, node.status === 1 ? 0 : 1),
+                  node.status === 1 ? "已禁用" : "已启用",
+                )
+              }
+            >
+              {node.status === 1 ? "禁用节点" : "启用节点"}
+            </DropdownMenuItem>
+            {hasRelay(node) && (
+              <>
+                <DropdownMenuItem disabled={!node.forwardId} onClick={() => diagnose(node)}>
+                  测试中转
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => closeRelay(node)}>关闭中转</DropdownMenuItem>
+              </>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-status-critical-text"
+              onClick={() => setDeletingNodes([node])}
+            >
+              删除节点
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     );
   }
-
+  const columns: ColumnDef<ProxyNode>[] = [
+    {
+      accessorKey: "name",
+      header: "名称",
+      cell: ({ row }) => <span className="font-medium text-ink">{row.original.name}</span>,
+    },
+    {
+      accessorKey: "protocol",
+      header: "协议",
+      cell: ({ row }) => <Badge variant="outline">{row.original.protocol.toUpperCase()}</Badge>,
+    },
+    {
+      id: "address",
+      accessorFn: addressOf,
+      header: "地址",
+      cell: ({ row }) => <span className="font-mono text-code">{addressOf(row.original)}</span>,
+    },
+    {
+      accessorKey: "lastReportTime",
+      header: "上报时间",
+      cell: ({ row }) => (
+        <span
+          title={
+            row.original.lastReportTime ? formatDateTime(row.original.lastReportTime) : undefined
+          }
+        >
+          {row.original.lastReportTime ? formatRelative(row.original.lastReportTime) : "未上报"}
+        </span>
+      ),
+    },
+    {
+      id: "relay",
+      header: "中转",
+      cell: ({ row }) =>
+        row.original.forwardName ||
+        (row.original.relayChildCount ? `${row.original.relayChildCount} 个中转节点` : "—"),
+    },
+    {
+      id: "profiles",
+      header: "所属订阅数",
+      accessorFn: (node) => nodeProfileIds(node).length,
+      meta: { numeric: true, align: "right" },
+    },
+    {
+      accessorKey: "status",
+      header: "状态",
+      cell: ({ row }) => <StatusPill {...tunnelStatus(row.original)} />,
+    },
+    {
+      id: "actions",
+      header: "操作",
+      enableSorting: false,
+      meta: { actions: true },
+      cell: ({ row }) => nodeActions(row.original),
+    },
+  ];
+  const batchButtons = (kind: "订阅" | "节点") => (
+    <>
+      <Button size="sm" variant="outline" disabled={busy} onClick={() => batchStatus(kind, 1)}>
+        批量启用
+      </Button>
+      <Button size="sm" variant="outline" disabled={busy} onClick={() => batchStatus(kind, 0)}>
+        批量禁用
+      </Button>
+      <Button
+        size="sm"
+        variant="danger"
+        disabled={busy}
+        onClick={() => (kind === "订阅" ? deleteProfiles() : deleteNodesBatch())}
+      >
+        批量删除
+      </Button>
+      {progress && <span role="status">{progress}</span>}
+    </>
+  );
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <PageHeader
-        icon={<Link2 className="h-5 w-5" />}
-        title="订阅管理"
-        description="管理协议节点、订阅配置、中转入口与上报密钥"
+        title="订阅"
+        description="管理订阅链接、协议节点和节点上报"
         actions={
           <>
-            <Button onClick={openCreateProfile}>
-              <Plus className="mr-1" />
-              新建订阅
+            <Button variant="outline" onClick={() => setImportOpen(true)} disabled={busy}>
+              <Import />
+              导入节点
             </Button>
-            <Button variant="secondary" onClick={() => setImportOpen(true)}>
-              <Import className="mr-1" />
-              导入链接
-            </Button>
-            <Button variant="secondary" onClick={openApiKey}>
-              <KeyRound className="mr-1" />
+            <Button variant="outline" onClick={() => setApiKeyOpen(true)} disabled={busy}>
+              <KeyRound />
               API Key
             </Button>
-            <Button variant="outline" onClick={loadSettings} disabled={settingsQuery.isFetching}>
-              <RefreshCcw className={`mr-1 ${settingsQuery.isFetching ? "animate-spin" : ""}`} />
-              刷新
+            <Button onClick={() => setProfileEditor("new")} disabled={busy}>
+              <Plus />
+              新建订阅
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="刷新订阅"
+              loading={query.isFetching}
+              onClick={() => refresh()}
+            >
+              <RefreshCw />
             </Button>
           </>
         }
       />
-
-      <QueryErrorNotice error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />
-
-      {/* KPI */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          label="订阅配置"
-          value={profiles.length}
-          description={`${activeProfileCount} 个启用`}
-          icon={<Link2 className="h-4 w-4" />}
-        />
-        <KpiCard
-          label="协议节点"
-          value={nodes.length}
-          description={`${activeNodeCount} 个启用`}
-          icon={<Wifi className="h-4 w-4" />}
-        />
-        <KpiCard
-          label="已中转节点"
-          value={relayNodeCount}
-          description="含中转规则的节点数"
-          icon={<Shuffle className="h-4 w-4" />}
-        />
-        <KpiCard
-          label="可用隧道"
-          value={tunnels.length}
-          description="可用于中转"
-          icon={<KeyRound className="h-4 w-4" />}
-        />
-      </div>
-
-      {/* Profiles */}
-      <Card>
-        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-lg">订阅配置</CardTitle>
-          {profiles.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-                <Checkbox
-                  checked={
-                    selectedProfileIds.length > 0 && selectedProfileIds.length === profiles.length
-                  }
-                  disabled={batchRunning}
-                  onCheckedChange={(c) => setSelectedProfileIds(c ? profiles.map((p) => p.id) : [])}
-                />
-                全选
-              </label>
-              <span className="text-xs text-muted-foreground">
-                已选 {selectedProfileIds.length}
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={selectedProfileIds.length === 0 || batchRunning}
-                onClick={() => batchProfileStatus(1)}
-              >
-                {batchAction?.key === "profile-enable" ? (
-                  <>
-                    <Loader2 className="mr-1 animate-spin" />
-                    启用中 {batchAction.done}/{batchAction.total}
-                  </>
-                ) : (
-                  <>
-                    <Wifi className="mr-1" />
-                    批量启用
-                  </>
-                )}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={selectedProfileIds.length === 0 || batchRunning}
-                onClick={() => batchProfileStatus(0)}
-              >
-                {batchAction?.key === "profile-disable" ? (
-                  <>
-                    <Loader2 className="mr-1 animate-spin" />
-                    禁用中 {batchAction.done}/{batchAction.total}
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="mr-1" />
-                    批量禁用
-                  </>
-                )}
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={selectedProfileIds.length === 0 || batchRunning}
-                onClick={batchProfileDelete}
-              >
-                {batchAction?.key === "profile-delete" ? (
-                  <>
-                    <Loader2 className="mr-1 animate-spin" />
-                    删除中 {batchAction.done}/{batchAction.total}
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="mr-1" />
-                    批量删除
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {profiles.length === 0 && (
-            <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-              暂无订阅配置
-            </div>
-          )}
-          {profiles.map((p) => {
-            const url = buildSubUrl(p.token, p.defaultFormat);
-            const selected = selectedProfileIds.includes(p.id);
-            return (
-              <div
-                key={p.id}
-                className={`rounded-lg border p-4 ${p.status === 1 ? "" : "opacity-60"} ${selected ? "ring-1 ring-primary" : ""}`}
-              >
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="flex min-w-0 flex-1 gap-3">
-                    <Checkbox
-                      className="mt-1"
-                      aria-label={`选择订阅 ${p.name}`}
-                      checked={selected}
-                      onCheckedChange={(c) =>
-                        setSelectedProfileIds(
-                          c
-                            ? [...selectedProfileIds, p.id]
-                            : selectedProfileIds.filter((x) => x !== p.id),
-                        )
+      {query.error && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}
+      {!(query.error && !query.data) && (
+        <Tabs value={state.tab} onValueChange={(tab) => setState({ tab })}>
+          <TabsList className="max-w-full">
+            <TabsTrigger value="profiles">订阅配置 {profiles.length}</TabsTrigger>
+            <TabsTrigger value="nodes">协议节点 {nodes.length}</TabsTrigger>
+            <TabsTrigger value="report">节点上报</TabsTrigger>
+          </TabsList>
+          <TabsContent value="profiles" className="space-y-3">
+            {query.isPending ? (
+              <LoadingRows />
+            ) : !profiles.length ? (
+              <EmptyState title="暂无订阅配置" description="新建订阅后，将协议节点分享给客户端" />
+            ) : (
+              <>
+                <label className="inline-flex min-h-10 items-center gap-2 text-caption text-body">
+                  <Checkbox
+                    aria-label="选择全部订阅"
+                    checked={profiles.every((profile) => profileSelection.includes(profile.id))}
+                    onCheckedChange={(checked) =>
+                      setProfileSelection(checked ? profiles.map((profile) => profile.id) : [])
+                    }
+                    disabled={busy}
+                  />
+                  全选订阅
+                </label>
+                {profiles.map((profile) => (
+                  <article
+                    key={profile.id}
+                    className={`min-w-0 space-y-3 rounded-md border border-hairline p-5 ${profileSelection.includes(profile.id) ? "bg-surface-selected" : "bg-canvas"}`}
+                  >
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Checkbox
+                        aria-label={`选择订阅 ${profile.name}`}
+                        checked={profileSelection.includes(profile.id)}
+                        disabled={busy}
+                        onCheckedChange={(checked) =>
+                          setProfileSelection((ids) =>
+                            checked ? [...ids, profile.id] : ids.filter((id) => id !== profile.id),
+                          )
+                        }
+                      />
+                      <h2 className="min-w-0 break-words text-card-title text-ink">
+                        {profile.name}
+                      </h2>
+                      <StatusPill {...tunnelStatus(profile)} />
+                      <Badge variant="outline">
+                        {subscriptionFormatLabels[profile.defaultFormat]}
+                      </Badge>
+                      <span className="text-caption text-mute">
+                        {profileNodeIds(profile.id).length} 个节点
+                      </span>
+                      <div className="ml-auto flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => setProfileEditor(profile)}
+                        >
+                          编辑
+                        </Button>
+                        {profileMenu(profile)}
+                      </div>
+                    </div>
+                    {profile.description && (
+                      <p className="break-words text-sm text-body">{profile.description}</p>
+                    )}
+                    <CodeBlock
+                      code={subUrl(profile.token, profile.defaultFormat)}
+                      label={`复制 ${profile.name} 订阅链接`}
+                      singleLine
+                      trailingActions={
+                        <>
+                          <Button variant="ghost" size="icon" asChild>
+                            <a
+                              href={subUrl(profile.token, profile.defaultFormat)}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`打开 ${profile.name} 订阅链接`}
+                            >
+                              <ExternalLink />
+                            </a>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`显示 ${profile.name} 订阅二维码`}
+                            onClick={() => showQr(profile, profile.defaultFormat)}
+                          >
+                            <QrCode />
+                          </Button>
+                        </>
                       }
                     />
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`inline-block h-2 w-2 rounded-full ${p.status === 1 ? "bg-emerald-500" : "bg-muted-foreground"}`}
-                        />
-                        <h3 className="text-base font-semibold">{p.name}</h3>
-                        <Badge variant="secondary">
-                          {subscriptionFormatLabels[p.defaultFormat]}
-                        </Badge>
-                        <Badge variant="outline">{profileNodeIdsOf(p.id).length} 节点</Badge>
-                      </div>
-                      <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
-                        <span
-                          className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground"
-                          title={url}
-                        >
-                          {url}
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`复制 ${p.name} 订阅链接`}
-                          onClick={() => copy(url, "链接已复制")}
-                        >
-                          <Copy />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`打开 ${p.name} 订阅链接`}
-                          onClick={() => window.open(url, "_blank", "noopener")}
-                        >
-                          <ExternalLink />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label={`显示 ${p.name} 订阅二维码`}
-                          onClick={() => showQr(p, p.defaultFormat)}
-                        >
-                          <QrCode />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openEditProfile(p)}>
-                      <Pencil className="mr-1 h-3.5 w-3.5" />
-                      编辑
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="sm" variant="outline" aria-label={`${p.name} 更多操作`}>
-                          <MoreHorizontal />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => copy(p.token, "Token 已复制")}>
-                          <Copy className="mr-2" />
-                          复制 Token
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => refreshProfileToken(p)}>
-                          <RefreshCcw className="mr-2" />换 Token
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => toggleProfileStatus(p)}>
-                          {p.status === 1 ? (
-                            <>
-                              <XCircle className="mr-2" />
-                              禁用
-                            </>
-                          ) : (
-                            <>
-                              <Wifi className="mr-2" />
-                              启用
-                            </>
-                          )}
-                        </DropdownMenuItem>
-                        {subscriptionFormats.map((f) => (
-                          <DropdownMenuItem key={f} onClick={() => showQr(p, f)}>
-                            <QrCode className="mr-2" />
-                            {subscriptionFormatLabels[f]} 二维码
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-status-critical-text"
-                          onClick={() => removeProfile(p)}
-                        >
-                          <Trash2 className="mr-2" />
-                          删除
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      {/* Proxy Nodes */}
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-lg">协议节点</CardTitle>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={protocolFilter} onValueChange={setProtocolFilter}>
-              <SelectTrigger className="w-32" aria-label="筛选节点协议">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部协议</SelectItem>
-                {protocols.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p.toUpperCase()}
-                  </SelectItem>
+                  </article>
                 ))}
-              </SelectContent>
-            </Select>
-            <div className="relative w-64">
-              <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-8"
-                placeholder="搜索节点 / 地址…"
-                value={nodeSearch}
-                onChange={(e) => setNodeSearch(e.target.value)}
-              />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {filteredNodes.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-2">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-                <Checkbox
-                  checked={
-                    filteredNodes.length > 0 &&
-                    filteredNodes.every((n) => selectedNodeIds.includes(n.id))
-                  }
-                  disabled={batchRunning}
-                  onCheckedChange={(c) => {
-                    const ids = filteredNodes.map((n) => n.id);
-                    setSelectedNodeIds(
-                      c
-                        ? Array.from(new Set([...selectedNodeIds, ...ids]))
-                        : selectedNodeIds.filter((id) => !ids.includes(id)),
-                    );
-                  }}
-                />
-                全选（当前筛选）
-              </label>
-              <span className="text-xs text-muted-foreground">已选 {selectedNodeIds.length}</span>
-              <div className="ml-auto flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={selectedNodeIds.length === 0 || batchRunning}
-                  onClick={() => batchNodeStatus(1)}
-                >
-                  {batchAction?.key === "node-enable" ? (
-                    <>
-                      <Loader2 className="mr-1 animate-spin" />
-                      启用中 {batchAction.done}/{batchAction.total}
-                    </>
-                  ) : (
-                    <>
-                      <Wifi className="mr-1" />
-                      批量启用
-                    </>
-                  )}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={selectedNodeIds.length === 0 || batchRunning}
-                  onClick={() => batchNodeStatus(0)}
-                >
-                  {batchAction?.key === "node-disable" ? (
-                    <>
-                      <Loader2 className="mr-1 animate-spin" />
-                      禁用中 {batchAction.done}/{batchAction.total}
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="mr-1" />
-                      批量禁用
-                    </>
-                  )}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={selectedNodeIds.length === 0 || batchRunning}
-                  onClick={batchNodeDelete}
-                >
-                  {batchAction?.key === "node-delete" ? (
-                    <>
-                      <Loader2 className="mr-1 animate-spin" />
-                      删除中 {batchAction.done}/{batchAction.total}
-                    </>
-                  ) : (
-                    <>
-                      <Trash2 className="mr-1" />
-                      批量删除
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-          {filteredNodes.length === 0 && (
-            <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-              暂无节点，先配置脚本上报或导入分享链接
-            </div>
-          )}
-          {filteredNodes.map((n) => {
-            const isDerived = n.relayMode === "append" || !!n.sourceProxyNodeId;
-            const hasRelay = !!n.forwardId || (n.relayChildCount || 0) > 0;
-            const bound = (
-              n.profileIds && n.profileIds.length > 0 ? n.profileIds : nodeProfileIds(n.id)
-            )
-              .map((id) => profilesById.get(id)?.name)
-              .filter(Boolean);
-            const selected = selectedNodeIds.includes(n.id);
-            return (
-              <div
-                key={n.id}
-                className={`flex flex-col gap-3 rounded-lg border p-3 md:flex-row md:items-center md:justify-between ${n.status === 1 ? "" : "opacity-60"} ${selected ? "ring-1 ring-primary" : ""}`}
-              >
-                <div className="flex min-w-0 flex-1 items-start gap-3">
-                  <Checkbox
-                    className="mt-1"
-                    aria-label={`选择节点 ${n.name}`}
-                    checked={selected}
-                    onCheckedChange={(c) =>
-                      setSelectedNodeIds(
-                        c ? [...selectedNodeIds, n.id] : selectedNodeIds.filter((x) => x !== n.id),
-                      )
-                    }
-                  />
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`inline-block h-2 w-2 rounded-full ${n.status === 1 ? "bg-emerald-500" : "bg-muted-foreground"}`}
-                      />
-                      <span className="font-medium">{n.name}</span>
-                      <Badge className={protocolClass(n.protocol)} variant="secondary">
-                        {(n.protocol || "").toUpperCase()}
-                      </Badge>
-                      {n.region && <Badge variant="outline">{n.region.toUpperCase()}</Badge>}
-                      {isDerived && <Badge variant="outline">中转节点</Badge>}
-                      {hasRelay && <Badge variant="secondary">已中转</Badge>}
-                      {bound.length > 0 && <Badge variant="outline">绑定 {bound.length}</Badge>}
-                    </div>
-                    <div className="font-mono text-xs text-muted-foreground truncate">
-                      {effectiveAddress(n)}
-                    </div>
-                    {n.forwardName && (
-                      <div className="text-xs text-muted-foreground">
-                        中转：{n.forwardName}{" "}
-                        {n.forwardInIp ? `· ${n.forwardInIp}:${n.forwardInPort}` : ""}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => openEditNode(n)}>
-                    <Pencil className="mr-1 h-3.5 w-3.5" />
-                    编辑
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => openAssign(n)}>
-                    <Link2 className="mr-1" />
-                    绑定
-                  </Button>
-                  {!isDerived && (
-                    <Button size="sm" variant="outline" onClick={() => openRelay(n)}>
-                      <Shuffle className="mr-1" />
-                      中转
+                {selectedProfiles.length > 0 && (
+                  <div
+                    role="region"
+                    aria-label="订阅批量操作"
+                    className="sticky bottom-0 z-20 flex flex-wrap items-center gap-2 rounded-md border border-hairline bg-canvas-soft p-3 shadow-level-3"
+                  >
+                    <span className="text-caption text-body">
+                      已选 {selectedProfiles.length} 项
+                    </span>
+                    {batchButtons("订阅")}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => setProfileSelection([])}
+                    >
+                      取消选择
                     </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </TabsContent>
+          <TabsContent value="nodes" className="space-y-4">
+            <TableToolbar
+              searchValue={state.q}
+              onSearchChange={(q) => setState({ q })}
+              searchPlaceholder="搜索名称和地址…"
+              count={`共 ${filteredNodes.length} 个节点`}
+              filters={
+                <>
+                  <FilterSelect
+                    label="筛选节点协议"
+                    value={state.protocol}
+                    onChange={(protocol) => setState({ protocol })}
+                    options={[
+                      { value: "", label: "全部协议" },
+                      ...protocols.map((value) => ({ value, label: value.toUpperCase() })),
+                    ]}
+                  />
+                  <FilterSelect
+                    label="筛选节点状态"
+                    value={state.status}
+                    onChange={(status) => setState({ status })}
+                    options={[
+                      { value: "", label: "全部状态" },
+                      { value: "1", label: "启用" },
+                      { value: "0", label: "已禁用" },
+                    ]}
+                  />
+                  <FilterSelect
+                    label="筛选节点中转"
+                    value={state.relay}
+                    onChange={(relay) => setState({ relay })}
+                    options={[
+                      { value: "", label: "全部中转" },
+                      { value: "yes", label: "有中转" },
+                      { value: "no", label: "无中转" },
+                    ]}
+                  />
+                </>
+              }
+            />
+            <DataTable
+              ariaLabel="协议节点"
+              columns={columns}
+              data={filteredNodes}
+              getRowId={(node) => String(node.id)}
+              loading={query.isPending}
+              filtered={filtered}
+              onClearFilters={() => setState({ q: "", protocol: "", status: "", relay: "" })}
+              emptyState={
+                !filtered ? (
+                  <EmptyState
+                    title="暂无节点"
+                    description="暂无节点，先配置脚本上报或导入分享链接"
+                  />
+                ) : undefined
+              }
+              enableSelection
+              rowSelection={nodeSelection}
+              onRowSelectionChange={setNodeSelection}
+              bulkActions={() => batchButtons("节点")}
+              renderMobileCard={(node) => (
+                <div className="min-w-0 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="break-words text-body-strong text-ink">{node.name}</h2>
+                    <Badge variant="outline">{node.protocol.toUpperCase()}</Badge>
+                    <StatusPill {...tunnelStatus(node)} />
+                  </div>
+                  <p className="break-all font-mono text-code text-body">{addressOf(node)}</p>
+                  <p
+                    className="text-caption text-mute"
+                    title={node.lastReportTime ? formatDateTime(node.lastReportTime) : undefined}
+                  >
+                    {node.lastReportTime ? formatRelative(node.lastReportTime) : "未上报"} ·{" "}
+                    {nodeProfileIds(node).length} 个订阅
+                  </p>
+                  {hasRelay(node) && (
+                    <p className="break-words text-caption text-body">
+                      中转：{node.forwardName || `${node.relayChildCount} 个中转节点`}
+                    </p>
                   )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button size="sm" variant="outline" aria-label={`${n.name} 更多操作`}>
-                        <MoreHorizontal />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => copy(effectiveAddress(n), "地址已复制")}>
-                        <Copy className="mr-2" />
-                        复制地址
-                      </DropdownMenuItem>
-                      {n.link && (
-                        <DropdownMenuItem onClick={() => copy(n.link!, "链接已复制")}>
-                          <Copy className="mr-2" />
-                          复制分享链接
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem onClick={() => toggleNodeStatus(n)}>
-                        {n.status === 1 ? (
-                          <>
-                            <XCircle className="mr-2" />
-                            禁用
-                          </>
-                        ) : (
-                          <>
-                            <Wifi className="mr-2" />
-                            启用
-                          </>
-                        )}
-                      </DropdownMenuItem>
-                      {hasRelay && (
-                        <>
-                          <DropdownMenuItem onClick={() => diagRelay(n)}>
-                            <Wifi className="mr-2" />
-                            测试中转
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => closeRelay(n)}>
-                            <XCircle className="mr-2" />
-                            关闭中转
-                          </DropdownMenuItem>
-                        </>
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-status-critical-text"
-                        onClick={() => removeNode(n)}
-                      >
-                        <Trash2 className="mr-2" />
-                        删除
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {nodeActions(node)}
                 </div>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      {/* Bootstrap */}
-      {bootstrap && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">节点上报脚本</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Textarea value={bootstrap} readOnly rows={4} className="font-mono text-xs" />
-            <Button size="sm" variant="outline" onClick={() => copy(bootstrap, "脚本已复制")}>
-              <Copy className="mr-1" />
-              复制脚本
-            </Button>
-          </CardContent>
-        </Card>
+              )}
+            />
+          </TabsContent>
+          <TabsContent value="report" className="space-y-4">
+            <p className="text-sm text-body">
+              上报脚本中包含 API Key，请勿公开或发送给他人。更换 API Key 后，已部署的脚本需要更新。
+            </p>
+            {query.isPending ? (
+              <LoadingRows />
+            ) : query.data?.vlessBootstrapScript ? (
+              <CodeBlock code={query.data.vlessBootstrapScript} label="复制脚本" />
+            ) : (
+              <EmptyState title="暂无上报脚本" description="配置 API Key 后刷新查看节点上报脚本" />
+            )}
+          </TabsContent>
+        </Tabs>
       )}
-
-      {/* ---------- Profile Dialog ---------- */}
-      <SubscriptionProfileDialog
-        open={profileOpen}
-        onOpenChange={setProfileOpen}
-        editing={editingProfile}
-        nodes={nodes}
-        initialNodeIds={
-          editingProfile ? profileNodeIdsOf(editingProfile.id) : nodes.map((n) => n.id)
-        }
-      />
-
-      {/* ---------- Node Edit Dialog ---------- */}
-      <SubscriptionNodeDialog open={nodeOpen} onOpenChange={setNodeOpen} editing={editingNode} />
-
-      {/* ---------- Assign Dialog ---------- */}
-      <SubscriptionAssignDialog
-        open={assignOpen}
-        onOpenChange={setAssignOpen}
-        node={assignNode}
-        profiles={profiles}
-        initialProfileIds={assignInitialIds}
-      />
-
-      {/* ---------- Relay Dialog ---------- */}
-      <SubscriptionRelayDialog
-        open={relayOpen}
-        onOpenChange={setRelayOpen}
-        node={relayNode}
-        tunnels={tunnels}
-      />
-
-      {/* ---------- QR ---------- */}
+      {profileEditor && (
+        <SubscriptionProfileDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setProfileEditor(null);
+          }}
+          editing={profileEditor === "new" ? null : profileEditor}
+          nodes={nodes}
+          initialNodeIds={
+            profileEditor === "new"
+              ? nodes.map((node) => node.id)
+              : profileNodeIds(profileEditor.id)
+          }
+        />
+      )}
+      {nodeEditor && (
+        <SubscriptionNodeDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setNodeEditor(null);
+          }}
+          editing={nodeEditor}
+        />
+      )}
+      {assignNode && (
+        <SubscriptionAssignDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setAssignNode(null);
+          }}
+          node={assignNode}
+          profiles={profiles}
+          initialProfileIds={nodeProfileIds(assignNode)}
+        />
+      )}
+      {relayNode && (
+        <SubscriptionRelayDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setRelayNode(null);
+          }}
+          node={relayNode}
+          tunnels={query.data?.tunnels ?? []}
+        />
+      )}
+      {deletingNodes && (
+        <SubscriptionDeleteNodesDialog
+          nodes={deletingNodes}
+          onClose={() => setDeletingNodes(null)}
+          onDelete={async (deleteForward) => {
+            await batch(
+              deletingNodes,
+              (node) => deleteProxyNode(node.id, deleteForward),
+              "删除节点",
+              deletingNodes.some(hasRelay),
+            );
+            setDeletingNodes(null);
+          }}
+        />
+      )}
       <SubscriptionQrDialog
-        open={qrOpen}
-        title={qrTitle}
-        value={qrValue}
-        onOpenChange={setQrDialogOpen}
+        open={Boolean(qr)}
+        title={qr?.title ?? ""}
+        value={qr?.value ?? ""}
+        onOpenChange={(open) => {
+          if (!open) setQr(null);
+        }}
       />
-
-      {/* ---------- Import ---------- */}
       <SubscriptionImportDialog open={importOpen} onOpenChange={setImportOpen} />
-
-      {/* ---------- API Key ---------- */}
       <SubscriptionApiKeyDialog
         open={apiKeyOpen}
         onOpenChange={setApiKeyOpen}
-        currentKey={apiKey}
+        currentKey={query.data?.apiKey ?? ""}
       />
-
-      {/* ---------- Batch Confirm ---------- */}
-      <AlertDialog
-        open={confirmState.open}
-        onOpenChange={(o) => {
-          if (confirmState.pending) return; // prevent close while running
-          setConfirmState((s) => ({ ...s, open: o }));
+      <DiagnosisSheet
+        open={Boolean(diagnosis)}
+        title={diagnosis ? `中转诊断 · ${diagnosis.node.name}` : "中转诊断"}
+        onOpenChange={(open) => {
+          if (!open) {
+            diagnosisSequence.current++;
+            setDiagnosis(null);
+          }
+        }}
+        data={diagnosis?.data}
+        loading={diagnosis?.loading}
+        error={diagnosis?.error}
+        onRetry={diagnosis ? () => void diagnose(diagnosis.node) : undefined}
+      />
+      <Dialog
+        open={Boolean(batchResults)}
+        onOpenChange={(open) => {
+          if (!open) setBatchResults(null);
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{confirmState.title}</AlertDialogTitle>
-            <AlertDialogDescription>{confirmState.description}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={confirmState.pending}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={confirmState.pending}
-              className={
-                confirmState.destructive
-                  ? "bg-destructive-solid text-destructive-foreground hover:bg-destructive-solid/90"
-                  : ""
-              }
-              onClick={async (e) => {
-                e.preventDefault();
-                if (confirmState.pending) return;
-                const fn = confirmState.onConfirm;
-                setConfirmState((s) => ({ ...s, pending: true }));
-                try {
-                  if (fn) await fn();
-                } finally {
-                  setConfirmState({ open: false, title: "", description: "" });
-                }
-              }}
-            >
-              {confirmState.pending ? (
-                <>
-                  <Loader2 className="mr-1 animate-spin" />
-                  处理中…
-                </>
-              ) : (
-                confirmState.confirmText || "确认"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={!!batchResult}
-        onOpenChange={(o) => {
-          if (!o) setBatchResult(null);
-        }}
-      >
-        <AlertDialogContent className="max-w-lg">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{batchResult?.label}结果</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3">
-                {batchResult &&
-                  (() => {
-                    const ok = batchResult.items.filter((i) => i.success).length;
-                    const fail = batchResult.items.length - ok;
-                    return (
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="rounded bg-muted px-2 py-0.5">
-                          总计 {batchResult.items.length}
-                        </span>
-                        <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-emerald-600 dark:text-emerald-400">
-                          成功 {ok}
-                        </span>
-                        <span
-                          className={`rounded px-2 py-0.5 ${fail > 0 ? "bg-destructive/10 text-status-critical-text" : "bg-muted text-muted-foreground"}`}
-                        >
-                          失败 {fail}
-                        </span>
-                      </div>
-                    );
-                  })()}
-                <div className="max-h-72 overflow-y-auto rounded-md border">
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted/50 text-muted-foreground">
-                      <tr>
-                        <th className="px-2 py-1.5 text-left font-medium">名称</th>
-                        <th className="px-2 py-1.5 text-left font-medium w-16">状态</th>
-                        <th className="px-2 py-1.5 text-left font-medium">原因</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {batchResult?.items.map((it, idx) => (
-                        <tr key={idx} className="border-t">
-                          <td className="px-2 py-1.5 font-mono">{it.name}</td>
-                          <td className="px-2 py-1.5">
-                            {it.success ? (
-                              <span className="text-emerald-600 dark:text-emerald-400">成功</span>
-                            ) : (
-                              <span className="text-status-critical-text">失败</span>
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5 text-muted-foreground">
-                            {it.success ? "-" : it.reason || "未知错误"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>批量操作结果</DialogTitle>
+            <DialogDescription>
+              成功 {batchResults?.filter((item) => item.success).length ?? 0} 项 · 失败{" "}
+              {batchResults?.filter((item) => !item.success).length ?? 0} 项
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-72 space-y-2 overflow-y-auto">
+            {batchResults?.map((item, index) => (
+              <div key={index} className="space-y-1 rounded-md border border-hairline p-3">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <span className="break-all text-body">{item.name}</span>
+                  <StatusPill
+                    tone={item.success ? "good" : "critical"}
+                    label={item.success ? "成功" : "失败"}
+                  />
                 </div>
+                {!item.success && (
+                  <p className="break-words text-caption text-status-critical-text">
+                    {item.reason || "未知错误"}
+                  </p>
+                )}
               </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setBatchResult(null)}>关闭</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchResults(null)}>
+              关闭结果
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

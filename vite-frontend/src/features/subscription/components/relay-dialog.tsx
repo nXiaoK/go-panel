@@ -1,13 +1,7 @@
-import { FormField as Field } from "@/components/page";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FormField as Field } from "@/components/patterns/form-field";
+import { EntitySheet } from "@/components/patterns/entity-sheet";
+import { DataTable } from "@/components/patterns/data-table";
+import { ErrorState, LoadingRows } from "@/components/patterns/feedback";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -22,24 +16,7 @@ import { notify } from "@/lib/notify";
 import { resourceKeys as queries } from "@/lib/query-keys";
 import type { ProxyNode, RelayMode, RelayWrite, SubTunnelOption } from "@/lib/types";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-
-type RelayPreview = {
-  tunnelName?: string;
-  tunnelTypeName?: string;
-  entry?: RelayEndpoint;
-  relay?: RelayEndpoint;
-  exit?: RelayEndpoint;
-  target?: { address?: string; ip?: string; port?: number };
-} | null;
-
-type RelayEndpoint = {
-  nodeName?: string;
-  address?: string;
-  ip?: string;
-  port?: number;
-  portText?: string;
-};
+import { useState } from "react";
 
 export function SubscriptionRelayDialog({
   open,
@@ -54,29 +31,21 @@ export function SubscriptionRelayDialog({
   tunnels: SubTunnelOption[];
   onSaved?: () => void;
 }) {
-  const [form, setForm] = useState<{
-    tunnelId: string;
-    inPort: string;
-    name: string;
-    mode: RelayMode;
-  }>({ tunnelId: "", inPort: "", name: "", mode: "replace" });
-
-  useEffect(() => {
-    if (!open || !node) return;
-    const currentTunnelId =
-      node.forwardTunnelId && tunnels.some((t) => t.id === node.forwardTunnelId)
+  // 默认替换原节点；入口留空由后端分配，不改变原隧道端口策略。
+  const initial = {
+    tunnelId:
+      node?.forwardTunnelId && tunnels.some((tunnel) => tunnel.id === node.forwardTunnelId)
         ? String(node.forwardTunnelId)
         : tunnels[0]?.id
           ? String(tunnels[0].id)
-          : "";
-    setForm({
-      tunnelId: currentTunnelId,
-      inPort: node.forwardInPort ? String(node.forwardInPort) : "",
-      name: node.forwardName || `订阅节点-${node.name}`,
-      mode: "replace",
-    });
-  }, [open, node, tunnels]);
-
+          : "",
+    inPort: node?.forwardInPort ? String(node.forwardInPort) : "",
+    name: node?.forwardName || `订阅节点-${node?.name || ""}`,
+    mode: "replace" as RelayMode,
+  };
+  const [form, setForm] = useState(initial);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const dirty = JSON.stringify(form) !== JSON.stringify(initial);
   const previewNodeId = node?.id ?? 0;
   const previewTunnelId = Number(form.tunnelId) || 0;
   const previewInPort = form.inPort ? Number(form.inPort) : null;
@@ -107,122 +76,145 @@ export function SubscriptionRelayDialog({
   });
 
   const submit = () => {
-    if (!node || !form.tunnelId) return notify.error("请选择隧道");
-    relayMutation.mutate({
-      nodeId: node.id,
-      tunnelId: Number(form.tunnelId),
-      mode: form.mode,
-      name: form.name,
-      inPort: form.inPort ? Number(form.inPort) : null,
-    });
+    const next: Record<string, string> = {};
+    if (!form.tunnelId) next.tunnel = "请选择隧道";
+    if (
+      form.inPort &&
+      (!Number.isInteger(Number(form.inPort)) ||
+        Number(form.inPort) < 1 ||
+        Number(form.inPort) > 65535)
+    )
+      next.port = "端口必须是 1–65535 的整数";
+    setErrors(next);
+    const first = Object.keys(next)[0];
+    if (first) {
+      document.getElementById(`subscription-relay-${first}`)?.focus();
+      return;
+    }
+    if (!node) return;
+    return relayMutation
+      .mutateAsync({
+        nodeId: node.id,
+        tunnelId: Number(form.tunnelId),
+        mode: form.mode,
+        name: form.name,
+        inPort: form.inPort ? Number(form.inPort) : null,
+      })
+      .catch(() => undefined);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>创建/修改中转</DialogTitle>
-          <DialogDescription>{node?.name}</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <Field label="模式" htmlFor="subscription-relay-mode">
-            <Select
-              value={form.mode}
-              onValueChange={(v) => setForm({ ...form, mode: v as RelayMode })}
-            >
-              <SelectTrigger id="subscription-relay-mode">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="replace">替换原节点</SelectItem>
-                <SelectItem value="append">增加中转节点</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="隧道" htmlFor="subscription-relay-tunnel">
-            <Select value={form.tunnelId} onValueChange={(v) => setForm({ ...form, tunnelId: v })}>
-              <SelectTrigger id="subscription-relay-tunnel">
-                <SelectValue placeholder="选择隧道" />
-              </SelectTrigger>
-              <SelectContent>
-                {tunnels.map((t) => (
-                  <SelectItem key={t.id} value={String(t.id)}>
-                    {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="入口端口（可选）" htmlFor="subscription-relay-port">
-            <Input
-              id="subscription-relay-port"
-              type="number"
-              value={form.inPort}
-              onChange={(e) => setForm({ ...form, inPort: e.target.value })}
-            />
-          </Field>
-          <Field label="名称" htmlFor="subscription-relay-name">
-            <Input
-              id="subscription-relay-name"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-          </Field>
-          {previewQuery.isFetching ? (
-            <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
-              正在生成中转预览…
-            </div>
-          ) : null}
-          {previewQuery.error ? (
-            <div
-              role="alert"
-              className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-status-critical-text"
-            >
-              {previewQuery.error instanceof Error
-                ? previewQuery.error.message
-                : "中转预览加载失败"}
-            </div>
-          ) : null}
-          {preview && (
-            <div className="rounded-md border bg-muted/40 p-3 text-xs">
-              <div className="mb-1 font-medium">预览</div>
-              <div>
-                隧道：{preview.tunnelName} ({preview.tunnelTypeName})
-              </div>
-              <div>
-                入口：
-                {preview.entry?.address ||
-                  `${preview.entry?.ip || ""}:${preview.entry?.port || ""}`}
-              </div>
-              {preview.relay ? (
-                <div>
-                  中继：{preview.relay.nodeName || "-"} · {preview.relay.ip || ""}:
-                  {preview.relay.port || preview.relay.portText || ""}
+    <EntitySheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title="创建/修改中转"
+      description={node?.name}
+      dirty={dirty}
+      onSubmit={submit}
+      submitText="保存中转"
+      submitting={relayMutation.isPending}
+    >
+      <div className="space-y-3">
+        <Field label="模式" htmlFor="subscription-relay-mode">
+          <Select
+            value={form.mode}
+            onValueChange={(v) => setForm({ ...form, mode: v as RelayMode })}
+          >
+            <SelectTrigger id="subscription-relay-mode">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="replace">替换原节点</SelectItem>
+              <SelectItem value="append">增加中转节点</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="隧道" htmlFor="subscription-relay-tunnel" required error={errors.tunnel}>
+          <Select value={form.tunnelId} onValueChange={(v) => setForm({ ...form, tunnelId: v })}>
+            <SelectTrigger id="subscription-relay-tunnel">
+              <SelectValue placeholder="选择隧道" />
+            </SelectTrigger>
+            <SelectContent>
+              {tunnels.map((t) => (
+                <SelectItem key={t.id} value={String(t.id)}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field
+          label="入口端口（可选）"
+          htmlFor="subscription-relay-port"
+          error={errors.port}
+          hint="留空由后端分配；填写时须在隧道入口允许的范围内"
+        >
+          <Input
+            id="subscription-relay-port"
+            type="number"
+            value={form.inPort}
+            onChange={(e) => setForm({ ...form, inPort: e.target.value })}
+          />
+        </Field>
+        <Field label="名称" htmlFor="subscription-relay-name">
+          <Input
+            id="subscription-relay-name"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+        </Field>
+        {previewQuery.isFetching && <LoadingRows rows={3} />}
+        {previewQuery.error && (
+          <ErrorState error={previewQuery.error} onRetry={() => void previewQuery.refetch()} />
+        )}
+        {preview && (
+          <section className="space-y-3">
+            <h3 className="text-body-strong text-ink">中转预览</h3>
+            <p className="text-caption text-mute">
+              {preview.tunnelName} · {preview.tunnelTypeName}
+            </p>
+            <DataTable
+              ariaLabel="中转预览"
+              columns={[
+                { accessorKey: "role", header: "位置" },
+                { accessorKey: "name", header: "节点" },
+                {
+                  accessorKey: "address",
+                  header: "地址",
+                  cell: ({ row }) => (
+                    <span className="break-all font-mono text-code">{row.original.address}</span>
+                  ),
+                },
+              ]}
+              data={(
+                [
+                  ["入口", preview.entry],
+                  ["中继", preview.relay],
+                  ["出口", preview.exit],
+                  ["目标", preview.target],
+                ] as const
+              )
+                .filter((entry) => Boolean(entry[1]))
+                .map(([role, endpoint]) => ({
+                  role,
+                  name: endpoint?.nodeName || "—",
+                  address:
+                    endpoint?.address ||
+                    `${endpoint?.ip || ""}:${endpoint?.port || endpoint?.portText || ""}`,
+                }))}
+              getRowId={(row) => row.role}
+              renderMobileCard={(row) => (
+                <div className="space-y-1">
+                  <h4 className="text-body-strong">
+                    {row.role} · {row.name}
+                  </h4>
+                  <p className="break-all font-mono text-code text-body">{row.address}</p>
                 </div>
-              ) : null}
-              {preview.exit ? (
-                <div>
-                  出口：{preview.exit.nodeName || "-"} · {preview.exit.ip || ""}:
-                  {preview.exit.port || preview.exit.portText || ""}
-                </div>
-              ) : null}
-              <div>
-                目标：
-                {preview.target?.address ||
-                  `${preview.target?.ip || ""}:${preview.target?.port || ""}`}
-              </div>
-            </div>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button onClick={submit} disabled={relayMutation.isPending}>
-            {relayMutation.isPending ? "创建中…" : "创建"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+              )}
+            />
+          </section>
+        )}
+      </div>
+    </EntitySheet>
   );
 }
