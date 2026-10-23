@@ -77,7 +77,7 @@ export function CommandPalette({
         if (!value) setQuery("");
       }}
     >
-      <DialogContent className="h-[min(620px,calc(100dvh-2rem))] max-w-[560px] gap-0 p-0 max-md:left-0 max-md:top-0 max-md:h-dvh max-md:max-h-dvh max-md:w-full max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-none [&>div.min-h-0]:flex [&>div.min-h-0]:flex-col">
+      <DialogContent className="h-[min(620px,calc(100dvh-2rem))] max-w-140 gap-0 p-0 max-md:left-0 max-md:top-0 max-md:h-dvh max-md:max-h-dvh max-md:w-full max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-none [&>div.min-h-0]:flex [&>div.min-h-0]:flex-col">
         <DialogHeader className="sr-only">
           <DialogTitle>搜索资源</DialogTitle>
           <DialogDescription>按类型搜索资源，使用方向键选择并回车打开</DialogDescription>

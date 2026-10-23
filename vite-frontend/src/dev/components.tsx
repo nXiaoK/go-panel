@@ -100,7 +100,7 @@ function Preview() {
   const [filter, setFilter] = useState("all");
   const [view, setView] = useState("table");
   const [selection, setSelection] = useState<RowSelectionState>({});
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   return (
     <TooltipProvider>
       <main className="mx-auto max-w-[1440px] space-y-6 p-4 md:p-6">
@@ -310,7 +310,7 @@ function Preview() {
             <Button
               variant="outline"
               onClick={() =>
-                void confirm({
+                void requestConfirm({
                   title: "确认删除资源？",
                   description: "删除后无法恢复，请核对影响范围",
                   tone: "danger",
@@ -372,7 +372,7 @@ function Preview() {
             <Button
               variant="danger"
               onClick={async () => {
-                const accepted = await confirm({
+                const accepted = await requestConfirm({
                   title: "共享删除确认",
                   description: "仅验证确认层，不执行删除",
                   requireText: "preview-user",
@@ -440,7 +440,7 @@ function Preview() {
 function BatchBarPreview() {
   const legacy = new URLSearchParams(window.location.search).get("legacy") === "1";
   const [sheet, setSheet] = useState(false);
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   const items = Array.from({ length: 50 }, (_, index) => ({
     id: String(index + 1),
     name: `开发夹具条目 ${index + 1}`,
@@ -483,7 +483,7 @@ function BatchBarPreview() {
                   <Button
                     variant="danger"
                     onClick={() =>
-                      void confirm({
+                      void requestConfirm({
                         title: "批量删除开发夹具？",
                         description: "仅验证浮层，未连接业务接口，不会删除数据。",
                         confirmText: "关闭确认",

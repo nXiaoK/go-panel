@@ -653,3 +653,39 @@ it("复合字段render prop为实际控件生成唯一ID，布局div不冒充控
   expect(first).toHaveAttribute("aria-invalid", "true");
   expect(second).toHaveAttribute("aria-describedby", first.getAttribute("aria-describedby"));
 });
+
+it.each([-1, NaN, Infinity, 0, 12.5])(
+  "诊断延迟%s仅渲染有效非负毫秒，其余显示占位",
+  (averageTime) => {
+    render(
+      <DiagnosisSheet
+        open
+        onOpenChange={vi.fn()}
+        data={{
+          tunnelType: "relay",
+          timestamp: 1,
+          results: [
+            {
+              success: false,
+              advisory: true,
+              nodeId: 1,
+              nodeName: "入口",
+              targetIp: "example.test",
+              description: "外网探测",
+              averageTime,
+              packetLoss: 100,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(
+      screen.getByText(
+        Number.isFinite(averageTime) && averageTime >= 0
+          ? `平均延迟 ${averageTime} ms · 丢包 100%`
+          : "平均延迟 — · 丢包 100%",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/平均延迟 -1 ms|NaN ms|Infinity ms/)).toBeNull();
+  },
+);

@@ -4,14 +4,13 @@ import { fileURLToPath } from "node:url";
 import { join, relative } from "node:path";
 import test from "node:test";
 import ts from "typescript";
-import { legacyViolations } from "./design-token-legacy.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const sourceRoot = join(root, "src");
 
 // 设计门禁配置：按字面值计数，而非整文件豁免；扫描变量/模板片段以覆盖动态 className。
 const forbidden =
-  /(?:emerald|amber|blue|indigo|purple|cyan|green|red|yellow|orange)-\d{2,3}|shadow-glow|bg-gradient-primary|text-gradient-primary|bg-grid|text-\[(?:9|10|11)px\]/g;
+  /(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|(?:bg|text|border|ring|outline|fill|stroke|decoration|shadow|divide|accent|caret)-(?:black|white)(?=[/\s"']|$)|(?:linear|radial|conic)-gradient\(|shadow-glow|(?:bg|text)-(?:linear|radial|conic|gradient)[a-z0-9-]*|bg-grid/g;
 function violations(source) {
   const result = {};
   const tree = ts.createSourceFile(
@@ -74,6 +73,12 @@ function violations(source) {
   }
   function count(text) {
     for (const [value] of text.matchAll(forbidden)) result[value] = (result[value] ?? 0) + 1;
+    // rem 按根字号 16px 检查，覆盖小数与省略整数的写法，禁止用任意值绕过最小字号。
+    for (const [value, number, unit] of text.matchAll(
+      /text-\[(?:length:)?([0-9]*\.?[0-9]+)(px|rem)\]/g,
+    )) {
+      if (Number(number) * (unit === "rem" ? 16 : 1) < 12) result[value] = (result[value] ?? 0) + 1;
+    }
   }
   function visit(node) {
     if (ts.isBinaryExpression(node) || ts.isTemplateExpression(node)) {
@@ -179,16 +184,16 @@ test("清理必须同步收紧允许项，减少后的旧额度和已删除文�
   assert.equal(auditLegacy({ "src/new.tsx": { "text-[10px]": 1 } }, tightened).length, 2);
 });
 
-test("现存 TSX 违规精确匹配遗留清单，清理时必须同步收紧", async () => {
+test("所有 TSX 必须零违规，不再接受遗留额度", async () => {
   const current = {};
   for (const path of await files(sourceRoot)) {
     const name = relative(root, path).replaceAll("\\", "/");
     current[name] = violations(await readFile(path, "utf8"));
   }
   assert.deepEqual(
-    auditLegacy(current, legacyViolations),
+    auditLegacy(current, {}),
     [],
-    "只能使用 DESIGN.md 语义令牌；减少违规须收紧对应允许项，禁止扩容",
+    "只能使用 DESIGN.md 语义令牌，任何原生色板、旧特效和小字号均禁止",
   );
 });
 
@@ -265,4 +270,33 @@ test("字体只声明本地 latin 文件，主题无需内联脚本", async () =
     await readFile(join(sourceRoot, "app/root.tsx"), "utf8"),
     /themechange|initTheme|themeMode/,
   );
+});
+
+test("零违规门禁覆盖 Tailwind 全色板与任意渐变/小字号", () => {
+  const colors =
+    "slate gray zinc neutral stone red orange amber yellow lime green emerald teal cyan sky blue indigo violet purple fuchsia pink rose".split(
+      " ",
+    );
+  for (const color of colors)
+    assert.deepEqual(violations(`<div className="bg-${color}-500" />`), { [`${color}-500`]: 1 });
+  for (const value of [
+    "bg-linear-to-r",
+    "bg-gradient-to-r",
+    "bg-radial",
+    "bg-conic",
+    "text-[8px]",
+    "text-[11.5px]",
+    "text-[0.5rem]",
+    "text-[.7rem]",
+    "text-[length:0.5rem]",
+    "bg-white",
+    "text-black",
+  ])
+    assert.deepEqual(violations(`<div className="${value}" />`), { [value]: 1 });
+});
+
+test("任意值背景不能绕过渐变禁令", () => {
+  assert.deepEqual(violations('<div className="bg-[linear-gradient(red,blue)]" />'), {
+    "linear-gradient(": 1,
+  });
 });

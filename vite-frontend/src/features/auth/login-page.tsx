@@ -71,7 +71,7 @@ export function LoginPage() {
         <span className="truncate">{appName}</span>
       </div>
       <section
-        className="w-full max-w-[400px] rounded-md border border-hairline bg-canvas p-8"
+        className="w-full max-w-100 rounded-md border border-hairline bg-canvas p-8"
         aria-labelledby="login-title"
       >
         <h1 id="login-title" className="mb-6 text-page-title">
@@ -127,7 +127,7 @@ export function LoginPage() {
         </form>
       </section>
       {reason && (
-        <p role="status" className="max-w-[400px] text-center text-sm leading-5 text-mute">
+        <p role="status" className="max-w-100 text-center text-sm leading-5 text-mute">
           {loginReasons[reason]}
         </p>
       )}

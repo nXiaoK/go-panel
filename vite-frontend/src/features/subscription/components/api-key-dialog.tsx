@@ -29,7 +29,7 @@ export function SubscriptionApiKeyDialog({
   const [draft, setDraft] = useState("");
   const [visible, setVisible] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   useEffect(() => {
     if (open) {
       setDraft(currentKey);
@@ -51,7 +51,7 @@ export function SubscriptionApiKeyDialog({
     setConfirming(true);
     try {
       if (
-        !(await confirm({
+        !(await requestConfirm({
           tone: "danger",
           title: "更换节点上报 API Key",
           description: "旧 API Key 会立即失效，已部署的上报脚本需要更新。",

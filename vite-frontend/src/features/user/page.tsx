@@ -60,7 +60,7 @@ function Expiry({ user }: { user: User }) {
         className="font-mono text-caption tabular text-mute"
         title={formatDateTime(user.expTime)}
       >
-        {user.expTime ? formatDateTime(user.expTime).split(" ")[0] : "未设置"}
+        {user.expTime != null ? formatDateTime(user.expTime).split(" ")[0] : "长期有效"}
       </div>
     </div>
   );
@@ -75,7 +75,7 @@ function Usage({ user }: { user: User }) {
 export function UserPage() {
   const { isAdmin } = useSession();
   const client = useQueryClient();
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   const query = useUsers();
   const users = useMemo(() => query.data ?? [], [query.data]);
   const { state, setState } = useUrlState(userSearchDefaults);
@@ -103,15 +103,17 @@ export function UserPage() {
   }, [state.focus, setState]);
   const now = Date.now();
   const soon = users.filter(
-    (u) => u.expTime && u.expTime > now && u.expTime <= now + 7 * 86400000,
+    (u) => u.expTime != null && u.expTime > now && u.expTime <= now + 7 * 86400000,
   ).length;
   const visible = filterUsers(users, state.q).filter(
     (user) =>
       (state.status === "all" || String(user.status) === state.status) &&
       (state.expiry === "all" ||
         (state.expiry === "expired"
-          ? Boolean(user.expTime && user.expTime <= now)
-          : Boolean(user.expTime && user.expTime > now && user.expTime <= now + 7 * 86400000))),
+          ? Boolean(user.expTime != null && user.expTime <= now)
+          : Boolean(
+              user.expTime != null && user.expTime > now && user.expTime <= now + 7 * 86400000,
+            ))),
   );
   const filtered = Boolean(state.q || state.status !== "all" || state.expiry !== "all");
   const writable = isAdmin && !query.isFetching && query.isSuccess && !busy;
@@ -123,7 +125,7 @@ export function UserPage() {
     if (!writable || busyRef.current) return;
     if (
       action === "reset" &&
-      !(await confirm({
+      !(await requestConfirm({
         title: "重置用户流量",
         description: `将所选 ${rows.length} 位用户的入站与出站流量计数清零，操作不可撤销`,
         confirmText: "重置流量",

@@ -269,3 +269,21 @@ describe("控制台实际页面", () => {
     expect(screen.getByText("一切正常")).toBeTruthy();
   });
 });
+
+it.each([0, -1, null])("账户和权限到期值%s显示与后端保持一致", async (expTime) => {
+  const pkg = packageData();
+  Object.assign(pkg.userInfo, { expTime });
+  Object.assign(pkg.tunnelPermissions[0], { expTime });
+  const original = vi.mocked(apiPost).getMockImplementation()!;
+  vi.mocked(apiPost).mockImplementation((path, ...args) =>
+    path === "/user/package" ? Promise.resolve(pkg) : original(path, ...args),
+  );
+  renderPage(1);
+  await screen.findByText("1.2.3.4");
+  if (expTime === null) expect(screen.getAllByText("长期有效").length).toBeGreaterThan(0);
+  else {
+    expect(screen.getByText("已到期")).toBeTruthy();
+    expect(screen.queryByText("长期有效")).toBeNull();
+    expect(screen.queryByText("未设置")).toBeNull();
+  }
+});

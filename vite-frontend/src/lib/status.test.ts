@@ -37,7 +37,9 @@ describe("统一实体状态", () => {
       label: "3 天后到期",
     });
     expect(expiryStatus(now, now)).toMatchObject({ tone: "critical", label: "已到期" });
-    expect(expiryStatus(0).label).toBe("长期有效");
+    for (const value of [0, -1, now])
+      expect(expiryStatus(value, now)).toMatchObject({ tone: "critical", label: "已到期" });
+    for (const value of [null, undefined]) expect(expiryStatus(value, now).label).toBe("长期有效");
     expect(upgradeStatus(true)).toMatchObject({ tone: "warning", label: "可升级" });
     expect(syncStatus("partial").tone).toBe("warning");
     expect(syncStatus("pending")).toMatchObject({ tone: "serious", label: "待同步" });

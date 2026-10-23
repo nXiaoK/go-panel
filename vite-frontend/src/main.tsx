@@ -21,6 +21,18 @@ if (import.meta.env.DEV && window.location.pathname === "/_dev/components") {
       </StrictMode>,
     );
   });
+} else if (
+  import.meta.env.DEV &&
+  new URLSearchParams(window.location.search).has("__profileNodes")
+) {
+  // 显式开发参数只增加真实页面的测量器，不生成虚拟性能值；正式构建整体移除。
+  void import("./dev/node-profiler").then(({ NodeProfiler }) => {
+    createRoot(root).render(
+      <NodeProfiler>
+        <RouterProvider router={getRouter()} />
+      </NodeProfiler>,
+    );
+  });
 } else {
   createRoot(root).render(
     <StrictMode>

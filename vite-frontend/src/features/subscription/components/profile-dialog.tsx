@@ -161,7 +161,7 @@ export function SubscriptionProfileDialog({
                 value={form.surgeTemplate || ""}
                 onChange={(e) => setForm({ ...form, surgeTemplate: e.target.value })}
                 rows={12}
-                className="min-h-[320px] font-mono text-xs"
+                className="min-h-80 font-mono text-xs"
               />
             </TabsContent>
             <TabsContent value="clash">
@@ -170,7 +170,7 @@ export function SubscriptionProfileDialog({
                 value={form.clashTemplate || ""}
                 onChange={(e) => setForm({ ...form, clashTemplate: e.target.value })}
                 rows={12}
-                className="min-h-[320px] font-mono text-xs"
+                className="min-h-80 font-mono text-xs"
               />
             </TabsContent>
             <TabsContent value="singbox">
@@ -179,7 +179,7 @@ export function SubscriptionProfileDialog({
                 value={form.singboxTemplate || ""}
                 onChange={(e) => setForm({ ...form, singboxTemplate: e.target.value })}
                 rows={12}
-                className="min-h-[320px] font-mono text-xs"
+                className="min-h-80 font-mono text-xs"
               />
             </TabsContent>
           </Tabs>

@@ -251,7 +251,7 @@ export function AttentionSection({ queries, connections }: Props) {
               tone={item.tone}
               label={item.label}
               icon={item.icon}
-              className="h-auto min-h-[22px] max-w-full whitespace-normal py-1"
+              className="h-auto min-h-5.5 max-w-full whitespace-normal py-1"
             />
             <ArrowRight aria-hidden="true" className="size-3 shrink-0 text-mute" />
           </a>

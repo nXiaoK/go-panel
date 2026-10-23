@@ -62,7 +62,7 @@ const defaults = {
 };
 export function NodePage() {
   const client = useQueryClient();
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   const { isAdmin } = useSession();
   const { autoRefresh } = usePreferences();
   const { state, setState } = useUrlState(defaults);
@@ -189,7 +189,7 @@ export function NodePage() {
         ].includes(node.id),
       ).length;
       if (
-        await confirm({
+        await requestConfirm({
           title: `删除节点「${node.name}」`,
           description: `依赖该节点的 ${count} 条隧道将无法工作。节点连接配置将被移除，此操作无法恢复。后端仍会检查现有依赖。`,
           tone: "danger",
@@ -205,7 +205,7 @@ export function NodePage() {
   async function runUpgrade(node: Node) {
     if (!online(node) || !node.upgradeAvailable || upgradingRef.current.has(node.id)) return;
     if (
-      !(await confirm({
+      !(await requestConfirm({
         title: `升级节点「${node.name}」`,
         description: `升级到 ${node.latestVersion || "最新版本"} 后，节点会自动重启并短暂离线，期间转发可能中断。`,
         confirmText: "升级节点",

@@ -61,7 +61,7 @@ const tabLabels: { value: ConfigTab; label: string }[] = [
 
 export function ConfigPage() {
   const queryClient = useQueryClient();
-  const confirm = useConfirm();
+  const requestConfirm = useConfirm();
   const navigate = useNavigate();
   const tab = useSearch({ strict: false, select: (search) => search.tab }) as ConfigTab | undefined;
   const configsQuery = useConfigs();
@@ -154,7 +154,7 @@ export function ConfigPage() {
         return true;
       }
       if (current.pathname === next.pathname || dirtyCount === 0) return false;
-      return !(await confirm({
+      return !(await requestConfirm({
         title: "放弃未保存的修改？",
         description: `还有 ${dirtyCount} 项系统配置尚未保存，离开将丢失这些修改`,
         confirmText: "放弃修改并离开",
@@ -188,7 +188,7 @@ export function ConfigPage() {
   const remove = async (name: string) => {
     if (isProtectedConfigName(name) || controlsDisabled) return;
     if (
-      await confirm({
+      await requestConfirm({
         title: "删除配置项",
         description: `删除「${name}」会立即从服务器移除此配置，使用它的功能将回到默认行为，请确认影响后继续`,
         confirmText: "删除配置项",
@@ -223,7 +223,7 @@ export function ConfigPage() {
       return;
     }
     if (
-      !(await confirm({
+      !(await requestConfirm({
         title: "恢复站点备份",
         description: `使用「${selectedFile.name}」恢复将覆盖当前数据库和节点配置，无法撤销。建议先下载一份当前备份；确认后请保持页面打开，恢复过程不可取消`,
         confirmText: "恢复备份",

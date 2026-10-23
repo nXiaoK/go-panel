@@ -153,3 +153,12 @@ describe("我的隧道合并", () => {
     expect(rows[2].unavailableReason).toBeUndefined();
   });
 });
+
+it("到期信号沿用后端非null<=now语义，0和负值也过期而null无期限", () => {
+  const items = buildAttentionItems({
+    now,
+    users: [user(1, { expTime: 0 }), user(2, { expTime: -1 }), user(3, { expTime: null }), user(4)],
+  });
+  expect(items.map((item) => item.id)).toEqual(["expiry-2", "expiry-1"]);
+  expect(items.every((item) => item.label.endsWith("已到期"))).toBe(true);
+});

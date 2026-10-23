@@ -136,7 +136,7 @@ describe("应用外壳与命令面板", () => {
       </SidebarProvider>,
     );
     expect(apiPost).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "搜索资源" }).getAttribute("aria-haspopup")).toBe(
+    expect(screen.getByRole("button", { name: "搜索资源 ⌘K" }).getAttribute("aria-haspopup")).toBe(
       "dialog",
     );
     fireEvent.keyDown(window, { key: "k", metaKey: true });
@@ -179,7 +179,7 @@ describe("应用外壳与命令面板", () => {
       </SidebarProvider>,
     );
     expect(screen.getByText("请先修改密码")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "搜索资源" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "搜索资源 ⌘K" })).toBeNull();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     await act(async () => {
       await Promise.resolve();

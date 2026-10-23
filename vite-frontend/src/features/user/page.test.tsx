@@ -263,21 +263,21 @@ it("删除必须输入准确用户名，取消不写入", async () => {
   await show();
   await openDetail();
   fireEvent.click(screen.getByRole("button", { name: "删除用户" }));
-  const confirm = await screen.findByRole("alertdialog");
-  const remove = within(confirm).getByRole("button", { name: "删除用户" });
+  const requestConfirm = await screen.findByRole("alertdialog");
+  const remove = within(requestConfirm).getByRole("button", { name: "删除用户" });
   expect(remove).toBeDisabled();
-  fireEvent.change(within(confirm).getByRole("textbox"), { target: { value: "Alice" } });
+  fireEvent.change(within(requestConfirm).getByRole("textbox"), { target: { value: "Alice" } });
   expect(remove).toBeDisabled();
-  fireEvent.change(within(confirm).getByRole("textbox"), { target: { value: "alice" } });
+  fireEvent.change(within(requestConfirm).getByRole("textbox"), { target: { value: "alice" } });
   expect(remove).toBeEnabled();
-  fireEvent.click(within(confirm).getByRole("button", { name: "取消" }));
+  fireEvent.click(within(requestConfirm).getByRole("button", { name: "取消" }));
   expect(vi.mocked(apiPost).mock.calls.some(([path]) => path === "/user/delete")).toBe(false);
 });
 it("确认期间重取失败时拒绝旧授权写入", async () => {
   await show();
   await openPermissions();
   fireEvent.click(screen.getByRole("button", { name: /^重置流量$/ }));
-  const confirm = await screen.findByRole("alertdialog");
+  const requestConfirm = await screen.findByRole("alertdialog");
   await act(async () => {
     client.setQueryData(resourceKeys.user.tunnels(1), [permission]);
     await client.cancelQueries({ queryKey: resourceKeys.user.tunnels(1) });
@@ -286,7 +286,7 @@ it("确认期间重取失败时拒绝旧授权写入", async () => {
       .find({ queryKey: resourceKeys.user.tunnels(1) })
       ?.setState({ status: "error", error: new Error("重取失败") });
   });
-  fireEvent.click(within(confirm).getByRole("button", { name: "重置流量" }));
+  fireEvent.click(within(requestConfirm).getByRole("button", { name: "重置流量" }));
   await waitFor(() =>
     expect(screen.getByText("授权数据已变化，请等待刷新完成后重试")).toBeInTheDocument(),
   );
@@ -452,4 +452,24 @@ it("授权仅改配额保留重取后的精确到期时刻，主动改日期才�
     expect(writes).toHaveLength(2);
     expect(writes[1][1]).toMatchObject({ expTime: new Date("2031-02-03T23:59:59").getTime() });
   });
+});
+
+it("到期筛选包含0与负值，不把null误报过期，清除后日期不冒称未设置", async () => {
+  vi.mocked(apiPost).mockImplementation(async (path) =>
+    path === "/user/list"
+      ? [
+          { ...alice, id: 1, user: "zero", expTime: 0 },
+          { ...alice, id: 2, user: "negative", expTime: -1 },
+          { ...alice, id: 3, user: "unlimited", expTime: null },
+        ]
+      : [],
+  );
+  await show("/user?expiry=expired");
+  await screen.findByText("@zero");
+  expect(screen.getByText("@negative")).toBeInTheDocument();
+  expect(screen.queryByText("@unlimited")).toBeNull();
+  for (const name of ["zero", "negative"]) {
+    const row = screen.getByText(`@${name}`).closest("tr")!;
+    expect(within(row).getByText("已到期")).toBeInTheDocument();
+  }
 });

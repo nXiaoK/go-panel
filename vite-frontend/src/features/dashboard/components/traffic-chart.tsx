@@ -82,14 +82,14 @@ export function TrafficChart({
       data-testid="traffic-frame"
     >
       {state === "loading" ? (
-        <Skeleton className="h-[280px] w-full" aria-label="流量趋势加载中" />
+        <Skeleton className="h-70 w-full" aria-label="流量趋势加载中" />
       ) : state === "empty" ? (
         <EmptyState
           title="暂无流量记录"
           description={trafficTrendEmptyDescription(false, tunnelSelected)}
         />
       ) : view === "table" ? (
-        <Table aria-label="流量明细" containerClassName="max-h-[360px]">
+        <Table aria-label="流量明细" containerClassName="max-h-90">
           <TableHeader>
             <TableRow>
               <TableHead>时间</TableHead>
@@ -117,7 +117,7 @@ export function TrafficChart({
       <div
         ref={container}
         className={cn(
-          "relative h-[280px] w-full min-w-0",
+          "relative h-70 w-full min-w-0",
           (view !== "chart" || state !== "ready") && "hidden",
         )}
       >
