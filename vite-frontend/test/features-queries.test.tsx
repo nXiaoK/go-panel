@@ -1,3 +1,4 @@
+import { nodeLiveStore } from "../src/features/node/live-store";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { PropsWithChildren } from "react";
@@ -91,14 +92,36 @@ describe("资源查询与缓存行为", () => {
     });
     expect(apiPost).not.toHaveBeenCalled();
   });
-  it("原始节点缓存不能冒充含运行态的节点页缓存", async () => {
-    renderHook(() => useNodes(), { wrapper });
-    await waitFor(() => expect(client.getQueryData(nodeKeys.rawList())).toBeTruthy());
+  it("节点调用共享REST缓存，列表刷新不会覆盖实时指标或速率基准", async () => {
+    nodeLiveStore.clear();
+    nodeLiveStore.receive({
+      id: 1,
+      type: "info",
+      data: { uptime: 1, bytes_transmitted: 100, bytes_received: 200 },
+    });
+    const raw = renderHook(() => useNodes(), { wrapper });
     const runtime = renderHook(() => useNodes({ runtime: true }), { wrapper });
-    await waitFor(() => expect(runtime.result.current.data?.[0].connectionStatus).toBe("online"));
-    expect(runtime.result.current.data?.[0].systemInfo).toBeNull();
+    await waitFor(() => expect(runtime.result.current.data?.[0].status).toBe(1));
+    expect(runtime.result.current.data?.[0]).not.toHaveProperty("connectionStatus");
+    expect(runtime.result.current.data?.[0]).not.toHaveProperty("systemInfo");
+    expect(raw.result.current.data).toBe(runtime.result.current.data);
+    expect(vi.mocked(apiPost).mock.calls.filter(([path]) => path === "/node/list")).toHaveLength(1);
+    const before = nodeLiveStore.getSnapshot();
+    await act(async () => {
+      await raw.result.current.refetch();
+    });
+    expect(nodeLiveStore.getSnapshot()).toBe(before);
     expect(client.getQueryData(nodeKeys.rawList())).toEqual([{ id: 1, name: "节点", status: 1 }]);
-    expect(vi.mocked(apiPost).mock.calls.filter(([path]) => path === "/node/list")).toHaveLength(2);
+    nodeLiveStore.receive({
+      id: 1,
+      type: "info",
+      data: { uptime: 3, bytes_transmitted: 300, bytes_received: 600 },
+    });
+    expect(nodeLiveStore.getSnapshot().get(1)?.info).toMatchObject({
+      uploadSpeed: 100,
+      downloadSpeed: 200,
+    });
+    nodeLiveStore.clear();
   });
   it("限速变更成功使用户授权与账户套餐缓存同步失效", async () => {
     const userKey = resourceKeys.user.tunnels(7);

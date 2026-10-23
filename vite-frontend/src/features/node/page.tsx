@@ -38,8 +38,7 @@ import { errorMessage } from "@/lib/api/client";
 import { formatBytes, formatDateTime, formatDuration, formatRate } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { invalidateFor, resourceKeys as queries } from "@/lib/query-keys";
-import { reconnectDelay } from "@/lib/reconnect";
-import type { Node, NodeStatusCheck, NodeSystemInfo, NodeWrite } from "@/lib/types";
+import type { Node, NodeStatusCheck, NodeWrite } from "@/lib/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -61,8 +60,9 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { buildSystemInfoURL } from "./model";
+import { useCallback, useMemo, useState } from "react";
+import { useNodeLives } from "./use-node-live";
+import { useNodeSocket } from "./use-node-socket";
 import { useNodeMutation, useNodes } from "./queries";
 
 interface NodeForm {
@@ -92,16 +92,6 @@ const emptyForm = (): NodeForm => ({
 });
 
 /* ============ helpers ============ */
-
-function numeric(obj: Record<string, unknown>, ...keys: string[]): number {
-  for (const k of keys) {
-    const v = obj?.[k];
-    if (v === undefined || v === null || v === "") continue;
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
-  }
-  return 0;
-}
 
 // 简单地址校验：IPv4 / IPv6 / 域名 / localhost
 const IPV4 =
@@ -142,10 +132,6 @@ export function NodePage() {
   const [diagResult, setDiagResult] = useState<NodeStatusCheck | null>(null);
   const [diagNode, setDiagNode] = useState<Node | null>(null);
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectAttempts = useRef(0);
-
   const { isAdmin } = useSession();
 
   const { autoRefresh: autoRefreshEnabled } = usePreferences();
@@ -155,7 +141,18 @@ export function NodePage() {
     runtime: true,
     refetchInterval: autoRefreshEnabled ? 30_000 : false,
   });
-  const nodes = useMemo(() => nodesQuery.data ?? [], [nodesQuery.data]);
+  const live = useNodeLives();
+  useNodeSocket();
+  const nodes = useMemo(
+    () =>
+      (nodesQuery.data ?? []).map((node) => ({
+        ...node,
+        connectionStatus:
+          live.get(node.id)?.connection ?? (node.status === 1 ? "online" : "offline"),
+        systemInfo: live.get(node.id)?.info ?? null,
+      })),
+    [nodesQuery.data, live],
+  );
   const loading = nodesQuery.isPending;
 
   const refresh = useCallback(() => {
@@ -179,145 +176,6 @@ export function NodePage() {
     },
     onError: (error: Error) => notify.error(error.message || "删除失败"),
   });
-
-  /* ---- ws ---- */
-  const closeWs = useCallback(() => {
-    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-    reconnectTimer.current = null;
-    reconnectAttempts.current = 0;
-    if (wsRef.current) {
-      wsRef.current.onopen = null;
-      wsRef.current.onmessage = null;
-      wsRef.current.onerror = null;
-      wsRef.current.onclose = null;
-      try {
-        wsRef.current.close();
-      } catch {
-        /* best-effort */
-      }
-      wsRef.current = null;
-    }
-  }, []);
-
-  const handleMessage = useCallback(
-    (data: { id?: number; type?: string; data?: unknown }) => {
-      const { id, type, data: payload } = data || {};
-      if (!id) return;
-      const patchNodes = (fn: (n: Node) => Node) =>
-        queryClient.setQueryData<Node[]>(queries.node.runtimeList(), (prev) =>
-          (prev ?? []).map(fn),
-        );
-      if (type === "status") {
-        if (payload === 1) {
-          window.setTimeout(refresh, 800);
-        }
-        patchNodes((n) =>
-          n.id == id
-            ? {
-                ...n,
-                connectionStatus: payload === 1 ? "online" : "offline",
-                systemInfo: payload === 0 ? null : n.systemInfo,
-              }
-            : n,
-        );
-      } else if (type === "info") {
-        patchNodes((n) => {
-          if (n.id != id) return n;
-          const info = typeof payload === "string" ? safeParse(payload) : payload;
-          if (!info || typeof info !== "object") return n;
-          const metrics = info as Record<string, unknown>;
-          const upload = numeric(metrics, "bytes_transmitted", "bytesTransmitted");
-          const download = numeric(metrics, "bytes_received", "bytesReceived");
-          const uptime = numeric(metrics, "uptime");
-          let uploadSpeed = 0;
-          let downloadSpeed = 0;
-          if (n.systemInfo?.uptime) {
-            const td = uptime - n.systemInfo.uptime;
-            if (td > 0 && td <= 10) {
-              const uDiff = upload - n.systemInfo.uploadTraffic;
-              const dDiff = download - n.systemInfo.downloadTraffic;
-              if (uDiff >= 0 && upload >= n.systemInfo.uploadTraffic) uploadSpeed = uDiff / td;
-              if (dDiff >= 0 && download >= n.systemInfo.downloadTraffic)
-                downloadSpeed = dDiff / td;
-            }
-          }
-          const next: NodeSystemInfo = {
-            cpuUsage: numeric(metrics, "cpu_usage", "cpuUsage"),
-            memoryUsage: numeric(metrics, "memory_usage", "memoryUsage"),
-            uploadTraffic: upload,
-            downloadTraffic: download,
-            uploadSpeed,
-            downloadSpeed,
-            uptime,
-          };
-          return { ...n, connectionStatus: "online", systemInfo: next };
-        });
-      }
-    },
-    [queryClient, refresh],
-  );
-
-  const initWs = useCallback(() => {
-    if (typeof window === "undefined") return;
-    if (
-      wsRef.current &&
-      (wsRef.current.readyState === WebSocket.OPEN ||
-        wsRef.current.readyState === WebSocket.CONNECTING)
-    )
-      return;
-    let url: string;
-    try {
-      url = buildSystemInfoURL();
-    } catch {
-      return;
-    }
-    const token = window.localStorage.getItem("token") || "";
-    try {
-      wsRef.current = new WebSocket(url, token ? [`jwt.${token}`] : undefined);
-      wsRef.current.onopen = () => {
-        reconnectAttempts.current = 0;
-      };
-      wsRef.current.onmessage = (ev) => {
-        try {
-          handleMessage(JSON.parse(ev.data));
-        } catch {
-          /* best-effort */
-        }
-      };
-      wsRef.current.onerror = () => {};
-      wsRef.current.onclose = () => {
-        wsRef.current = null;
-        // 无限重连：1s 起指数退避、±20% 抖动、30s 封顶，与节点 agent 策略一致。
-        // 组件卸载或退出登录时由 closeWs 清理定时器终止循环。
-        if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-        reconnectTimer.current = setTimeout(initWs, reconnectDelay(reconnectAttempts.current));
-        reconnectAttempts.current++;
-      };
-    } catch {
-      /* best-effort */
-    }
-  }, [handleMessage]);
-
-  useEffect(() => {
-    initWs();
-    // 网络恢复或页面重新可见时立即重连，不等退避计时走完。
-    const retryNow = () => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      if (reconnectTimer.current) {
-        clearTimeout(reconnectTimer.current);
-        reconnectTimer.current = null;
-      }
-      reconnectAttempts.current = 0;
-      initWs();
-    };
-    window.addEventListener("online", retryNow);
-    document.addEventListener("visibilitychange", retryNow);
-    return () => {
-      window.removeEventListener("online", retryNow);
-      document.removeEventListener("visibilitychange", retryNow);
-      closeWs();
-    };
-  }, [initWs, closeWs]);
 
   /* ---- stats ---- */
   const stats = useMemo(() => {
@@ -1132,12 +990,4 @@ function DiagResult({ data }: { data: NodeStatusCheck | null }) {
       {data.message && <p className="text-xs text-muted-foreground">{data.message}</p>}
     </div>
   );
-}
-
-function safeParse(s: string) {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
 }

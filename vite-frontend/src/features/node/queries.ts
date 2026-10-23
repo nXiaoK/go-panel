@@ -1,6 +1,5 @@
 import { getNodeList } from "@/lib/api";
 import { resourceKeys, useBusinessEnabled } from "@/lib/query-keys";
-import type { NodeSystemInfo } from "@/lib/types";
 import { useQuery } from "@tanstack/react-query";
 export const nodeKeys = resourceKeys.node;
 
@@ -9,17 +8,9 @@ export function useNodes(
 ) {
   const enabled = useBusinessEnabled(true);
   return useQuery({
-    queryKey: options.runtime ? nodeKeys.runtimeList() : nodeKeys.rawList(),
-    queryFn: async ({ signal }) => {
-      const rows = await getNodeList({ signal });
-      return options.runtime
-        ? rows.map((node) => ({
-            ...node,
-            connectionStatus: (node.status === 1 ? "online" : "offline") as "online" | "offline",
-            systemInfo: null as NodeSystemInfo | null,
-          }))
-        : rows;
-    },
+    // runtime 仅兼容旧调用参数，REST 查询统一复用原始资源缓存；实时指标由 live-store 独立维护。
+    queryKey: nodeKeys.rawList(),
+    queryFn: ({ signal }) => getNodeList({ signal }),
     enabled: enabled && options.enabled !== false,
     refetchInterval: options.refetchInterval,
   });
