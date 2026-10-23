@@ -228,3 +228,45 @@ export function getTrafficTrendState(
   if (hasUsage) return "ready";
   return isLoading ? "loading" : "empty";
 }
+
+export function trafficChartGeometry(data: TrafficPoint[], width: number, height: number) {
+  const left = 64,
+    right = 20,
+    top = 16,
+    bottom = 36;
+  const plotWidth = Math.max(1, width - left - right);
+  const plotHeight = Math.max(1, height - top - bottom);
+  const highest = Math.max(0, ...data.flatMap((point) => [point.down, point.up]));
+  const rawStep = (highest || 1) / 4;
+  const power = 10 ** Math.floor(Math.log10(rawStep));
+  const step = ([1, 2, 2.5, 5, 10].find((value) => value * power >= rawStep) ?? 10) * power;
+  const maximum = step * 4;
+  const x = (index: number) => left + (data.length < 2 ? 0 : index / (data.length - 1)) * plotWidth;
+  const y = (value: number) => top + plotHeight - (nonNegativeNumber(value) / maximum) * plotHeight;
+  const path = (key: "down" | "up") =>
+    data
+      .map(
+        (point, index) => `${index ? "L" : "M"} ${x(index).toFixed(2)} ${y(point[key]).toFixed(2)}`,
+      )
+      .join(" ");
+  const area = (key: "down" | "up") =>
+    data.length
+      ? `${path(key)} L ${x(data.length - 1).toFixed(2)} ${(top + plotHeight).toFixed(2)} L ${left.toFixed(2)} ${(top + plotHeight).toFixed(2)} Z`
+      : "";
+  const labelCount = Math.min(5, data.length);
+  const labelIndexes = Array.from({ length: labelCount }, (_, index) =>
+    Math.round((index * (data.length - 1)) / Math.max(1, labelCount - 1)),
+  );
+  return {
+    left,
+    top,
+    plotWidth,
+    plotHeight,
+    x,
+    y,
+    path,
+    area,
+    labelIndexes,
+    ticks: Array.from({ length: 5 }, (_, index) => index * step),
+  };
+}
