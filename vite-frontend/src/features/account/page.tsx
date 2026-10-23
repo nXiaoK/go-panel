@@ -1,219 +1,309 @@
-import { PageHeader, QueryErrorNotice } from "@/components/page";
+import { ErrorState, LoadingRows } from "@/components/patterns/feedback";
+import { FormField } from "@/components/patterns/form-field";
+import { Meter } from "@/components/patterns/meter";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
 import { useSession } from "@/hooks/use-session";
 import { updatePassword } from "@/lib/api";
 import { roleLabel } from "@/lib/capabilities";
-import { formatBytes } from "@/lib/format";
-import { notify } from "@/lib/notify";
+import { formatBytes, formatDate, formatDateTime } from "@/lib/format";
 import { clearSession } from "@/lib/session";
-import type { PasswordUpdate, UserPackage } from "@/lib/types";
+import type { PasswordUpdate } from "@/lib/types";
 import { Route } from "@/routes/_app.account";
 import { useNavigate } from "@tanstack/react-router";
-import { KeyRound, LogOut, ShieldCheck, UserCircle2 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useAccountMutation, useAccountPackage } from "./queries";
+import { useMutation } from "@tanstack/react-query";
+import { AlertTriangle, Eye, EyeOff, LogOut } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useAccountPackage } from "./queries";
 
-type PackageSummary = { flow: number; num: number; used: number };
-
-function normalizePackageInfo(data: UserPackage | null): PackageSummary | null {
-  if (!data) return null;
-  const { flow, num, inFlow = 0, outFlow = 0 } = data.userInfo;
-  return { flow, num, used: (inFlow + outFlow) / 1024 ** 3 };
+type Field = keyof PasswordUpdate;
+type Errors = Partial<Record<Field, string>>;
+const utf8Bytes = (value: string) => new TextEncoder().encode(value).length;
+function strength(value: string) {
+  if (!value) return "尚未输入";
+  const groups = [/[a-z]/, /[A-Z]/, /\d/, /[^a-zA-Z\d]/].filter((pattern) =>
+    pattern.test(value),
+  ).length;
+  return value.length >= 12 && groups >= 3 ? "强" : value.length >= 8 && groups >= 2 ? "中" : "弱";
+}
+function PasswordField({
+  label,
+  id,
+  value,
+  onChange,
+  error,
+  hint,
+  autoComplete,
+  disabled,
+}: {
+  label: string;
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  error?: string;
+  hint?: string;
+  autoComplete: string;
+  disabled: boolean;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <FormField label={label} htmlFor={id} required error={error} hint={hint}>
+      {(control) => (
+        <div className="relative">
+          <Input
+            {...control}
+            aria-label={label}
+            required
+            type={visible ? "text" : "password"}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            autoComplete={autoComplete}
+            disabled={disabled}
+            className="pr-12"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute right-0 top-0"
+            aria-label={`${visible ? "隐藏" : "显示"}${label}`}
+            aria-pressed={visible}
+            onClick={() => setVisible(!visible)}
+            disabled={disabled}
+          >
+            {visible ? <EyeOff /> : <Eye />}
+          </Button>
+        </div>
+      )}
+    </FormField>
+  );
 }
 
 export function ProfilePage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const { name: sessionName, roleId, isAdmin, mustChangePassword, token } = useSession();
-  const name = sessionName || "admin";
-  const forcePassword = mustChangePassword || search.forcePassword === 1;
-  const [newUsername, setNewUsername] = useState(name);
-  const [oldPwd, setOldPwd] = useState("");
-  const [newPwd, setNewPwd] = useState("");
-  const [confirmPwd, setConfirmPwd] = useState("");
-
+  const name = sessionName || "用户";
+  const forced = mustChangePassword || search.forcePassword === 1;
+  const [form, setForm] = useState<PasswordUpdate>({
+    newUsername: name,
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [errors, setErrors] = useState<Errors>({});
+  const [submitError, setSubmitError] = useState<unknown>();
+  const submitting = useRef(false);
   useEffect(() => {
-    setNewUsername(name);
+    setForm((previous) => ({ ...previous, newUsername: name }));
   }, [name]);
-
-  const packageQuery = useAccountPackage({ enabled: !forcePassword });
-  const pkg = forcePassword ? null : normalizePackageInfo(packageQuery.data ?? null);
-
-  const passwordMutation = useAccountMutation("account.password", {
+  const packageQuery = useAccountPackage({ enabled: !forced && !isAdmin && Boolean(token) });
+  const account = packageQuery.data?.userInfo;
+  // flow 是后端 GB 配额；0 表示已用尽，不能套用 Meter 的“非正上限=不限”默认行为。
+  const usedBytes = (account?.inFlow ?? 0) + (account?.outFlow ?? 0);
+  // 成功后立即退出，不在旧令牌失效时先触发套餐失效重取。
+  const passwordMutation = useMutation({
     mutationFn: (payload: PasswordUpdate) => updatePassword(payload),
     onSuccess: () => {
-      notify.success("密码已更新，请重新登录");
-      setOldPwd("");
-      setNewPwd("");
-      setConfirmPwd("");
+      setForm((previous) => ({
+        ...previous,
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      }));
       clearSession("password changed");
-      setTimeout(() => navigate({ to: "/login" }), 800);
+      void navigate({ to: "/login", search: { reason: "password-changed" }, replace: true });
     },
-    onError: (error: Error) => notify.error(error.message || "修改失败"),
+    onError: (error: Error) => {
+      if (error.message.includes("当前密码错误")) setErrors({ currentPassword: error.message });
+      else if (error.message.includes("用户名已被占用")) setErrors({ newUsername: error.message });
+      else if (error.message.includes("两次输入的密码不一致"))
+        setErrors({ confirmPassword: error.message });
+      else setSubmitError(error);
+    },
+    onSettled: () => {
+      submitting.current = false;
+    },
   });
-
-  const role = {
-    label: roleLabel(roleId),
-    tone: isAdmin ? "text-primary" : "text-muted-foreground",
-  };
-  const initials = name.slice(0, 2).toUpperCase();
-  const usedGB = pkg ? pkg.used : 0;
-  const totalGB = pkg ? pkg.flow : 0;
-  const pct = totalGB > 0 ? Math.min(100, Math.round((usedGB / totalGB) * 100)) : 0;
-
-  const submit = async () => {
-    if (!newUsername.trim()) return notify.error("请填写用户名");
-    if (!oldPwd || !newPwd) return notify.error("请填写原密码与新密码");
-    if (newPwd.length < 6) return notify.error("新密码至少 6 位");
-    if (newPwd !== confirmPwd) return notify.error("两次输入的新密码不一致");
-    passwordMutation.mutate({
-      newUsername: newUsername.trim(),
-      currentPassword: oldPwd,
-      newPassword: newPwd,
-      confirmPassword: confirmPwd,
-    });
-  };
-
-  const logout = () => {
+  function change(field: Field, value: string) {
+    setForm((previous) => ({ ...previous, [field]: value }));
+    setErrors((previous) => ({ ...previous, [field]: undefined }));
+    setSubmitError(undefined);
+  }
+  function submit() {
+    if (submitting.current) return;
+    const next: Errors = {};
+    if (!form.newUsername.trim()) next.newUsername = "请填写用户名";
+    if (!form.currentPassword) next.currentPassword = "请填写当前密码";
+    if (!form.newPassword) next.newPassword = "请填写新密码";
+    // 后端不限制最小长度或复杂度；bcrypt 只接受最多 72 个 UTF-8 字节，强度提示不拦截提交。
+    else if (utf8Bytes(form.newPassword) > 72) next.newPassword = "新密码不能超过 72 个 UTF-8 字节";
+    if (!form.confirmPassword) next.confirmPassword = "请再次输入新密码";
+    else if (form.newPassword !== form.confirmPassword)
+      next.confirmPassword = "两次输入的新密码不一致";
+    setErrors(next);
+    setSubmitError(undefined);
+    if (Object.keys(next).length) return;
+    submitting.current = true;
+    passwordMutation.mutate({ ...form, newUsername: form.newUsername.trim() });
+  }
+  function logout() {
     clearSession();
-    navigate({ to: "/login" });
-  };
-
+    void navigate({ to: "/login" });
+  }
   return (
-    <div className="space-y-6">
-      <PageHeader
-        icon={<UserCircle2 className="h-5 w-5" />}
-        title="个人资料"
-        description="账户信息、配额与密码管理"
-      />
-
-      {forcePassword ? (
+    <div className="min-w-0 space-y-6">
+      {forced && (
         <div
           role="alert"
-          className="rounded-md border border-warning/50 bg-warning/10 p-4 text-sm text-foreground"
+          className="flex items-start gap-3 rounded-md border border-status-warning/30 bg-status-warning-bg p-4 text-sm text-ink"
         >
-          为了账号安全，请先修改初始密码。修改完成前无法使用其他功能。
+          <AlertTriangle
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0 text-status-warning"
+          />
+          <span>为了账号安全，请先修改初始密码</span>
         </div>
-      ) : (
-        <QueryErrorNotice error={packageQuery.error} onRetry={() => void packageQuery.refetch()} />
       )}
-
-      <Card>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-4 sm:flex">
-            <Avatar className="h-16 w-16 border border-border">
-              <AvatarFallback className="bg-primary text-lg font-semibold text-primary-foreground">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="break-all text-lg font-semibold">{name}</div>
-                <Badge variant="outline" className={`text-xs ${role.tone}`}>
-                  <ShieldCheck className="mr-1 h-3 w-3" /> {role.label}
-                </Badge>
-              </div>
-              <div className="mt-1 font-mono text-xs text-muted-foreground">
-                role_id: {roleId ?? "-"}
+      {!forced && (
+        <Card>
+          <CardHeader>
+            <CardTitle>账号</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <Avatar className="size-12 shrink-0 border border-hairline">
+                <AvatarFallback className="bg-canvas-soft text-body-strong text-ink">
+                  {name.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="break-all text-body-strong text-ink">{name}</p>
+                <p className="text-caption text-mute">{roleLabel(roleId)}</p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="col-span-2 shrink-0 justify-self-end"
-              onClick={logout}
-            >
-              <LogOut className="h-4 w-4" /> 退出登录
-            </Button>
-          </div>
-
-          {pkg && (
-            <>
-              <Separator className="my-5" />
-              <div className="grid gap-4 md:grid-cols-3">
-                <div>
-                  <div className="text-xs text-muted-foreground">流量配额</div>
-                  <div className="mt-1 font-mono text-xl">
-                    {totalGB} <span className="text-sm text-muted-foreground">GB</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">已用流量</div>
-                  <div className="mt-1 font-mono text-xl">{formatBytes(usedGB * 1024 ** 3)}</div>
-                  <Progress
-                    value={pct}
-                    className={`mt-2 h-1.5 ${pct >= 90 ? "[&>div]:bg-destructive" : ""}`}
+            {!isAdmin && (
+              <section aria-label="账户配额" className="space-y-4 border-t border-hairline pt-5">
+                <h3 className="text-caption-strong text-body">流量配额</h3>
+                {packageQuery.isPending ? (
+                  <LoadingRows rows={2} />
+                ) : packageQuery.error ? (
+                  <ErrorState
+                    error={packageQuery.error}
+                    onRetry={() => void packageQuery.refetch()}
                   />
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">转发数量上限</div>
-                  <div className="mt-1 font-mono text-xl">{pkg.num}</div>
-                </div>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
+                ) : account ? (
+                  <>
+                    {account.flow > 0 ? (
+                      <Meter
+                        value={usedBytes}
+                        max={account.flow * 1024 ** 3}
+                        label="账户流量配额"
+                        formatValue={formatBytes}
+                      />
+                    ) : (
+                      <p className="text-sm text-status-critical-text">
+                        {formatBytes(usedBytes)} / 0 GB · 流量已用尽
+                      </p>
+                    )}
+                    <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <dt className="text-mute">转发上限</dt>
+                        <dd className="font-mono tabular text-ink">{account.num}</dd>
+                      </div>
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <dt className="text-mute">到期时间</dt>
+                        <dd
+                          className="font-mono tabular text-ink"
+                          title={formatDateTime(account.expTime)}
+                        >
+                          {account.expTime != null ? formatDate(account.expTime) : "未设置"}
+                        </dd>
+                      </div>
+                    </dl>
+                  </>
+                ) : (
+                  <p className="text-sm text-mute">暂无配额数据</p>
+                )}
+              </section>
+            )}
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <KeyRound className="h-4 w-4 text-primary" /> 修改密码
-          </CardTitle>
+          <CardTitle>修改登录信息</CardTitle>
           <CardDescription>修改后当前会话将失效，需要重新登录</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="profile-username">用户名</Label>
-            <Input
-              id="profile-username"
-              value={newUsername}
-              onChange={(e) => setNewUsername(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="profile-current-password">原密码</Label>
-            <Input
+        <CardContent>
+          <form
+            className="space-y-4"
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit();
+            }}
+          >
+            {submitError ? <ErrorState error={submitError} /> : null}
+            <FormField
+              label="用户名"
+              htmlFor="profile-username"
+              required
+              error={errors.newUsername}
+            >
+              <Input
+                aria-label="用户名"
+                required
+                value={form.newUsername}
+                autoComplete="username"
+                disabled={passwordMutation.isPending}
+                onChange={(event) => change("newUsername", event.target.value)}
+              />
+            </FormField>
+            <PasswordField
+              label="原密码"
               id="profile-current-password"
-              type="password"
-              value={oldPwd}
-              onChange={(e) => setOldPwd(e.target.value)}
+              value={form.currentPassword}
+              onChange={(value) => change("currentPassword", value)}
+              error={errors.currentPassword}
+              autoComplete="current-password"
+              disabled={passwordMutation.isPending}
             />
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="profile-new-password">新密码</Label>
-              <Input
-                id="profile-new-password"
-                type="password"
-                value={newPwd}
-                onChange={(e) => setNewPwd(e.target.value)}
-              />
+            <PasswordField
+              label="新密码"
+              id="profile-new-password"
+              value={form.newPassword}
+              onChange={(value) => change("newPassword", value)}
+              error={errors.newPassword}
+              hint={`强度：${strength(form.newPassword)}（仅供参考）；最多 72 个 UTF-8 字节`}
+              autoComplete="new-password"
+              disabled={passwordMutation.isPending}
+            />
+            <PasswordField
+              label="确认新密码"
+              id="profile-confirm-password"
+              value={form.confirmPassword}
+              onChange={(value) => change("confirmPassword", value)}
+              error={errors.confirmPassword}
+              autoComplete="new-password"
+              disabled={passwordMutation.isPending}
+            />
+            <div className="flex justify-end pt-2">
+              <Button type="submit" loading={passwordMutation.isPending}>
+                更新登录信息
+              </Button>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="profile-confirm-password">确认新密码</Label>
-              <Input
-                id="profile-confirm-password"
-                type="password"
-                value={confirmPwd}
-                onChange={(e) => setConfirmPwd(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button onClick={submit} disabled={passwordMutation.isPending}>
-              {passwordMutation.isPending ? "提交中…" : "更新密码"}
-            </Button>
-          </div>
+          </form>
         </CardContent>
       </Card>
+      {!forced && (
+        <Button type="button" variant="outline" onClick={logout}>
+          <LogOut />
+          退出登录
+        </Button>
+      )}
     </div>
   );
 }

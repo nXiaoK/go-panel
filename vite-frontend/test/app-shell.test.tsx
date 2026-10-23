@@ -343,3 +343,12 @@ describe("登录与兼容路由", () => {
     });
   });
 });
+
+it("改密原因在登录页展示重新登录提示", async () => {
+  vi.mocked(LoginRoute.useSearch).mockReturnValue({ reason: "password-changed" });
+  show(<LoginPage />);
+  expect(await screen.findByRole("status")).toHaveProperty(
+    "textContent",
+    "登录信息已更新，请重新登录",
+  );
+});
