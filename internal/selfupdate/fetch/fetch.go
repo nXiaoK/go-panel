@@ -52,6 +52,9 @@ type Client struct {
 // URL 返回实际请求的地址。上游只能是 https://github.com/...，配置了代理时加上代理前缀，
 // 规则与 subscription-assets/vless-server.sh 的 github_download_url 一致。
 func (c *Client) URL(upstream string) (string, error) {
+	if rewritten, ok := e2eRewrite(upstream); ok {
+		return rewritten, nil
+	}
 	parsed, err := url.Parse(upstream)
 	if err != nil || parsed.Scheme != "https" || !strings.EqualFold(parsed.Hostname(), "github.com") || parsed.User != nil || parsed.Port() != "" {
 		return "", fmt.Errorf("只允许从 https://github.com 下载更新，拒绝 %q", upstream)

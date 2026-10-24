@@ -702,3 +702,31 @@ func TestRunModeLeavesTrialOnceCommitted(t *testing.T) {
 		t.Fatalf("lastResult=%+v", info.LastResult)
 	}
 }
+
+func TestManualCheckBypassesCacheWithMinimumInterval(t *testing.T) {
+	f := newSoftFixture(t, softOptions{})
+	if response := CheckPanelUpdate(context.Background(), false); response.Code != 0 {
+		t.Fatalf("check=%#v", response)
+	}
+	f.tag = "v0.3.1"
+	latest := func(force bool) string {
+		response := CheckPanelUpdate(context.Background(), force)
+		status, ok := response.Data.(PanelUpdateStatus)
+		if response.Code != 0 || !ok {
+			t.Fatalf("check=%#v", response)
+		}
+		return status.LatestVersion
+	}
+	if got := latest(false); got != softTargetVersion {
+		t.Fatalf("periodic checks must use the cache, got %s", got)
+	}
+	if got := latest(true); got != softTargetVersion {
+		t.Fatalf("a manual check within 30 seconds must reuse the cache, got %s", got)
+	}
+	updateRuntime.Lock()
+	updateRuntime.status.CheckedAt = time.Now().Add(-time.Minute).UnixMilli()
+	updateRuntime.Unlock()
+	if got := latest(true); got != "v0.3.1" {
+		t.Fatalf("a manual check must refresh a cache older than 30 seconds, got %s", got)
+	}
+}

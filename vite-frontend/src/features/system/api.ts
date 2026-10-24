@@ -12,8 +12,12 @@ export const getSystemStatus = (opts?: RequestOptions): Promise<SystemStatus> =>
 export const getSystemVersion = (opts?: RequestOptions): Promise<BuildInfo> =>
   apiPost("/system/version", {}, opts);
 // 检查会访问 GitHub 并验签更新清单，后端最长约 20 秒；前端等待 25 秒，避免先于后端放弃。
-export const checkPanelUpdate = (opts?: RequestOptions): Promise<PanelUpdateStatus> =>
-  apiPost("/system/update/check", {}, { ...opts, timeoutMs: 25_000 });
+// force 只用于管理员手动点击“检查更新”：后端忽略缓存重新查询，30 秒内的重复点击仍返回缓存。
+export const checkPanelUpdate = (
+  opts?: RequestOptions,
+  force = false,
+): Promise<PanelUpdateStatus> =>
+  apiPost("/system/update/check", force ? { force: true } : {}, { ...opts, timeoutMs: 25_000 });
 // 只读取检查缓存、运行信息与作业进度，不访问网络；作业进行中由前端每 1.5 秒轮询。
 export const getPanelUpdateStatus = (opts?: RequestOptions): Promise<PanelUpdateStatus> =>
   apiPost("/system/update/status", {}, opts);
