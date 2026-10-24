@@ -15,7 +15,9 @@ import (
 // 列表为空时任何清单都无法通过验证，软更新保持关闭（失败关闭）。
 // 轮换：新旧公钥至少共存一个发布周期，期间 CI 用两把私钥双签；
 // 确认所有在用镜像都已内置新公钥后，才能删除旧公钥。
-var releaseKeys = []string{}
+var releaseKeys = []string{
+	"wY3VzTRDF3/3zp2dUoOV0mMWUSwl1gHP6vWG9kxlWbA=", // keyId 45eb9a00102b7b21，生成于 2026-10-24
+}
 
 // Default 返回内置的受信任公钥。
 func Default() manifest.KeyRing {
