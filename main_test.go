@@ -168,8 +168,12 @@ func TestUpdateRuntimeConfigFromConfig(t *testing.T) {
 		UpdateTriggerURL:    "http://updater:8080/v1/update",
 		UpdateTriggerToken:  "secret-token",
 		UpdateImageTag:      "latest",
+		UpdateStrategy:      "soft",
 	}
 	got := updateRuntimeConfigFromConfig(cfg)
+	if got.Strategy != "soft" {
+		t.Fatalf("update strategy=%q", got.Strategy)
+	}
 	if !got.Enabled || got.Repository != cfg.UpdateRepository || got.CheckInterval != cfg.UpdateCheckInterval {
 		t.Fatalf("update check runtime config=%#v", got)
 	}
@@ -484,5 +488,14 @@ func TestSchemaTooNewExitExplainsRecovery(t *testing.T) {
 	}
 	if _, handled := schemaTooNewExit(errors.New("other"), "/app/data/flux-panel.db", &out); handled {
 		t.Fatal("unrelated errors must keep the fatal startup path")
+	}
+}
+
+func TestInvalidUpdateStrategyRejectedBeforeRuntimeInitialization(t *testing.T) {
+	cfg := &config.Config{ListenAddr: "127.0.0.1:6365", UpdateStrategy: "watchtower"}
+	initialized := false
+	err := initializeRuntimeSecurity(cfg, strings.NewReader(strings.Repeat("x", 64)), func(string) { initialized = true })
+	if err == nil || !strings.Contains(err.Error(), "UPDATE_STRATEGY") || initialized {
+		t.Fatalf("err=%v initialized=%v", err, initialized)
 	}
 }

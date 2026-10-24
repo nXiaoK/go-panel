@@ -152,6 +152,14 @@ func runServe() int {
 	service.ConfigureR2BackupRuntime(r2BackupRuntimeConfigFromConfig(cfg))
 	restartRequested := make(chan struct{}, 1)
 	updateConfig := updateRuntimeConfigFromConfig(cfg)
+	// supervisor 通过环境变量告知运行方式与镜像内置版本；未被托管时软更新不可用，界面给出原因。
+	updateConfig.Child = child.FromEnv(os.Getenv)
+	if runtimeLayout, err := layout.Resolve(os.Getenv); err == nil {
+		updateConfig.Layout = runtimeLayout
+	} else {
+		log.Printf("解析软更新运行时目录失败，软更新不可用: %v", err)
+	}
+	updateConfig.KeyRing = trust.Default()
 	updateConfig.RequestRestart = func() {
 		select {
 		case restartRequested <- struct{}{}:
@@ -364,6 +372,9 @@ func initializeRuntimeSecurity(cfg *config.Config, random io.Reader, initJWT fun
 	if err := cfg.ValidateCSPMode(); err != nil {
 		return err
 	}
+	if err := cfg.ValidateUpdateStrategy(); err != nil {
+		return err
+	}
 	if err := cfg.ValidateJWTLifetime(); err != nil {
 		return err
 	}
@@ -414,6 +425,7 @@ func updateRuntimeConfigFromConfig(cfg *config.Config) service.UpdateRuntimeConf
 		TriggerURL:    cfg.UpdateTriggerURL,
 		TriggerToken:  cfg.UpdateTriggerToken,
 		ImageTag:      cfg.UpdateImageTag,
+		Strategy:      cfg.UpdateStrategy,
 	}
 }
 

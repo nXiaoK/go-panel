@@ -235,7 +235,8 @@ func R2BackupJob() {
 
 // UpdateCheckJob 刷新 GitHub Release 缓存；关闭检查或缓存仍有效时立即返回。
 func UpdateCheckJob() {
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	// 检查包含 Release 查询与签名清单下载，留出 30 秒给较慢的网络或下载代理。
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if _, err := service.RefreshPanelUpdate(ctx); err != nil {
 		log.Printf("GitHub 稳定版更新检查失败: %v", err)

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log"
@@ -325,16 +326,63 @@ func systemVersion(c *gin.Context) {
 }
 
 func systemUpdateCheck(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 12*time.Second)
+	// 检查包含 Release 查询与签名清单下载，给较慢的网络或下载代理留出 20 秒。
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
 	c.JSON(http.StatusOK, service.CheckPanelUpdate(ctx))
 }
 
+// systemUpdateStatus 不访问网络，供界面轮询软更新作业进度与切换结果。
+func systemUpdateStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, service.GetPanelUpdateStatus())
+}
+
 func systemUpdateApply(c *gin.Context) {
-	// 更新侧车触发前需要完成 GitHub 检查和一致性 SQLite 备份，单独给予有限窗口。
+	var req service.PanelUpdateApplyRequest
+	if !bindOptionalStrictJSON(c, &req) {
+		return
+	}
+	// 软更新只在此窗口内完成检查与作业创建，下载等耗时步骤在后台执行；侧车策略需完成检查与一致性备份。
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
 	defer cancel()
-	c.JSON(http.StatusOK, service.TriggerPanelUpdate(ctx))
+	c.JSON(http.StatusOK, service.ApplyPanelUpdate(ctx, currentUser(c).UserName, req))
+}
+
+func systemUpdateCancel(c *gin.Context) {
+	var req struct {
+		JobID string `json:"jobId"`
+	}
+	if !bindOptionalStrictJSON(c, &req) {
+		return
+	}
+	c.JSON(http.StatusOK, service.CancelPanelUpdate(req.JobID))
+}
+
+func systemUpdateRollback(c *gin.Context) {
+	var req struct {
+		Target string `json:"target"`
+	}
+	if !bindOptionalStrictJSON(c, &req) {
+		return
+	}
+	c.JSON(http.StatusOK, service.RequestPanelRollback(currentUser(c).UserName, req.Target))
+}
+
+// bindOptionalStrictJSON 严格解析可选的 JSON 对象请求体：空请求体视为 {}，未知字段与重复键返回参数错误。
+func bindOptionalStrictJSON(c *gin.Context, dst any) bool {
+	raw, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusOK, result.Err("参数错误"))
+		return false
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return true
+	}
+	if err := decodeStrictJSONObject(raw, dst); err != nil {
+		c.JSON(http.StatusOK, result.Err("参数错误"))
+		return false
+	}
+	return true
 }
 
 // ===== forward =====
