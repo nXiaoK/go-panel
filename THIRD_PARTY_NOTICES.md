@@ -12,12 +12,19 @@ go-panel 包含或引用多个第三方开源组件。各组件仍由其原作�
 
 完整许可证保存在 [`go-gost/LICENSE`](go-gost/LICENSE)。修改内容不代表上游项目对 go-panel 提供支持或背书。
 
-## Watchtower
+## Watchtower（nickfedor/watchtower）
 
-- 上游项目：<https://github.com/containrrr/watchtower>
+- 上游项目：<https://github.com/nicholas-fedor/watchtower>（社区维护的分支，原项目 <https://github.com/containrrr/watchtower> 已归档）
 - 用途：仅在用户显式启用 `compose.update.yml` 时，作为独立容器拉取并替换 go-panel 镜像。
 - 分发方式：go-panel 不复制 Watchtower 源码或二进制；Docker 按用户指令从其独立镜像仓库拉取。
 - 许可证：Apache License 2.0（另含其上游声明的 BSD 组件）
+
+## tini
+
+- 上游项目：<https://github.com/krallin/tini>
+- 用途：作为官方镜像的 PID 1，回收孤儿进程并把停止信号转发给面板的 supervisor。
+- 分发方式：镜像构建时从 Alpine Linux 官方软件源安装 `tini` 包（`/sbin/tini`），未经修改。
+- 许可证：MIT，Copyright (c) 2015 Thomas Orozco
 
 ## Go 与 npm 依赖
 
