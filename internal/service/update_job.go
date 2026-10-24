@@ -367,6 +367,9 @@ func executeSoftUpdate(ctx context.Context, job *updateJob, config UpdateRuntime
 		return errors.New("当前进程不支持自重启，无法切换版本")
 	}
 	readyTimeout := preflight.ReadyTimeoutFor(migration.Duration())
+	if override, ok := e2eReadyTimeout(); ok {
+		readyTimeout = override
+	}
 	pending := state.Pending{
 		RequestID:       uuid.NewString(),
 		Action:          state.ActionUpgrade,

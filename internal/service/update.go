@@ -209,6 +209,9 @@ func normalizeUpdateRuntimeConfig(config UpdateRuntimeConfig) UpdateRuntimeConfi
 	}
 	config.ReleaseAPIBaseURL = strings.TrimRight(strings.TrimSpace(config.ReleaseAPIBaseURL), "/")
 	if config.ReleaseAPIBaseURL == "" {
+		config.ReleaseAPIBaseURL = e2eReleaseAPIBase()
+	}
+	if config.ReleaseAPIBaseURL == "" {
 		config.ReleaseAPIBaseURL = defaultGitHubAPIBase
 	}
 	if config.HTTPClient == nil {

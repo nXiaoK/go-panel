@@ -123,6 +123,7 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 func runServe() int {
 	// 必须早于打开数据库等任何文件：只接管 supervisor 真正传入的就绪管道。
 	ready := child.ClaimReadyPipe()
+	applyE2EBehavior()
 
 	cfg := config.Load()
 	if err := initializeRuntimeSecurity(cfg, cryptorand.Reader, func(secret string) {
@@ -265,6 +266,7 @@ func runSupervise(stdout, stderr io.Writer) int {
 		KeyRing:    trust.Default(),
 		Repository: valueOr(strings.TrimSpace(os.Getenv("UPDATE_REPOSITORY")), buildinfo.Repository),
 		UseBuiltin: useBuiltin,
+		Timeouts:   e2eSupervisorTimeouts(),
 		Stdout:     stdout,
 		Stderr:     stderr,
 	})
