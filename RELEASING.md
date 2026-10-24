@@ -56,6 +56,7 @@ gh secret set GO_PANEL_RELEASE_SIGNING_KEY --env release < ~/go-panel-release.ke
 - [ ] **MinUpgradeFrom**：只有要求用户先经过某个中间版本时，才提高 `internal/buildinfo.MinUpgradeFrom`。
 - [ ] **supervisor 修复**：修改了 `internal/selfupdate/supervisor` 或 `protocol` 时，在 Release Notes 中写明“需要更新镜像才能生效”。supervisor 只随镜像更新。
 - [ ] 本地执行 `bash scripts/verify.sh` 通过。
+- [ ] 修改了软更新、supervisor 或镜像入口时，本地执行容器端到端测试（见下文）。
 
 ### 打标签
 
@@ -77,6 +78,24 @@ cd -  # 回到仓库目录
 go run ./tools/releasetool verify --manifest /tmp/go-panel-verify/update-manifest.json \
   --sig /tmp/go-panel-verify/update-manifest.json.sig --release-dir /tmp/go-panel-verify
 ```
+
+## 本地容器端到端测试
+
+`scripts/e2e-soft-update.sh` 在本机 Docker 中用真实镜像、supervisor 与管理 API 验证六个场景：
+
+1. 软更新到新版本、通过试运行后正式启用，节点程序随之切换；
+2. 重建容器后保留软更新版本，`PANEL_USE_BUILTIN` 应急开关生效；
+3. 启动即失败的版本自动回滚并被隔离；
+4. 永不就绪的版本在就绪超时后回滚；
+5. 在面板中回滚到上一版本；
+6. 改用更新的镜像后，以镜像为准并清理软更新版本。
+
+```bash
+docker build -t go-panel:soft-update-test .            # 可选：复用已构建的镜像
+E2E_BASE_IMAGE=go-panel:soft-update-test bash scripts/e2e-soft-update.sh
+```
+
+测试版本用 `selfupdate_e2e` 构建标签编译：信任一把只存在于临时目录的测试公钥，并从容器网络内的假 Release 服务器下载；脚本结束时清理全部容器、数据卷与镜像。正式构建不得使用该标签，CI 会检查构建脚本。
 
 ## 在 fork 中演练
 

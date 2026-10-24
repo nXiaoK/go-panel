@@ -24,7 +24,7 @@ Go 后端内嵌 React 界面，使用 SQLite 保存数据。通过一个 Docker 
 | 状态同步 | 节点离线或响应丢失时保留期望配置，重连后自动对账，使节点规则与面板配置保持一致 |
 | 用户与配额 | 区分管理员和普通用户，管理隧道授权、流量配额、到期时间、转发数量与限速策略 |
 | 客户端订阅 | 管理协议节点和订阅链接，提供 Surge、Clash、v2rayN、sing-box 格式；可用协议以各客户端支持范围为准 |
-| 备份与更新 | 下载、恢复 SQLite 一致性备份，配置 Cloudflare R2 定时备份，检查版本并可选启用容器一键更新 |
+| 备份与更新 | 下载、恢复 SQLite 一致性备份，配置 Cloudflare R2 定时备份；在界面中软更新到经签名校验的新版本，失败自动回滚 |
 
 面板负责配置与状态管理，转发流量由你部署的节点处理。典型路径如下：
 
@@ -113,7 +113,9 @@ docker compose logs -f panel
 
 ## 升级与备份
 
-先在“系统配置”下载数据库备份，阅读 [Release Notes](https://github.com/nXiaoK/go-panel/releases)，再更新容器：
+发现新版本时，管理员可在“系统配置 → 版本与更新”中直接**软更新**：面板下载经签名校验的新版本并在数据卷中切换，无需重建容器，也不挂载 Docker Socket；新版本试运行失败会自动回滚。原理、前提与回滚方式见 [软更新说明](OPERATIONS.md#软更新)。从 v0.1.0 升级时需要先按下面的方式手动更新一次镜像。
+
+手动升级时，先在“系统配置”下载数据库备份，阅读 [Release Notes](https://github.com/nXiaoK/go-panel/releases)，再更新容器：
 
 ```bash
 docker compose pull
@@ -122,7 +124,7 @@ docker compose up -d
 
 默认 `GO_PANEL_VERSION=latest` 跟随稳定版；正式部署可改为 Releases 中已发布的完整版本标签，便于控制升级和回滚。`edge` 跟随 `main` 的开发构建。回滚涉及数据库结构变化时，需要配套恢复升级前的备份。
 
-面板提供 SQLite 一致性快照与 R2 定时备份。不要直接复制运行中的 `flux-panel.db`，因为 WAL 中的数据可能尚未合并。更多内容见 [备份说明](OPERATIONS.md#数据备份) 与 [升级、回滚和一键更新](OPERATIONS.md#升级与回滚)。
+面板提供 SQLite 一致性快照与 R2 定时备份。不要直接复制运行中的 `flux-panel.db`，因为 WAL 中的数据可能尚未合并。更多内容见 [备份说明](OPERATIONS.md#数据备份)、[软更新](OPERATIONS.md#软更新) 与 [升级、回滚和更新侧车](OPERATIONS.md#升级与回滚)。
 
 ## 本地开发
 
