@@ -1,30 +1,44 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { checkPanelUpdate, getConfigs, getSystemStatus, getSystemVersion } from "@/lib/api";
+import {
+  checkPanelUpdate,
+  getConfigs,
+  getPanelUpdateStatus,
+  getSystemStatus,
+  getSystemVersion,
+} from "@/lib/api";
 import { configureSessionForTest } from "@/lib/session";
 import { ApiError } from "@/lib/api/client";
 import type { BuildInfo, PanelUpdateStatus } from "@/lib/types";
 import { PanelStatusProvider } from "@/features/system/panel-status";
+import { panelUpdateStore } from "@/features/system/update-store";
 import { AppSidebar } from "./app-sidebar";
 
 vi.mock("@/lib/api", () => ({
+  applyPanelUpdate: vi.fn(),
+  cancelPanelUpdate: vi.fn(),
   checkPanelUpdate: vi.fn(),
   getConfigs: vi.fn(),
+  getPanelUpdateStatus: vi.fn(),
   getSystemStatus: vi.fn(),
   getSystemVersion: vi.fn(),
+  rollbackPanel: vi.fn(),
 }));
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
   useRouterState: () => "/",
   useNavigate: () => vi.fn(),
 }));
+// 移动端侧栏是默认关闭的抽屉，Sidebar 不渲染子元素；用开关模拟该状态。
+const sidebarState = vi.hoisted(() => ({ mobileClosed: false }));
 vi.mock("@/components/ui/sidebar", () => {
   const Container = ({ children }: { children: ReactNode }) => <div>{children}</div>;
   return {
-    Sidebar: Container,
+    Sidebar: ({ children }: { children: ReactNode }) =>
+      sidebarState.mobileClosed ? null : <div>{children}</div>,
     SidebarContent: Container,
     SidebarFooter: Container,
     SidebarGroup: Container,
@@ -35,7 +49,11 @@ vi.mock("@/components/ui/sidebar", () => {
     SidebarMenu: Container,
     SidebarMenuButton: Container,
     SidebarMenuItem: Container,
-    useSidebar: () => ({ state: "expanded", isMobile: false, setOpenMobile: vi.fn() }),
+    useSidebar: () => ({
+      state: "expanded",
+      isMobile: sidebarState.mobileClosed,
+      setOpenMobile: vi.fn(),
+    }),
   };
 });
 vi.mock("@/features/system/components/system-update-dialog", () => ({
@@ -54,6 +72,14 @@ const update: PanelUpdateStatus = {
   latestVersion: "v1.2.4",
   updateAvailable: true,
   autoUpdateConfigured: false,
+  strategy: "manual",
+  softUpdate: { available: false, reason: "not_supervised" },
+  runtime: {
+    mode: "unsupervised",
+    imageTag: "latest",
+    rollback: { available: false },
+    builtinRestore: { available: false },
+  },
 };
 
 let client: QueryClient;
@@ -61,6 +87,7 @@ beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.useFakeTimers();
   window.localStorage.clear();
+  panelUpdateStore.reset();
   configureSessionForTest({ storage: window.localStorage, navigate: vi.fn() });
   vi.mocked(getConfigs).mockResolvedValue({ app_name: "任务面板" });
   vi.mocked(getSystemStatus).mockResolvedValue({
@@ -69,10 +96,13 @@ beforeEach(() => {
   });
   vi.mocked(getSystemVersion).mockResolvedValue(build);
   vi.mocked(checkPanelUpdate).mockResolvedValue(update);
+  vi.mocked(getPanelUpdateStatus).mockResolvedValue(update);
 });
 afterEach(() => {
   cleanup();
   client.clear();
+  panelUpdateStore.reset();
+  sidebarState.mobileClosed = false;
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.clearAllMocks();
@@ -116,10 +146,77 @@ describe("sidebar version and process status", () => {
     expect(checkPanelUpdate).toHaveBeenCalledOnce();
     expect(screen.getByText("v1.2.3")).toBeTruthy();
     expect(screen.getByText("管理员升级提示")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "可更新，打开面板升级" }).textContent).toContain(
+      "可更新",
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30 * 60_000);
     });
     expect(checkPanelUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not reopen a dismissed release but keeps the badge", async () => {
+    window.localStorage.setItem("dismissed_update_version", "v1.2.4");
+    await showSidebar(0);
+    expect(screen.queryByText("管理员升级提示")).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "可更新，打开面板升级" }));
+    });
+    expect(screen.getByText("管理员升级提示")).toBeTruthy();
+  });
+
+  it("移动端侧栏抽屉关闭时仍会检查更新并弹出更新弹窗", async () => {
+    sidebarState.mobileClosed = true;
+    await showSidebar(0);
+    expect(checkPanelUpdate).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "可更新，打开面板升级" })).toBeNull();
+    expect(screen.getByText("管理员升级提示")).toBeTruthy();
+  });
+
+  it("作业进行中时徽标显示“更新中”，结束后恢复原提示", async () => {
+    const running: PanelUpdateStatus = {
+      ...update,
+      strategy: "soft",
+      softUpdate: { available: false, reason: "job_running" },
+      runtime: { ...update.runtime, mode: "builtin" },
+      job: {
+        id: "job-1",
+        targetVersion: "v1.2.4",
+        stage: "downloading",
+        startedAt: 1,
+        updatedAt: 2,
+        bytesDone: 1,
+        bytesTotal: 10,
+      },
+    };
+    window.localStorage.setItem("dismissed_update_version", "v1.2.4");
+    vi.mocked(checkPanelUpdate).mockResolvedValue(running);
+    vi.mocked(getPanelUpdateStatus).mockResolvedValue(running);
+    await showSidebar(0);
+    const badge = screen.getByRole("button", { name: "更新中，查看面板更新进度" });
+    expect(badge.textContent).toContain("更新中");
+    expect(screen.queryByText("可更新")).toBeNull();
+    // 作业进行中每 1.5 秒读取一次状态，不访问 GitHub 检查接口。
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    expect(getPanelUpdateStatus).toHaveBeenCalledOnce();
+    expect(checkPanelUpdate).toHaveBeenCalledOnce();
+    vi.mocked(getPanelUpdateStatus).mockResolvedValue({
+      ...running,
+      job: { ...running.job!, stage: "canceled" },
+      softUpdate: { available: true },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    expect(screen.getByRole("button", { name: "可更新，打开面板升级" }).textContent).toContain(
+      "可更新",
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "可更新，打开面板升级" }));
+    });
+    expect(screen.getByText("管理员升级提示")).toBeTruthy();
   });
 
   it.each([0, 1])(

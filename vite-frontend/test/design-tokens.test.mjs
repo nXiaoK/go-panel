@@ -275,6 +275,11 @@ for (const [theme, tokens] of Object.entries(themes)) {
     }
     assert.ok(contrast(tokens, "primary", "surface-selected") >= 3);
   });
+  // 面板更新下载进度条：填充 status-good 与轨道 hairline-subtle、所在画布 canvas 均需 ≥ 3:1。
+  test(`${theme} 更新进度条填充与轨道、画布满足图形对比度`, () => {
+    for (const background of ["hairline-subtle", "canvas"])
+      assert.ok(contrast(tokens, "status-good", background) >= 3, `status-good/${background}`);
+  });
 }
 
 test("字体只声明本地 latin 文件，主题无需内联脚本", async () => {

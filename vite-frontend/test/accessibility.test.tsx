@@ -16,8 +16,12 @@ import { LimitPage } from "../src/features/limit/page";
 import { NodePage } from "../src/features/node/page";
 import { TunnelPage } from "../src/features/tunnel/page";
 import { ForwardPage } from "../src/features/forward/page";
+import { SystemUpdateDialog } from "../src/features/system/components/system-update-dialog";
+import { UpdatePanel } from "../src/features/system/components/update-panel";
+import { panelUpdateStore } from "../src/features/system/update-store";
 import { Route as TunnelRoute } from "../src/routes/_app.tunnel";
 import { apiPost } from "../src/lib/api/client";
+import type { PanelUpdateStatus } from "../src/lib/types";
 vi.mock("../src/lib/api/client", async (original) => ({
   ...(await original<typeof import("../src/lib/api/client")>()),
   apiPost: vi.fn(),
@@ -27,6 +31,22 @@ vi.mock("@tanstack/react-router", async (original) => ({
   useNavigate: () => vi.fn(),
   useSearch: () => ({}),
 }));
+const updateStatus: PanelUpdateStatus = {
+  current: { version: "v0.2.0", commit: "abcdef0", buildTime: "", sourceUrl: "" },
+  enabled: true,
+  latestVersion: "v0.3.0",
+  updateAvailable: true,
+  autoUpdateConfigured: true,
+  strategy: "soft",
+  softUpdate: { available: true, downloadBytes: 43_918_511 },
+  runtime: {
+    mode: "builtin",
+    builtinVersion: "v0.2.0",
+    imageTag: "latest",
+    rollback: { available: false },
+    builtinRestore: { available: false },
+  },
+};
 let client: QueryClient;
 function show(Page: React.ComponentType) {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -81,6 +101,7 @@ beforeEach(() => {
         },
       ];
     if (path === "/speed-limit/list") return [{ id: 4, name: "测试限速", tunnelId: 2, speed: 100 }];
+    if (path === "/system/update/status") return updateStatus;
     if (path === "/user/list")
       return [
         {
@@ -100,6 +121,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   client?.clear();
+  panelUpdateStore.reset();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   localStorage.clear();
@@ -145,5 +167,49 @@ describe("真实页面的无障碍契约", () => {
       </FormField>,
     );
     expect(screen.getByLabelText("节点名称")).toBeTruthy();
+  });
+  it("版本与更新分区的操作都有名称，不可用原因与按钮关联", async () => {
+    render(
+      <ConfirmProvider>
+        <UpdatePanel />
+      </ConfirmProvider>,
+    );
+    const restore = await screen.findByRole("button", { name: "恢复镜像内置版本" });
+    const reason = document.getElementById(restore.getAttribute("aria-describedby") ?? "");
+    expect(reason?.textContent).toBe("当前已在运行镜像内置版本");
+    const rollback = screen.getByRole("button", { name: "回滚到上一版本" });
+    expect(
+      document.getElementById(rollback.getAttribute("aria-describedby") ?? "")?.textContent,
+    ).toBe("没有可回滚的上一版本");
+    for (const name of ["检查更新", "立即更新", "复制更新命令"])
+      expect(screen.getAllByRole("button", { name }).length).toBeGreaterThan(0);
+  });
+  it("更新弹窗的阶段列表与下载进度条可被辅助技术读取", () => {
+    panelUpdateStore.receiveStatus({
+      ...updateStatus,
+      job: {
+        id: "job-1",
+        targetVersion: "v0.3.0",
+        stage: "downloading",
+        startedAt: 1,
+        updatedAt: 2,
+        bytesDone: 1_048_576,
+        bytesTotal: 4_194_304,
+      },
+    });
+    render(
+      <ConfirmProvider>
+        <SystemUpdateDialog open onOpenChange={() => {}} />
+      </ConfirmProvider>,
+    );
+    expect(screen.getByRole("alertdialog", { name: "正在更新到 v0.3.0" })).toBeTruthy();
+    const progress = screen.getByRole("progressbar", { name: "下载进度" });
+    expect(progress.getAttribute("aria-valuenow")).toBe("25");
+    expect(progress.getAttribute("aria-valuetext")).toBe("1.00 MB / 4.00 MB（25%）");
+    const current = screen
+      .getByRole("list", { name: "更新阶段" })
+      .querySelector('[aria-current="step"]');
+    expect(current?.textContent).toBe("下载更新包进行中");
+    expect(screen.getByRole("button", { name: "取消更新" })).toBeTruthy();
   });
 });
