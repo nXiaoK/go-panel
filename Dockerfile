@@ -48,7 +48,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       -o /out/go-panel .
 
 
-# 运行镜像只包含面板、节点产物和时区/证书；3.23 仍处于安全维护周期。
+# 运行镜像只包含面板、节点产物、时区/证书与 tini；3.23 仍处于安全维护周期。
+# 修改本阶段（基础镜像、系统包、目录布局、入口命令）且新程序依赖这些修改时，必须递增
+# internal/buildinfo.RuntimeABI；否则软更新会把新程序放进不满足要求的旧镜像中运行。
 FROM alpine:3.23
 
 ARG VERSION=dev
@@ -62,14 +64,18 @@ LABEL org.opencontainers.image.title="go-panel" \
       org.opencontainers.image.revision="$COMMIT" \
       org.opencontainers.image.created="$BUILD_TIME"
 
-RUN apk add --no-cache ca-certificates tzdata \
+# tini 作为 PID 1 回收孤儿进程并转发信号，面板软更新的 supervisor 运行在它之下。
+RUN apk add --no-cache ca-certificates tzdata tini \
 	&& mkdir -p /app/data /app/node-assets
 
 # LISTEN_ADDR 对容器开放端口；JWT_SECRET 等安全配置必须由 Compose/docker run 显式传入。
+# PANEL_RUNTIME_DIR 保存软更新下载的版本与切换状态，必须位于 /app/data 持久卷内，
+# 否则重建容器会丢失已切换的版本；改动它会让已有的软更新版本不再被识别。
 ENV TZ=Asia/Shanghai \
 	LISTEN_ADDR=:6365 \
 	DB_PATH=/app/data/flux-panel.db \
-	NODE_ASSET_DIR=/app/node-assets
+	NODE_ASSET_DIR=/app/node-assets \
+	PANEL_RUNTIME_DIR=/app/data/runtime
 
 WORKDIR /app
 
@@ -88,4 +94,7 @@ EXPOSE 6365
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -q -T 3 -O /dev/null http://127.0.0.1:6365/healthz || exit 1
 
-ENTRYPOINT ["/app/go-panel"]
+# 进程树：tini（PID 1）→ go-panel supervise → go-panel serve。supervisor 是镜像内置版本：
+# 选择镜像内置程序或数据卷中经签名校验的软更新版本，新版本先试运行，失败自动回滚；
+# tini 把 docker stop 的 SIGTERM 转发给 supervisor，再由它转发给面板进程完成优雅停机。
+ENTRYPOINT ["/sbin/tini", "--", "/app/go-panel", "supervise"]

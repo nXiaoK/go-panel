@@ -525,3 +525,40 @@ func TestUpdateSidecarUsesMaintainedPinnedImage(t *testing.T) {
 		t.Fatalf("updater image %q must pin an exact version and digest", image[1])
 	}
 }
+
+func TestDockerImageRunsPanelUnderTiniAndSupervisor(t *testing.T) {
+	read := func(path string) string {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	dockerfile := read("Dockerfile")
+	for _, required := range []string{
+		"apk add --no-cache ca-certificates tzdata tini",
+		"PANEL_RUNTIME_DIR=/app/data/runtime",
+		`ENTRYPOINT ["/sbin/tini", "--", "/app/go-panel", "supervise"]`,
+		"internal/buildinfo.RuntimeABI",
+	} {
+		if !strings.Contains(dockerfile, required) {
+			t.Fatalf("Dockerfile is missing %q", required)
+		}
+	}
+	// 软更新版本与切换状态必须位于数据卷内，否则重建容器会丢失已切换的版本。
+	if !strings.Contains(dockerfile, `VOLUME ["/app/data"]`) {
+		t.Fatal("the runtime directory must live inside the /app/data volume")
+	}
+	compose := read("compose.yml")
+	for _, required := range []string{"UPDATE_STRATEGY: ${UPDATE_STRATEGY:-auto}", "PANEL_USE_BUILTIN: ${PANEL_USE_BUILTIN:-false}"} {
+		if !strings.Contains(compose, required) {
+			t.Fatalf("compose.yml is missing %q", required)
+		}
+	}
+	env := read(".env.example")
+	for _, required := range []string{"\nUPDATE_STRATEGY=auto\n", "\nPANEL_USE_BUILTIN=false\n"} {
+		if !strings.Contains(env, required) {
+			t.Fatalf(".env.example is missing %q", strings.TrimSpace(required))
+		}
+	}
+}
