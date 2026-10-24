@@ -97,6 +97,8 @@ docker compose -f compose.yml -f compose.update.yml up -d
 
 更新流程会先把经过完整性校验的 SQLite 快照保存到数据卷的 `backups/`，再由受标签和 Token 限制的 Watchtower 侧车拉取并替换面板容器。Docker Socket 具备接近宿主机 root 的控制能力，只应在可信服务器上启用该扩展。
 
+侧车镜像已从归档的 `containrrr/watchtower:1.7.1` 换成社区维护的 `nickfedor/watchtower`：原版内置的 Docker API 1.25 低于 Docker Engine 29 要求的 1.44，会报 `client version 1.25 is too old` 并反复重启。已启用本扩展的部署请重新下载 `compose.update.yml`，再执行 `docker compose -f compose.yml -f compose.update.yml up -d`。
+
 一键更新要求 `.env` 中的 `GO_PANEL_VERSION=latest`；如果固定为 `vX.Y.Z` 等完整版本标签，Watchtower 只会重新检查该固定镜像，不会跨版本升级。一键更新只替换镜像，不能自动修改 Compose 或环境变量。Release Notes 标注需要部署配置变更时，请使用手动升级流程。
 
 ## 数据备份

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -497,5 +498,30 @@ func TestInvalidUpdateStrategyRejectedBeforeRuntimeInitialization(t *testing.T) 
 	err := initializeRuntimeSecurity(cfg, strings.NewReader(strings.Repeat("x", 64)), func(string) { initialized = true })
 	if err == nil || !strings.Contains(err.Error(), "UPDATE_STRATEGY") || initialized {
 		t.Fatalf("err=%v initialized=%v", err, initialized)
+	}
+}
+
+func TestUpdateSidecarUsesMaintainedPinnedImage(t *testing.T) {
+	raw, err := os.ReadFile("compose.update.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	compose := string(raw)
+	// 归档的原版 Watchtower 不兼容 Docker Engine 29，禁止回退；注释中保留历史名称说明原因，只检查配置行。
+	var config []string
+	for _, line := range strings.Split(compose, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			config = append(config, line)
+		}
+	}
+	if strings.Contains(strings.Join(config, "\n"), "containrrr/watchtower") {
+		t.Fatal("compose.update.yml must not use the archived containrrr/watchtower image")
+	}
+	image := regexp.MustCompile(`(?m)^\s*image:\s*(\S+)\s*$`).FindStringSubmatch(compose)
+	if image == nil {
+		t.Fatal("compose.update.yml has no updater image")
+	}
+	if !regexp.MustCompile(`^nickfedor/watchtower:[0-9]+\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}$`).MatchString(image[1]) {
+		t.Fatalf("updater image %q must pin an exact version and digest", image[1])
 	}
 }
