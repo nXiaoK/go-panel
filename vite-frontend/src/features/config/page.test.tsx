@@ -11,9 +11,11 @@ import {
 } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfirmProvider } from "@/components/patterns/confirm-dialog";
+import { panelUpdateStore } from "@/features/system/update-store";
 import { apiDownload, apiPost, apiUpload } from "@/lib/api/client";
 import * as session from "@/lib/session";
 import { notify } from "@/lib/notify";
+import type { PanelUpdateStatus } from "@/lib/types";
 import { loginReasons, parseLoginSearch } from "@/features/auth/login-search";
 import { ConfigPage } from "./page";
 import {
@@ -34,6 +36,7 @@ vi.mock("@/lib/api/client", () => ({
 }));
 let client: QueryClient;
 let stored: Record<string, string>;
+let updateStatus: PanelUpdateStatus;
 const r2 = {
   enabled: false,
   accountId: "",
@@ -51,6 +54,7 @@ const r2 = {
 };
 beforeEach(() => {
   localStorage.clear();
+  panelUpdateStore.reset();
   session.setSession({ token: "admin", roleId: 0, name: "管理员", mustChangePassword: false });
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
@@ -62,6 +66,32 @@ beforeEach(() => {
     allow_insecure_node_downloads: "false",
     diagnose_internet_probe: "",
     custom_key: "original",
+  };
+  updateStatus = {
+    current: { version: "v0.3.0", commit: "abcdef0", buildTime: "", sourceUrl: "" },
+    enabled: true,
+    checkedAt: Date.now() - 60_000,
+    latestVersion: "v0.3.0",
+    updateAvailable: false,
+    autoUpdateConfigured: true,
+    strategy: "soft",
+    softUpdate: { available: false, reason: "no_update" },
+    runtime: {
+      mode: "release",
+      builtinVersion: "v0.2.0",
+      imageTag: "latest",
+      activeVersion: "v0.3.0",
+      previousVersion: "v0.2.0",
+      rollback: { available: true },
+      builtinRestore: { available: false, reason: "数据库结构版本高于内置版本，不能直接恢复" },
+      lastResult: {
+        requestId: "req-1",
+        action: "upgrade",
+        version: "v0.3.0",
+        outcome: "committed",
+        at: Date.now() - 3_600_000,
+      },
+    },
   };
   post.mockImplementation(async (path, body) => {
     if (path === "/config/list") return { ...stored };
@@ -75,6 +105,9 @@ beforeEach(() => {
     }
     if (path === "/backup/r2/settings") return r2;
     if (path === "/backup/r2/update") return { ...r2, ...(body as object) };
+    if (path === "/system/update/status" || path === "/system/update/check") return updateStatus;
+    if (path === "/system/update/rollback")
+      return { requestId: "req-r", targetVersion: "v0.2.0", started: true };
     return "ok";
   });
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
@@ -96,6 +129,7 @@ afterEach(() => {
   cleanup();
   session.clearSession();
   client.clear();
+  panelUpdateStore.reset();
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -444,9 +478,9 @@ describe("SQLite备份恢复", () => {
   });
 });
 describe("配置边界与登录原因", () => {
-  it("只允许五个标签与白名单登录原因", () => {
+  it("只允许六个标签与白名单登录原因", () => {
     expect(configSearch({ tab: "unexpected" })).toEqual({ tab: "site" });
-    for (const tab of ["site", "security", "backup", "r2", "advanced"])
+    for (const tab of ["site", "security", "backup", "r2", "update", "advanced"])
       expect(configSearch({ tab })).toEqual({ tab });
     expect(parseLoginSearch({ reason: "restored" })).toEqual({ reason: "restored" });
     expect(loginReasons.restored).toBe("数据已恢复，请重新登录");
@@ -459,5 +493,115 @@ describe("配置边界与登录原因", () => {
     expect(customConfigNameError("ok_key", [])).toBeUndefined();
     expect(isProtectedConfigName("subscription_nodes_backfilled")).toBe(true);
     expect(isProtectedConfigName("diagnose_internet_probe")).toBe(false);
+  });
+});
+describe("版本与更新分区", () => {
+  const calls = (path: string) => post.mock.calls.filter(([called]) => called === path);
+  it("URL ?tab=update 打开分区，四个区块读取状态但不访问 GitHub 检查接口", async () => {
+    await mount("/config?tab=update");
+    expect(screen.getByRole("tab", { name: "版本与更新" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    for (const title of ["当前运行", "可用更新", "回滚与恢复", "更新方式说明"])
+      expect(screen.getByText(title)).toBeTruthy();
+    expect(await screen.findByText("软更新版本")).toBeTruthy();
+    expect(screen.getByText("已更新")).toBeTruthy();
+    expect(screen.getByText("1 小时前").getAttribute("title")).toMatch(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/,
+    );
+    expect(screen.getByText("已是最新版本")).toBeTruthy();
+    expect(screen.getByText("软更新（无需重建容器）")).toBeTruthy();
+    expect(screen.getAllByText("docker compose pull && docker compose up -d")).toHaveLength(1);
+    expect(screen.getByText("数据库结构版本高于内置版本，不能直接恢复")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "恢复镜像内置版本" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+    expect(calls("/system/update/status")).toHaveLength(1);
+    expect(calls("/system/update/check")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    await waitFor(() => expect(calls("/system/update/check")).toHaveLength(1));
+    expect(calls("/system/update/check")[0][2]).toMatchObject({ timeoutMs: 25_000 });
+  });
+  it("未知标签仍回退到站点", async () => {
+    const router = await mount("/config?tab=releases");
+    expect(router.state.location.search.tab).toBe("site");
+    expect(screen.getByRole("tab", { name: "站点" }).getAttribute("aria-selected")).toBe("true");
+    expect(calls("/system/update/status")).toHaveLength(0);
+  });
+  it("每个区块都有加载与错误状态，重试后恢复", async () => {
+    let fail!: (error: Error) => void;
+    let statusRequests = 0;
+    const initial = post.getMockImplementation()!;
+    post.mockImplementation((path, ...args) =>
+      path === "/system/update/status" && ++statusRequests === 1
+        ? new Promise((_, reject) => {
+            fail = reject;
+          })
+        : initial(path, ...args),
+    );
+    await mount("/config?tab=update");
+    expect(await screen.findAllByRole("status", { name: "正在加载" })).toHaveLength(4);
+    await act(async () => fail(new Error("状态接口暂不可用")));
+    expect(await screen.findAllByText("状态接口暂不可用")).toHaveLength(4);
+    // 手动命令与应急开关说明不依赖接口，读取失败时仍可参考。
+    expect(screen.getByText("docker compose pull && docker compose up -d")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "重试" })[0]);
+    expect(await screen.findByText("软更新版本")).toBeTruthy();
+    expect(screen.queryByText("状态接口暂不可用")).toBeNull();
+  });
+  it("可软更新时显示版本、发布时间与发布说明，主操作提交目标版本", async () => {
+    updateStatus = {
+      ...updateStatus,
+      latestVersion: "v0.4.0",
+      updateAvailable: true,
+      releaseUrl: "https://github.com/nXiaoK/go-panel/releases/tag/v0.4.0",
+      publishedAt: "2026-11-01T12:00:00Z",
+      softUpdate: { available: true, downloadBytes: 43_918_511 },
+    };
+    await mount("/config?tab=update");
+    expect(await screen.findByText("v0.4.0")).toBeTruthy();
+    expect(screen.getByText("发布于 2026-11-01")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "发布说明" }).getAttribute("href")).toBe(
+      "https://github.com/nXiaoK/go-panel/releases/tag/v0.4.0",
+    );
+    expect(screen.getByText("下载约 41.9 MB")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "立即更新" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/system/update/apply",
+        { targetVersion: "v0.4.0", force: false },
+        undefined,
+      ),
+    );
+  });
+  it("回滚需二次确认并写明影响，取消不调用接口，确认后进入重启等待", async () => {
+    await mount("/config?tab=update");
+    const rollback = await screen.findByRole("button", { name: "回滚到 v0.2.0" });
+    fireEvent.click(rollback);
+    let dialog = await screen.findByRole("alertdialog", { name: "回滚到 v0.2.0？" });
+    expect(dialog.textContent).toContain(
+      "面板将重启约 1 分钟；节点转发不受影响；回滚后数据库保持当前内容",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(calls("/system/update/rollback")).toHaveLength(0);
+    fireEvent.click(rollback);
+    dialog = await screen.findByRole("alertdialog", { name: "回滚到 v0.2.0？" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认回滚" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/system/update/rollback",
+        { target: "previous" },
+        undefined,
+      ),
+    );
+    expect(await screen.findByText("面板正在重启，切换到 v0.2.0")).toBeTruthy();
+    expect(panelUpdateStore.getSnapshot()).toMatchObject({
+      dialogOpen: true,
+      flow: { phase: "restarting", target: { kind: "rollback", requestId: "req-r" } },
+    });
+    expect(screen.getByRole("button", { name: "回滚到 v0.2.0" }).hasAttribute("disabled")).toBe(
+      true,
+    );
   });
 });
