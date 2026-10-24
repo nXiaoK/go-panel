@@ -84,7 +84,17 @@ jobs:
           go build ./cmd/node-assets/nft_rule_payload
           go build ./cmd/node-assets/nft_flow_reporter
       - name: 关键并发路径 Race 检查
-        run: go test -race -count=1 ./internal/ws ./internal/task ./internal/service ./cmd/node-assets/nft_agent ./cmd/node-assets/nft_flow_reporter ./internal/nftgeneration
+        run: go test -race -count=1 ./internal/ws ./internal/task ./internal/service ./internal/selfupdate/... ./cmd/node-assets/nft_agent ./cmd/node-assets/nft_flow_reporter ./internal/nftgeneration
+      - name: 隔离软更新测试构建标签
+        run: |
+          set -euo pipefail
+          # selfupdate_e2e 标签会信任环境变量提供的测试公钥，只能用于本地容器端到端测试；
+          # 这里保证其代码仍可编译，同时禁止正式构建（镜像与 Release）启用它。
+          go vet -tags selfupdate_e2e ./internal/selfupdate/...
+          if grep -n "selfupdate_e2e" Dockerfile scripts/build-release.sh scripts/build-node-assets.sh; then
+            echo "::error::正式构建不得使用 selfupdate_e2e 构建标签"
+            exit 1
+          fi
       - name: 测试内置 go-gost 模块
         run: |
           set -euo pipefail
@@ -125,9 +135,87 @@ jobs:
       - name: 检查节点工具与 nft 生成器兼容性
         run: go test ./cmd/node-assets/... ./internal/nftgeneration -count=1
 
-  image:
+  # 标签发布的签名产物：先于镜像与 Release 完成。签名私钥缺失、与内置公钥不匹配、
+  # 或清单与实际二进制不一致时整个发布在此失败，镜像不会推送，Release 也不会创建。
+  release-assets:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     needs: [frontend, backend]
+    # 私钥只保存在受保护的 release 环境中：应限定 v*.*.* 标签并要求维护者审批，配置方法见 RELEASING.md。
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      # checkout v5 使用 Node.js 24；回退 v4 会恢复 Node.js 20 弃用警告。
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: vite-frontend/package-lock.json
+      # setup-go v6 使用 Node.js 24；Go 安全补丁版本由下方显式固定。
+      - uses: actions/setup-go@v6
+        with:
+          # Release 必须使用与测试、Docker 相同的安全补丁版本，避免发布产物重新引入已知漏洞。
+          go-version: "1.26.10"
+          cache-dependency-path: |
+            go.sum
+            go-gost/go.sum
+            go-gost/x/go.sum
+      - name: 构建 Release 压缩包、更新清单与校验文件
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix vite-frontend
+          npm run build --prefix vite-frontend
+          bash ./scripts/sync-web-dist.sh
+          bash ./scripts/build-release.sh "${GITHUB_REF_NAME}" "${GITHUB_SHA}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - name: 用发布私钥签名更新清单
+        shell: bash
+        env:
+          # 主私钥必填，缺失时签名失败、整个发布中止。轮换期间可在同一环境另设 _NEXT，两把私钥同时签名。
+          GO_PANEL_RELEASE_SIGNING_KEY: ${{ secrets.GO_PANEL_RELEASE_SIGNING_KEY }}
+          GO_PANEL_RELEASE_SIGNING_KEY_NEXT: ${{ secrets.GO_PANEL_RELEASE_SIGNING_KEY_NEXT }}
+        run: |
+          set -euo pipefail
+          go run ./tools/releasetool sign \
+            --manifest release/update-manifest.json \
+            --key-env GO_PANEL_RELEASE_SIGNING_KEY \
+            --optional-key-env GO_PANEL_RELEASE_SIGNING_KEY_NEXT \
+            --out release/update-manifest.json.sig
+      - name: 用内置公钥复验签名、压缩包与逐文件哈希
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 复验使用源码中内置的公钥：secret 与公钥不是一对时在此失败，避免发布面板无法验证的版本。
+          go run ./tools/releasetool verify \
+            --manifest release/update-manifest.json \
+            --sig release/update-manifest.json.sig \
+            --release-dir release \
+            --repository "${GITHUB_REPOSITORY}"
+          # 实际执行 amd64 面板程序，确认清单中的版本、commit 与兼容声明来自同一次构建。
+          go run ./tools/releasetool selfcheck \
+            --manifest release/update-manifest.json \
+            --binary "release/go-panel-${GITHUB_REF_NAME}-linux-amd64/go-panel"
+      - name: 暂存待发布产物
+        # v4 与仓库现有的 upload-artifact 用法保持一致；产物只保留 1 天，供同一工作流的发布作业下载。
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            release/*.tar.gz
+            release/SHA256SUMS
+            release/update-manifest.json
+            release/update-manifest.json.sig
+          if-no-files-found: error
+          retention-days: 1
+
+  image:
+    runs-on: ubuntu-latest
+    needs: [frontend, backend, release-assets]
+    # 分支推送时 release-assets 被跳过，镜像照常构建；标签推送时必须等签名产物成功，
+    # 避免先推送 latest 镜像、之后才发现签名失败造成镜像与 Release 不一致。
+    if: ${{ !cancelled() && needs.frontend.result == 'success' && needs.backend.result == 'success' && (needs.release-assets.result == 'success' || needs.release-assets.result == 'skipped') }}
     permissions:
       contents: read
       packages: write
@@ -197,44 +285,31 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: image
+    # 只发布 release-assets 已签名并复验过的产物，不在此重新构建。
+    needs: [image, release-assets]
     permissions:
       contents: write
     steps:
-      # checkout v5 使用 Node.js 24；回退 v4 会恢复 Node.js 20 弃用警告。
+      # checkout v5 使用 Node.js 24；gh 需要仓库上下文以校验标签。
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - name: 下载已签名的发布产物
+        # v5 使用 Node.js 24；回退 v4 会恢复 Node.js 20 弃用警告。
+        uses: actions/download-artifact@v5
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: vite-frontend/package-lock.json
-      # setup-go v6 使用 Node.js 24；Go 安全补丁版本由下方显式固定。
-      - uses: actions/setup-go@v6
-        with:
-          # Release 必须使用与测试、Docker 相同的安全补丁版本，避免发布产物重新引入已知漏洞。
-          go-version: "1.26.10"
-          cache-dependency-path: |
-            go.sum
-            go-gost/go.sum
-            go-gost/x/go.sum
-      - name: 构建 Release 压缩包与校验文件
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm ci --prefix vite-frontend
-          npm run build --prefix vite-frontend
-          bash ./scripts/sync-web-dist.sh
-          bash ./scripts/build-release.sh "${GITHUB_REF_NAME}" "${GITHUB_SHA}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          name: release-assets
+          path: release
       - name: 创建或更新 GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          # 更新清单与签名必须和压缩包一起发布，否则面板无法软更新到此版本。
+          assets=(release/*.tar.gz release/SHA256SUMS release/update-manifest.json release/update-manifest.json.sig)
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" release/*.tar.gz release/SHA256SUMS --clobber
+            gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber
           else
-            gh release create "${GITHUB_REF_NAME}" release/*.tar.gz release/SHA256SUMS \
+            gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
               --verify-tag \
               --generate-notes \
               --title "go-panel ${GITHUB_REF_NAME}"
