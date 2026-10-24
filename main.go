@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,7 +27,12 @@ import (
 	"github.com/nXiaoK/go-panel/internal/handler"
 	"github.com/nXiaoK/go-panel/internal/model"
 	"github.com/nXiaoK/go-panel/internal/selfupdate/child"
+	"github.com/nXiaoK/go-panel/internal/selfupdate/cli"
+	"github.com/nXiaoK/go-panel/internal/selfupdate/layout"
 	"github.com/nXiaoK/go-panel/internal/selfupdate/protocol"
+	"github.com/nXiaoK/go-panel/internal/selfupdate/state"
+	"github.com/nXiaoK/go-panel/internal/selfupdate/supervisor"
+	"github.com/nXiaoK/go-panel/internal/selfupdate/trust"
 	"github.com/nXiaoK/go-panel/internal/selfupdate/versioninfo"
 	"github.com/nXiaoK/go-panel/internal/service"
 	"github.com/nXiaoK/go-panel/internal/task"
@@ -57,9 +63,17 @@ func runMain(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "migrate-check":
 		return runMigrateCheck(args[1:], stdout, stderr)
-	case "supervise", "update":
-		fmt.Fprintf(stderr, "子命令 %s 尚未实现\n", args[0])
-		return 2
+	case "supervise":
+		if len(args) > 1 {
+			fmt.Fprintf(stderr, "supervise 不接受额外参数：%s\n", strings.Join(args[1:], " "))
+			return 2
+		}
+		return runSupervise(stdout, stderr)
+	case "update":
+		build := buildinfo.Current()
+		return cli.Run(args[1:], stdout, stderr, cli.Options{
+			Builtin: state.Target{Kind: state.KindBuiltin, Version: build.Version, Commit: build.Commit},
+		})
 	default:
 		fmt.Fprintf(stderr, "未知子命令 %q\n\n", args[0])
 		printUsage(stderr)
@@ -73,6 +87,8 @@ func printUsage(w io.Writer) {
 子命令：
   serve            提供面板服务（无子命令时的默认行为）
   version [--json] 输出构建版本与兼容信息，不读取配置、不访问数据库和网络
+  supervise        作为容器主进程运行：选择镜像内置或软更新版本、试运行并在失败时回滚
+  update <命令>     查看软更新状态，或请求回滚、恢复镜像内置版本（go-panel update help）
   migrate-check --db <副本路径> [--json]
                    在数据库副本上演练迁移；会原地修改该文件，只能用于副本
   help             显示本帮助
@@ -210,6 +226,40 @@ func runServe() int {
 		log.Fatalf("服务启动失败: %v", err)
 	}
 	return <-exitCode
+}
+
+// runSupervise 以 supervisor 身份运行：本二进制即镜像内置版本，负责选择并托管面板服务进程。
+func runSupervise(stdout, stderr io.Writer) int {
+	executable, err := os.Executable()
+	if err == nil {
+		executable, err = filepath.EvalSymlinks(executable)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "无法确定面板程序路径: %v\n", err)
+		return 1
+	}
+	runtimeLayout, err := layout.Resolve(os.Getenv)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	useBuiltin, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv(protocol.EnvUseBuiltin)))
+	build := buildinfo.Current()
+	return supervisor.Run(supervisor.Config{
+		Layout: runtimeLayout,
+		Builtin: supervisor.Builtin{
+			Path:        executable,
+			Version:     build.Version,
+			Commit:      build.Commit,
+			RuntimeABI:  buildinfo.RuntimeABI,
+			SchemaEpoch: model.SchemaEpoch,
+		},
+		KeyRing:    trust.Default(),
+		Repository: valueOr(strings.TrimSpace(os.Getenv("UPDATE_REPOSITORY")), buildinfo.Repository),
+		UseBuiltin: useBuiltin,
+		Stdout:     stdout,
+		Stderr:     stderr,
+	})
 }
 
 // schemaTooNewExit 处理“数据库已被不兼容的新版本迁移”：打印恢复指引并返回退出码 78，
