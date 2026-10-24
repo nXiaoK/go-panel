@@ -274,9 +274,18 @@ func GetBuildInfo() result.R {
 	return result.Ok(buildinfo.Current())
 }
 
-// CheckPanelUpdate 使用带缓存的 GitHub Releases 查询检查稳定版更新。
-func CheckPanelUpdate(ctx context.Context) result.R {
-	status, err := RefreshPanelUpdate(ctx)
+// manualCheckMinInterval 是管理员手动检查的最短间隔：间隔内重复点击直接返回缓存，避免触发 GitHub API 限流。
+const manualCheckMinInterval = 30 * time.Second
+
+// CheckPanelUpdate 使用带缓存的 GitHub Releases 查询检查稳定版更新。force 用于管理员手动点击“检查更新”：
+// 忽略 UPDATE_CHECK_INTERVAL 缓存，但距上次成功检查不足 30 秒时仍返回缓存结果。
+func CheckPanelUpdate(ctx context.Context, force bool) result.R {
+	if force {
+		if _, cached := currentUpdateRuntime(); cached != nil && time.Since(time.UnixMilli(cached.CheckedAt)) < manualCheckMinInterval {
+			force = false
+		}
+	}
+	status, err := checkPanelUpdate(ctx, force)
 	if err != nil {
 		return result.Err("检查更新失败：" + err.Error())
 	}

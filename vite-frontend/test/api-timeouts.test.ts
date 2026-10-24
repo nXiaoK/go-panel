@@ -96,6 +96,7 @@ describe("long request deadlines", () => {
 
   it("waits 25 seconds for update checks and sends the soft update contract bodies", async () => {
     await checkPanelUpdate();
+    await checkPanelUpdate(undefined, true);
     await getPanelUpdateStatus();
     await applyPanelUpdate("v0.3.0", true);
     await applyPanelUpdate("v0.3.1");
@@ -103,6 +104,13 @@ describe("long request deadlines", () => {
     await rollbackPanel("builtin");
     expect(adapter).toHaveBeenCalledWith(
       expect.objectContaining({ url: "/system/update/check", data: "{}", timeout: 25_000 }),
+    );
+    expect(adapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/system/update/check",
+        data: '{"force":true}',
+        timeout: 25_000,
+      }),
     );
     expect(adapter).toHaveBeenCalledWith(
       expect.objectContaining({ url: "/system/update/status", data: "{}", timeout: 30_000 }),

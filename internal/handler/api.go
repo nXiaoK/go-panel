@@ -326,10 +326,17 @@ func systemVersion(c *gin.Context) {
 }
 
 func systemUpdateCheck(c *gin.Context) {
+	// force 表示管理员手动检查：忽略缓存重新查询（30 秒内的重复点击仍返回缓存）；定时检查不传。
+	var req struct {
+		Force bool `json:"force"`
+	}
+	if !bindOptionalStrictJSON(c, &req) {
+		return
+	}
 	// 检查包含 Release 查询与签名清单下载，给较慢的网络或下载代理留出 20 秒。
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
-	c.JSON(http.StatusOK, service.CheckPanelUpdate(ctx))
+	c.JSON(http.StatusOK, service.CheckPanelUpdate(ctx, req.Force))
 }
 
 // systemUpdateStatus 不访问网络，供界面轮询软更新作业进度与切换结果。

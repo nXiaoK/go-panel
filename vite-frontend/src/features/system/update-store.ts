@@ -398,12 +398,12 @@ export function createPanelUpdateStore(
     }
   }
 
-  async function check(request: { signal?: AbortSignal } = {}) {
+  async function check(request: { signal?: AbortSignal; force?: boolean } = {}) {
     const epoch = resets;
     checkRequests += 1;
     publish({ checking: true });
     try {
-      const raw = await checkPanelUpdate({ signal: request.signal });
+      const raw = await checkPanelUpdate({ signal: request.signal }, request.force);
       if (epoch !== resets) return null;
       const status = receiveStatus(raw);
       publish({ checkError: null, error: null });

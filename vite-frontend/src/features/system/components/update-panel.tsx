@@ -121,7 +121,8 @@ function AvailableUpdate({ snapshot, pending, failure, retry }: BlockState) {
   const { status, checking, checkError } = snapshot;
   const busy = isPanelUpdateBusy(snapshot);
   const published = status?.publishedAt ? Date.parse(status.publishedAt) : NaN;
-  const check = () => void panelUpdateStore.check();
+  // 手动检查绕过后端缓存；侧栏的定时检查仍使用缓存，避免触发 GitHub 限流。
+  const check = () => void panelUpdateStore.check({ force: true });
   return (
     <UpdateSection
       title="可用更新"
