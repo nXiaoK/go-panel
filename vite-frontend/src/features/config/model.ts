@@ -144,8 +144,9 @@ export function shouldShowKeyConfig(meta: KeyConfigMeta, values: Record<string, 
   return values[meta.dependsOn] === meta.dependsValue;
 }
 
-// URL 标签只接受公开的五个分区；未知书签回到站点，不把任意字符串带入界面。
-export const configTabs = ["site", "security", "backup", "r2", "advanced"] as const;
+// URL 标签只接受公开的六个分区；未知书签回到站点，不把任意字符串带入界面。
+// update 为“版本与更新”分区，只读取更新状态，不参与系统配置草稿与保存。
+export const configTabs = ["site", "security", "backup", "r2", "update", "advanced"] as const;
 export type ConfigTab = (typeof configTabs)[number];
 export function configSearch(search: Record<string, unknown>): { tab: ConfigTab } {
   return { tab: configTabs.includes(search.tab as ConfigTab) ? (search.tab as ConfigTab) : "site" };

@@ -33,15 +33,32 @@ for arch in amd64 arm64; do
   cp "$ROOT_DIR/README.md" "$ROOT_DIR/OPERATIONS.md" "$ROOT_DIR/LICENSE" "$ROOT_DIR/THIRD_PARTY_NOTICES.md" "$bundle_dir/"
   mkdir -p "$bundle_dir/assets"
   cp -R "$ROOT_DIR/assets/screenshots" "$bundle_dir/assets/"
-  tar -C "$OUTPUT_DIR" -czf "$OUTPUT_DIR/$bundle_name.tar.gz" "$bundle_name"
+  # macOS 自带的 bsdtar 会为扩展属性写入 ._ 开头的 AppleDouble 条目，它们位于包根目录之外，
+  # 会被面板的更新包校验拒绝；COPYFILE_DISABLE=1 禁止生成这类条目，对 GNU tar 无影响。
+  COPYFILE_DISABLE=1 tar -C "$OUTPUT_DIR" -czf "$OUTPUT_DIR/$bundle_name.tar.gz" "$bundle_name"
 done
 
+# 生成更新清单：记录版本、兼容声明以及各架构压缩包和其中面板、节点程序的 SHA-256，
+# 面板软更新据此逐文件校验。清单不在本脚本中签名（本地没有私钥），由 CI 的 release-assets
+# 作业用受保护环境中的私钥签名。仓库名默认取 CI 提供的 GITHUB_REPOSITORY，便于在 fork 中演练。
+(
+  cd "$ROOT_DIR"
+  go run ./tools/releasetool manifest \
+    --release-dir "$OUTPUT_DIR" \
+    --version "$VERSION" \
+    --commit "$COMMIT" \
+    --build-time "$BUILD_TIME" \
+    --repository "${GITHUB_REPOSITORY:-nXiaoK/go-panel}" \
+    --out "$OUTPUT_DIR/update-manifest.json"
+)
+
+# SHA256SUMS 供人工核对下载内容，同时覆盖压缩包与更新清单；软更新只信任经签名的清单。
 (
   cd "$OUTPUT_DIR"
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum ./*.tar.gz > SHA256SUMS
+    sha256sum ./*.tar.gz ./update-manifest.json > SHA256SUMS
   else
-    shasum -a 256 ./*.tar.gz > SHA256SUMS
+    shasum -a 256 ./*.tar.gz ./update-manifest.json > SHA256SUMS
   fi
 )
 

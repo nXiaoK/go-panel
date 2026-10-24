@@ -10,9 +10,11 @@ go build ./...
 go build ./cmd/node-assets/nft_agent
 go build ./cmd/node-assets/nft_flow_reporter
 go build ./cmd/node-assets/nft_rule_payload
+# selfupdate_e2e 只用于本地容器端到端测试；确认该标签下的代码仍可编译。
+go vet -tags selfupdate_e2e ./internal/selfupdate/...
 
 if [[ "${RUN_RACE:-0}" == "1" ]]; then
-  go test -race ./internal/ws ./internal/task ./internal/service ./cmd/node-assets/nft_agent ./cmd/node-assets/nft_flow_reporter ./internal/nftgeneration
+  go test -race ./internal/ws ./internal/task ./internal/service ./internal/selfupdate/... ./cmd/node-assets/nft_agent ./cmd/node-assets/nft_flow_reporter ./internal/nftgeneration
 fi
 
 (

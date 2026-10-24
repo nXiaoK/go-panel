@@ -158,20 +158,6 @@ func TestTriggerPanelUpdateBacksUpDatabaseAndCallsSidecar(t *testing.T) {
 	}
 }
 
-func TestStableVersionComparison(t *testing.T) {
-	current, ok := parseStableVersion("v2.9.10+build.1")
-	if !ok {
-		t.Fatal("current version did not parse")
-	}
-	latest, ok := parseStableVersion("2.10.0")
-	if !ok || compareStableVersions(current, latest) >= 0 {
-		t.Fatalf("comparison current=%v latest=%v ok=%v", current, latest, ok)
-	}
-	if _, ok := parseStableVersion("edge-abcdef0"); ok {
-		t.Fatal("edge builds must not compare as stable releases")
-	}
-}
-
 func TestAutoUpdateConfiguredRequiresLatestImageTag(t *testing.T) {
 	base := UpdateRuntimeConfig{
 		TriggerURL:   "http://updater:8080/v1/update",
