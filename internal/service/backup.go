@@ -82,6 +82,12 @@ func RestoreSiteBackup(uploadedPath string) (*SiteRestoreSummary, error) {
 		return nil, fmt.Errorf("备份文件无效: %w", err)
 	}
 
+	// 软更新从备份阶段到重启期间禁止恢复，避免更新前快照与恢复交错。
+	if err := beginDatabaseRestore(); err != nil {
+		return nil, err
+	}
+	defer endDatabaseRestore()
+
 	drainCtx, cancel := context.WithTimeout(context.Background(), restoreDrainTimeout)
 	defer cancel()
 	endMaintenance, err := model.Gate.BeginMaintenance(drainCtx)

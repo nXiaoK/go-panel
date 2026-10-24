@@ -46,8 +46,12 @@ type Config struct {
 	UpdateTriggerURL string
 	// 调用更新侧车所需的 Bearer Token；不得写入仓库或日志
 	UpdateTriggerToken string
-	// 当前部署使用的镜像标签；只有 latest 会启用跨稳定版本的一键更新
+	// 当前部署使用的镜像标签；只有 latest 会启用跨稳定版本的一键更新侧车，固定标签时界面提示软更新会高于镜像版本
 	UpdateImageTag string
+	// 一键更新方式（UPDATE_STRATEGY）：auto 默认优先软更新（数据卷覆盖层，无需 Docker Socket），
+	// 不可用时退回已配置的更新侧车，再退回手动命令；soft 只用软更新；sidecar 只用侧车；
+	// manual 关闭一键更新。非法值拒绝启动，避免拼写错误静默改变更新行为。
+	UpdateStrategy string
 }
 
 // DefaultJwtSecret is the historical insecure JWT fallback and must be rejected remotely.
@@ -125,6 +129,7 @@ func Load() *Config {
 		UpdateTriggerURL:           strings.TrimSpace(os.Getenv("UPDATE_TRIGGER_URL")),
 		UpdateTriggerToken:         strings.TrimSpace(os.Getenv("UPDATE_TRIGGER_TOKEN")),
 		UpdateImageTag:             getenv("UPDATE_IMAGE_TAG", "latest"),
+		UpdateStrategy:             strings.ToLower(strings.TrimSpace(getenv("UPDATE_STRATEGY", "auto"))),
 	}
 }
 
@@ -163,5 +168,15 @@ func (c Config) ValidateCSPMode() error {
 		return nil
 	default:
 		return fmt.Errorf("CSP_MODE 必须为 report-only、enforce 或 off")
+	}
+}
+
+// ValidateUpdateStrategy 拒绝未知的 UPDATE_STRATEGY；空值按默认 auto 处理，兼容手动构造的配置。
+func (c Config) ValidateUpdateStrategy() error {
+	switch c.UpdateStrategy {
+	case "", "auto", "soft", "sidecar", "manual":
+		return nil
+	default:
+		return fmt.Errorf("UPDATE_STRATEGY 必须为 auto、soft、sidecar 或 manual")
 	}
 }
