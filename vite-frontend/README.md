@@ -46,7 +46,7 @@ VITE_DEV_API_TARGET=http://127.0.0.1:6401 npm run dev -- --port 5201
 
 默认 `npm ci` 严格安装锁定版本。删除锁文件或回退版本可能重新引入已修复的问题；更新后必须重新执行完整前端检查和生产依赖审计，不得降低审计门槛。
 
-- 网络请求模块：`axios@1.20.0` 与 `follow-redirects@1.16.1` 修复请求选项、请求头、代理规则和重定向处理中的安全问题。后续升级需验证登录凭据、错误处理及下载请求。
+- 网络请求模块：`package-lock.json` 锁定 `axios@1.20.0` 与其间接依赖 `follow-redirects@1.16.2`。后者修复 [GHSA-mrwp-f3q8-3g9p](https://github.com/advisories/GHSA-mrwp-f3q8-3g9p)：`1.16.0` 至 `1.16.1` 在 Node.js 中可能丢弃跨 JavaScript realm 的 `sensitiveHeaders` 数组，导致自定义凭据头随跨源重定向泄露。默认 `npm ci` 安装修复版本，不得回退至受影响版本；后续升级需验证登录凭据、错误处理及下载请求。
 - 路由模块：`@tanstack/router-plugin@1.168.48` 与 `@tanstack/react-router@1.170.46` 保留已有安全锁定版本，`seroval` / `seroval-plugins` 为 `1.7.0`。路由生成依赖随树更新，可能改变生成代码和格式检查结果，需完整复验。根路由错误边界使用 `ErrorComponentProps` 处理未知抛出值，提供重试；错误堆栈只在开发环境的折叠区展示。
 - 构建与源码映射模块：`vite@8.3.5` 与 `source-map-js@1.2.2` 保留已有修复。开发服务只用于本地调试；更新构建链可能改变静态文件哈希、分块和 CSS 输出，必须重新构建、同步 `web/dist` 并验证 Go 内嵌页面。
 - YAML 工具：`npm ls js-yaml` 显示只剩开发依赖 `eslint → @eslint/eslintrc → js-yaml@4.3.2`；`npm ls --omit=dev js-yaml` 已为空，生产树不再包含它。`4.0.0` 至 `4.3.1` 受 GHSA-2883-xcq3-v3hh 影响，空 YAML 合并源可绕过资源限制并耗尽 CPU；开发依赖同样不能回退到已知受影响版本。
