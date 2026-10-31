@@ -48,6 +48,12 @@ func Register(r *gin.Engine, corsAllowOrigin string, allowLegacyNftReports bool)
 	}
 
 	apiRoot := r.Group("/api/v1")
+	// 恢复快照可能含私钥和证书；先验证订阅 API Key，再读取最多 4 MiB 的正文。
+	// 独立分组避免普通 API 的 1 MiB 限制提前读取敏感上传，仍遵守站点恢复的数据库门控。
+	nodeBackup := apiRoot.Group("/sub/node", middleware.DatabaseOperationScope(), authorizeProxyNodeBackup)
+	nodeBackup.POST("/backup", LimitBody(service.MaxProxyNodeBackupSize), saveProxyNodeBackup)
+	nodeBackup.POST("/restore", LimitBody(maxJSONBodySize), restoreProxyNodeBackup)
+	nodeBackup.POST("/backups", LimitBody(maxJSONBodySize), listProxyNodeBackups)
 	// 数据库操作门控：恢复期间新请求收到可重试 503；/backup/restore 自身
 	// 走 restoreAdmin（无此中间件），由服务层直接进入维护窗口。
 	api := apiRoot.Group("", LimitBody(maxJSONBodySize), middleware.DatabaseOperationScope())

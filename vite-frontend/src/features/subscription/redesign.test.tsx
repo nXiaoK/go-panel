@@ -237,6 +237,8 @@ describe("订阅重构真实页面", () => {
     expect(await screen.findByText(/上报脚本中包含 API Key/)).toBeInTheDocument();
     expect(screen.getByText(settings.vlessBootstrapScript)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "复制脚本" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "恢复已有节点" })).toBeInTheDocument();
+    expect(screen.getByText("暂无可恢复的节点备份")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "家庭订阅" })).toBeNull();
   });
   it("绑定 Dialog 保留预选并提交用户修改的选择", async () => {

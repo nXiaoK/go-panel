@@ -795,6 +795,10 @@ func deleteProxyNodeRecord(id int64) result.R {
 }
 
 func GetSubscriptionSettings() result.R {
+	backups, err := proxyNodeBackupViews()
+	if err != nil {
+		return result.Err("读取节点恢复备份列表失败")
+	}
 	var profiles []model.SubscriptionProfile
 	model.DB.Order("created_time asc").Find(&profiles)
 	var nodes []model.ProxyNode
@@ -811,10 +815,23 @@ func GetSubscriptionSettings() result.R {
 		"tunnels":              buildSubscriptionTunnelViews(tunnels),
 		"defaultFormat":        defaultSubFormat,
 		"vlessBootstrapScript": BuildVlessServerBootstrapCommand("", ""),
+		"nodeBackups":          backups,
 	})
 }
 
 func BuildVlessServerBootstrapCommand(panelURL, apiKey string) string {
+	return buildVlessServerCommand(panelURL, apiKey, "--flux-panel-bind", "")
+}
+
+// BuildVlessServerRestoreCommand 只按备份主机身份恢复；共享下载源、API Key 和 HTTPS 代理校验规则。
+func BuildVlessServerRestoreCommand(panelURL, apiKey, sourceHost string) string {
+	if !proxyNodeBackupSourceHost.MatchString(sourceHost) {
+		return ""
+	}
+	return buildVlessServerCommand(panelURL, apiKey, "--flux-panel-restore", sourceHost)
+}
+
+func buildVlessServerCommand(panelURL, apiKey, mode, sourceHost string) string {
 	base := strings.TrimSpace(panelURL)
 	if base == "" {
 		base = GetConfigValue("ip")
@@ -839,9 +856,13 @@ func BuildVlessServerBootstrapCommand(panelURL, apiKey string) string {
 		runPrefix = "FLUX_GITHUB_PROXY=" + shellQuote(githubProxy) + " "
 	}
 	scriptURL := strings.TrimRight(base, "/") + "/api/v1/sub/" + url.PathEscape(vlessServerScriptName)
+	args := mode + " " + shellQuote(base) + " " + shellQuote(key)
+	if sourceHost != "" {
+		args += " " + shellQuote(sourceHost)
+	}
 	return fmt.Sprintf(
-		"curl -fsSL %s -o ./vless-server.sh && chmod +x ./vless-server.sh && %s./vless-server.sh --flux-panel-bind %s %s",
-		shellQuote(scriptURL), runPrefix, shellQuote(base), shellQuote(key))
+		"curl -fsSL %s -o ./vless-server.sh && chmod +x ./vless-server.sh && %s./vless-server.sh %s",
+		shellQuote(scriptURL), runPrefix, args)
 }
 
 func GetVlessServerScriptPath() (string, error) {

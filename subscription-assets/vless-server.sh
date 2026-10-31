@@ -206,7 +206,8 @@ save_sub_panel_config() {
             echo "# GitHub 下载代理会接触可执行文件；仅保留面板校验后的可信 HTTPS 前缀。"
             echo "SUB_PANEL_GITHUB_PROXY=$(sub_panel_quote "$github_proxy")"
         fi
-    } > "$SUB_PANEL_FILE"
+    } > "$SUB_PANEL_FILE" || return 1
+    chmod 600 "$SUB_PANEL_FILE"
 }
 
 sub_panel_base_url() {
@@ -543,26 +544,31 @@ sub_panel_build_payload() {
         --argjson udp "$udp_enabled" \
         --arg link "$link" \
         --arg options "$options" \
-        '{externalId:$externalId,sourceHost:$sourceHost,legacyExternalId:$legacyExternalId,legacySourceHost:$legacySourceHost,name:$name,protocol:$protocol,server:$server,port:$port,uuid:$uuid,username:$username,password:$password,method:$method,sni:$sni,network:$network,security:$security,path:$path,flow:$flow,publicKey:$publicKey,shortId:$shortId,fingerprint:$fingerprint,snellVersion:$snellVersion,allowInsecure:$allowInsecure,udp:$udp,link:$link,options:$options,status:1}'
+        '{externalId:$externalId,sourceHost:$sourceHost,legacyExternalId:$legacyExternalId,legacySourceHost:$legacySourceHost,name:$name,protocol:$protocol,server:$server,port:$port,uuid:$uuid,username:$username,password:$password,method:$method,sni:$sni,network:$network,security:$security,path:$path,flow:$flow,publicKey:$publicKey,shortId:$shortId,fingerprint:$fingerprint,snellVersion:$snellVersion,allowInsecure:$allowInsecure,udp:$udp,link:$link,options:$options}'
 }
 
 sub_panel_report_protocol() {
     local protocol="$1"
+    # 恢复失败时保留本地配置供重试；在全部服务通过检查前禁止覆盖面板节点和有效快照。
+    [[ "${SUB_PANEL_RESTORING:-0}" == "1" || -e "$CFG/.restore-pending" ]] && return 0
     load_sub_panel_config || return 0
-    local base api_key cfg payload endpoint
+    # 不下发 status：新节点默认启用，已有节点（包括恢复节点）保留面板设置的启停状态。
+    local base api_key cfg payload
     base=$(sub_panel_base_url) || return 0
     api_key="${SUB_PANEL_API_KEY:-}"
     [[ -z "$api_key" ]] && return 0
     cfg=$(sub_panel_protocol_config "$protocol")
     [[ -z "$cfg" ]] && return 0
     payload=$(sub_panel_build_payload "$protocol" "$cfg") || return 0
-    endpoint="$base/api/v1/sub/node/report"
-    if curl -fsS --max-time 10 -H "Content-Type: application/json" -H "X-API-Key: $api_key" -d "$payload" "$endpoint" >/tmp/vless-sub-panel-report.log 2>&1; then
+    (
+        umask 077
+        local tmp
+        tmp=$(mktemp -d) || exit 1
+        trap 'rm -rf "$tmp"' EXIT
+        printf '%s\n' "$payload" > "$tmp/request.json" || exit 1
+        sub_panel_request report "$tmp/request.json" "$tmp/response.json" || exit 1
         _ok "已上报订阅节点到 Flux Panel: $protocol"
-    else
-        _warn "订阅节点上报失败: $protocol ($(cat /tmp/vless-sub-panel-report.log 2>/dev/null | tail -1))"
-    fi
-    rm -f /tmp/vless-sub-panel-report.log 2>/dev/null
+    )
 }
 
 sub_panel_delete_report() {
@@ -618,10 +624,304 @@ sub_panel_report_all() {
     local installed
     installed=$(get_installed_protocols)
     [[ -z "$installed" ]] && { _warn "未安装任何协议"; return 0; }
-    local protocol
+    local protocol failed=0
     for protocol in $installed; do
-        sub_panel_report_protocol "$protocol"
+        sub_panel_report_protocol "$protocol" || failed=1
     done
+    [[ "$failed" == "0" ]] || return 1
+    sub_panel_backup || return 1
+}
+
+# 恢复快照仅保存协议数据库和以下数据文件；绝不上传或执行 env、服务单元、脚本。
+# 私钥随快照存入面板，只有持有订阅 API Key 的管理员可读取；完整字段说明见本目录 README.md。
+sub_panel_backup_files() {
+    printf '%s\n' cert_domain certs/server.crt certs/server.key \
+        certs/hy2/server.crt certs/hy2/server.key certs/tuic/server.crt certs/tuic/server.key \
+        snell.conf snell-v5.conf snell-shadowtls.conf snell-v5-shadowtls.conf \
+        ss2022-shadowtls-backend.json Caddyfile
+}
+
+# 所有路径都由固定白名单给出，逐级拒绝符号链接，防止读取或覆盖配置目录以外的文件。
+sub_panel_safe_path() {
+    local path="$1" part current="$CFG"
+    local -a parts
+    [[ ! -L "$CFG" ]] || return 1
+    local old_ifs="$IFS"
+    IFS=/ read -r -a parts <<< "$path"
+    IFS="$old_ifs"
+    for part in "${parts[@]}"; do
+        [[ -n "$part" && "$part" != "." && "$part" != ".." ]] || return 1
+        current="$current/$part"
+        [[ ! -L "$current" ]] || return 1
+    done
+}
+
+# HTTP 成功不代表业务成功；鉴权/校验错误时禁止打印成功、读取 data 或继续恢复。
+# 临时文件由调用方放在仅 root 可读的随机目录中，不使用固定 /tmp 日志保存凭据。
+sub_panel_request() {
+    local endpoint="$1" input="$2" output="$3" base
+    base=$(sub_panel_base_url) || return 1
+    [[ -n "${SUB_PANEL_API_KEY:-}" ]] || return 1
+    if ! curl -fsS --connect-timeout 10 --max-time 60 \
+        -H "Content-Type: application/json" -H "X-API-Key: $SUB_PANEL_API_KEY" \
+        --data-binary "@$input" "$base/api/v1/sub/node/$endpoint" -o "$output"; then
+        _err "面板请求失败：$endpoint"
+        return 1
+    fi
+    if ! jq -e 'type == "object" and .code == 0' "$output" >/dev/null 2>&1; then
+        _err "面板拒绝请求：$endpoint（请检查 API Key、面板版本和配置完整性）"
+        return 1
+    fi
+}
+
+# version=1 是快照格式版本；只接受已知协议和有效监听端口，未知版本不得猜测恢复。
+# 服务文件需要插入的参数限制为安全单词，避免远端数据被 OpenRC 当作 shell 执行。
+sub_panel_validate_backup() {
+    local file="$1" expected="${2:-}" allowed
+    allowed=$(sub_panel_backup_files | jq -R . | jq -s .) || return 1
+    jq -e --arg expected "$expected" --argjson allowed "$allowed" '
+      def port: (try tonumber catch 0) as $n | $n >= 1 and $n <= 65535 and ($n|floor) == $n;
+      def word: (type == "string" or type == "number") and (tostring | test("^[A-Za-z0-9_./:@+=-]+$"));
+      .version == 1 and (.sourceHost | type == "string" and test("^node-[A-Za-z0-9_.-]{1,80}$")) and
+      ($expected == "" or .sourceHost == $expected) and (.server | type == "string" and length > 0) and
+      (.database | type == "object") and (.database.xray | type == "object") and
+      (.database.singbox | type == "object") and
+      ([.database.xray[], .database.singbox[]] | length > 0 and all(.[]; type == "object" and (.port|port))) and
+      (.database.xray | keys | all(.[]; . as $p | ["vless","vless-xhttp","vless-ws","vmess","vmess-ws","vless-vision","trojan","socks","ss2022","ss-legacy"] | index($p) != null)) and
+      (.database.singbox | keys | all(.[]; . as $p | ["hy2","tuic","snell","snell-v5","snell-shadowtls","snell-v5-shadowtls","ss2022-shadowtls","anytls","naive"] | index($p) != null)) and
+      (.files | type == "object" and all(to_entries[]; (.key as $k | $allowed | index($k) != null) and (.value|type == "string"))) and
+      (all(.database.singbox | to_entries[]; if .key == "anytls" then (.value.password|word)
+        elif (.key|endswith("-shadowtls")) then (.value.stls_password|word) and
+          (.value.sni|type == "string" and test("^[A-Za-z0-9.-]+$")) and
+          ((.value.snell_backend_port // .value.ss_backend_port)|port)
+        else true end))
+    ' "$file" >/dev/null 2>&1 || { _err "恢复快照格式、身份或参数无效"; return 1; }
+
+    # WARP 的系统安装、账户和隧道不属于协议快照，禁止悄悄恢复成绕过该出口的直连配置。
+    if jq -e 'any(.database.routing_rules[]?; .outbound == "warp")' "$file" >/dev/null 2>&1; then
+        _err "当前恢复功能不支持依赖 WARP 出口的节点，请使用完整系统备份迁移"
+        return 1
+    fi
+    local proto required fields
+    while IFS= read -r proto; do
+        required=""
+        fields=""
+        case "$proto" in
+            vless|vless-xhttp)
+                fields="uuid private_key public_key short_id sni" ;;
+            vless-ws|vmess-ws)
+                fields="uuid sni path"
+                if ! jq -e '.database.xray | has("vless") or has("vless-vision") or has("trojan")' "$file" >/dev/null; then
+                    required="certs/server.crt certs/server.key"
+                fi ;;
+            vless-vision) fields="uuid sni"; required="certs/server.crt certs/server.key" ;;
+            trojan) fields="password sni"; required="certs/server.crt certs/server.key" ;;
+            vmess) fields="uuid" ;;
+            socks) fields="username password" ;;
+            ss2022|ss-legacy) fields="password method" ;;
+            hy2) fields="password sni"; required="certs/hy2/server.crt certs/hy2/server.key" ;;
+            tuic) fields="uuid password sni"; required="certs/tuic/server.crt certs/tuic/server.key" ;;
+            snell|snell-v5|snell-shadowtls|snell-v5-shadowtls) fields="psk"; required="$proto.conf" ;;
+            ss2022-shadowtls) fields="password method"; required="ss2022-shadowtls-backend.json" ;;
+            anytls) fields="password" ;;
+            naive) fields="username password domain"; required="Caddyfile" ;;
+        esac
+        local path field
+        for field in $fields; do
+            # 旧版 build_config 会把纯数字密码/short_id 写成 JSON number，保留其 jq -r 原有语义。
+            jq -e --arg p "$proto" --arg f "$field" '(.database.xray[$p] // .database.singbox[$p])[$f] | (type == "string" or type == "number") and (tostring | length > 0)' "$file" >/dev/null || {
+                _err "恢复快照缺少 $proto 所需配置：$field"; return 1;
+            }
+        done
+        for path in $required; do
+            jq -e --arg p "$path" '.files[$p] | type == "string" and length > 0' "$file" >/dev/null || {
+                _err "恢复快照缺少 $proto 所需文件：$path"; return 1;
+            }
+        done
+    done < <(jq -r '.database.xray, .database.singbox | keys[]' "$file")
+}
+
+sub_panel_build_backup() {
+    local output="$1" server source path next
+    [[ -f "$DB_FILE" ]] || return 1
+    sub_panel_safe_path db.json || return 1
+    sub_panel_safe_path sub-panel-node-id || return 1
+    server=$(sub_panel_server_ip)
+    source=$(sub_panel_source_host "$server")
+    jq -n --arg sourceHost "$source" --arg server "$server" --slurpfile db "$DB_FILE" \
+        '{version:1,sourceHost:$sourceHost,server:$server,database:$db[0],files:{}}' > "$output" || return 1
+    while IFS= read -r path; do
+        sub_panel_safe_path "$path" || { _err "备份拒绝符号链接：$path"; return 1; }
+        [[ -f "$CFG/$path" ]] || continue
+        next="$output.next"
+        jq --arg path "$path" --rawfile content "$CFG/$path" '.files[$path] = $content' "$output" > "$next" &&
+            mv "$next" "$output" || return 1
+    done < <(sub_panel_backup_files)
+    sub_panel_validate_backup "$output"
+}
+
+# 默认在绑定、手动上报、成功启动服务及卸载协议后更新最近一次完整快照。
+# 未绑定、空数据库或恢复未完成时不上传，避免空配置/半成品替换可用的历史快照。
+sub_panel_backup() {
+    [[ "${SUB_PANEL_RESTORING:-0}" == "1" || -e "$CFG/.restore-pending" ]] && return 0
+    load_sub_panel_config || return 0
+    [[ -n "$(get_installed_protocols)" ]] || return 0
+    (
+        umask 077
+        local tmp
+        tmp=$(mktemp -d) || exit 1
+        trap 'rm -rf "$tmp"' EXIT
+        sub_panel_build_backup "$tmp/backup.json" || exit 1
+        sub_panel_request backup "$tmp/backup.json" "$tmp/response.json" || exit 1
+        _ok "节点恢复快照已保存到 Flux Panel"
+    )
+}
+
+# 旧 svc status 将 systemd 的 activating 视为在线；恢复必须连续两次确认 active，
+# 避免 Restart=always 的重启循环被误报成功后覆盖面板快照。OpenRC 也不使用宽松进程回退。
+sub_panel_restore_service_healthy() {
+    local service="$1" attempt
+    for attempt in 1 2; do
+        if [[ "$DISTRO" == "alpine" ]]; then
+            rc-service "$service" status >/dev/null 2>&1 || return 1
+        else
+            [[ "$(systemctl is-active "$service" 2>/dev/null)" == "active" ]] || return 1
+        fi
+        [[ "$attempt" == "2" ]] || sleep 1
+    done
+}
+
+# 恢复只允许空机，或同一 sourceHost 的失败重试；不会覆盖另一台已部署的节点。
+# 失败标记保留到健康检查通过，防止正常上报流程把部分恢复结果写回面板。
+sub_panel_apply_backup() {
+    local file="$1" source="$2" path proto service count expected retry=0
+    sub_panel_validate_backup "$file" "$source" || return 1
+    # 包含后续生成器会写入的全部固定目标；即使文件不在快照中，也不能沿符号链接写入。
+    for path in db.json .restore-pending sub-panel-node-id sub-panel.env certs certs/hy2 certs/tuic \
+        role config.json singbox.json watchdog.sh hy2-nat.sh tuic-nat.sh; do
+        sub_panel_safe_path "$path" || { _err "恢复目标存在符号链接：$path"; return 1; }
+    done
+    while IFS= read -r path; do
+        sub_panel_safe_path "$path" || return 1
+    done < <(sub_panel_backup_files)
+    if [[ -f "$DB_FILE" ]] && ! jq -e '(.xray|type == "object") and (.singbox|type == "object")' "$DB_FILE" >/dev/null 2>&1; then
+        _err "本机数据库损坏，恢复已取消以免覆盖已有配置"; return 1
+    fi
+    if [[ -e "$CFG/.restore-pending" ]]; then
+        [[ -f "$CFG/.restore-pending" && "$(cat "$CFG/.restore-pending")" == "$source" ]] || {
+            _err "本机存在其他节点的未完成恢复，不能覆盖"; return 1;
+        }
+        retry=1
+    fi
+    if [[ "$retry" == "0" ]]; then
+        [[ -z "$(get_installed_protocols)" ]] || {
+            _err "本机已有协议配置，恢复已取消；请在重装后的空节点执行"; return 1;
+        }
+        # 兼容旧脚本或数据库丢失的节点；磁盘上仍有协议配置时不能误判为空机。
+        for path in config.json singbox.json snell.conf snell-v5.conf snell-shadowtls.conf \
+            snell-v5-shadowtls.conf ss2022-shadowtls-backend.json Caddyfile; do
+            [[ ! -e "$CFG/$path" ]] || { _err "本机已有协议文件：$path，恢复已取消"; return 1; }
+        done
+    fi
+    _ensure_import_dependencies "$file" || return 1
+    umask 077
+    mkdir -p "$CFG" || return 1
+    printf '%s\n' "$source" > "$CFG/.restore-pending" || return 1
+    jq '.database' "$file" > "$DB_FILE" || return 1
+    while IFS= read -r path; do
+        mkdir -p "$(dirname "$CFG/$path")" || return 1
+        jq -jr --arg path "$path" '.files[$path]' "$file" > "$CFG/$path" || return 1
+        chmod 600 "$CFG/$path" || return 1
+    done < <(jq -r '.files | keys[]' "$file")
+    printf '%s\n' "${source#node-}" > "$SUB_PANEL_NODE_ID_FILE" || return 1
+    chmod 600 "$DB_FILE" "$SUB_PANEL_NODE_ID_FILE" "$CFG/.restore-pending" || return 1
+    # 只恢复稳定身份；服务器地址使用本次检测值，重装后 IP 变化时上报会更新原节点。
+    SUB_PANEL_NODE_ID="${source#node-}"
+    save_sub_panel_config "$SUB_PANEL_URL" "$SUB_PANEL_API_KEY" || return 1
+    printf 'server\n' > "$CFG/role" || return 1
+    create_server_scripts || return 1
+    while IFS= read -r proto; do
+        create_service "$proto" || return 1
+    done < <(get_installed_protocols)
+    [[ "$DISTRO" == "alpine" ]] || systemctl daemon-reload || return 1
+    start_services || { _err "恢复服务启动失败，可重新执行同一恢复命令重试"; return 1; }
+    # 旧生成器允许跳过失败的协议；必须核对完整数量，防止部分协议启动也被判作恢复成功。
+    expected=$(jq '.xray | length' "$DB_FILE")
+    if [[ "$expected" -gt 0 ]]; then
+        count=$(jq '.inbounds | length' "$CFG/config.json")
+        [[ "$count" == "$expected" ]] || { _err "Xray 协议未全部恢复"; return 1; }
+    fi
+    expected=$(jq '[.singbox | keys[] | select(. == "hy2" or . == "tuic")] | length' "$DB_FILE")
+    if [[ "$expected" -gt 0 ]]; then
+        count=$(jq '.inbounds | length' "$CFG/singbox.json")
+        [[ "$count" == "$expected" ]] || { _err "Sing-box 协议未全部恢复"; return 1; }
+    fi
+    while IFS= read -r proto; do
+        service="${PROTO_SVC[$proto]}"
+        sub_panel_restore_service_healthy "$service" || { _err "恢复后服务未正常运行：$proto"; return 1; }
+        if [[ "$proto" == *-shadowtls ]]; then
+            sub_panel_restore_service_healthy "${BACKEND_NAME[$proto]}" || { _err "恢复后 ShadowTLS 后端未正常运行"; return 1; }
+        fi
+    done < <(get_installed_protocols)
+    create_shortcut || return 1
+    rm -f "$CFG/.restore-pending" || return 1
+}
+
+flux_panel_restore_cli() {
+    local panel_url="${1:-}" api_key="${2:-}" source="${3:-}"
+    check_root
+    [[ -n "$panel_url" && -n "$api_key" && "$source" =~ ^node-[A-Za-z0-9_.-]{1,80}$ ]] || {
+        _err "用法: $0 --flux-panel-restore <panel_url> <api_key> <sourceHost>"; return 1;
+    }
+    if ! command -v jq >/dev/null || ! command -v curl >/dev/null; then
+        install_deps || return 1
+    fi
+    (
+        umask 077
+        local tmp
+        tmp=$(mktemp -d) || exit 1
+        trap 'rm -rf "$tmp"' EXIT
+        SUB_PANEL_URL="$panel_url"
+        SUB_PANEL_API_KEY="$api_key"
+        SUB_PANEL_RESTORING=1
+        unset SUB_PANEL_SERVER
+        jq -n --arg sourceHost "$source" '{sourceHost:$sourceHost}' > "$tmp/request.json" || exit 1
+        sub_panel_request restore "$tmp/request.json" "$tmp/response.json" || exit 1
+        jq '.data' "$tmp/response.json" > "$tmp/backup.json" || exit 1
+        sub_panel_apply_backup "$tmp/backup.json" "$source" || exit 1
+        SUB_PANEL_RESTORING=0
+        # 只有本地服务全部恢复才重新上报；若网络失败，保留服务并返回失败，提示手动重报。
+        sub_panel_report_all || { _err "本机已恢复，但面板同步失败，请使用订阅服务菜单重新上报"; exit 1; }
+        _ok "节点已恢复，原订阅链接和节点身份继续使用"
+    )
+}
+
+sub_panel_restore_interactive() {
+    load_sub_panel_config || true
+    local panel_url="${SUB_PANEL_URL:-}" api_key="${SUB_PANEL_API_KEY:-}"
+    [[ -n "$panel_url" ]] || read -rp "  面板地址: " panel_url
+    [[ -n "$api_key" ]] || read -rsp "  订阅 API Key: " api_key
+    echo ""
+    [[ -n "$panel_url" && -n "$api_key" ]] || return 1
+    if ! command -v jq >/dev/null || ! command -v curl >/dev/null; then install_deps || return 1; fi
+    (
+        umask 077
+        local tmp source choice
+        tmp=$(mktemp -d) || exit 1
+        trap 'rm -rf "$tmp"' EXIT
+        SUB_PANEL_URL="$panel_url" SUB_PANEL_API_KEY="$api_key"
+        printf '{}\n' > "$tmp/request.json"
+        sub_panel_request backups "$tmp/request.json" "$tmp/response.json" || exit 1
+        jq -e '.data | type == "array" and length > 0' "$tmp/response.json" >/dev/null || {
+            _warn "面板暂无恢复快照，旧节点需先用新版脚本上报备份"; exit 1;
+        }
+        jq -r '.data | to_entries[] | "\(.key + 1)) \(.value.server) · \(.value.sourceHost) · \(.value.protocols|join(", "))"' "$tmp/response.json"
+        read -rp "  选择要恢复的节点编号（直接回车取消）: " choice
+        [[ "$choice" =~ ^[1-9][0-9]*$ ]] || exit 1
+        source=$(jq -r --argjson i "$choice" '.data[$i-1].sourceHost // empty' "$tmp/response.json")
+        [[ -n "$source" ]] || exit 1
+        flux_panel_restore_cli "$panel_url" "$api_key" "$source"
+    )
 }
 
 configure_sub_panel_report() {
@@ -644,6 +944,9 @@ configure_sub_panel_report() {
 flux_panel_bind_cli() {
     local panel_url="${1:-}" api_key="${2:-}" server_ip="${3:-}"
     check_root
+    if ! command -v jq >/dev/null || ! command -v curl >/dev/null; then
+        install_deps || return 1
+    fi
     init_log
     init_db
     [[ -z "$panel_url" || -z "$api_key" ]] && {
@@ -952,6 +1255,7 @@ unregister_protocol() {
     # 从数据库删除
     db_del "xray" "$protocol" 2>/dev/null
     db_del "singbox" "$protocol" 2>/dev/null
+    sub_panel_backup || _warn "协议已卸载，但恢复快照更新失败，请重新上报"
 }
 
 get_installed_protocols() {
@@ -5320,6 +5624,7 @@ start_services() {
         return 1
     fi
 
+    sub_panel_backup || _warn "服务已启动，但恢复快照保存失败，请重新上报"
     return 0
 }
 
@@ -14140,6 +14445,7 @@ main_menu() {
             _item "1" "安装协议"
             _item "2" "导入配置 (从备份恢复)"
         fi
+        _item "r" "从 Flux Panel 恢复节点配置"
         _item "u" "检查更新"
         _item "0" "退出"
         _line
@@ -14158,6 +14464,7 @@ main_menu() {
                 8) uninstall_specific_protocol ;;
                 9) do_uninstall ;;
                 l|L) show_logs ;;
+                r|R) sub_panel_restore_interactive ;;
                 u|U) do_update ;;
                 0) exit 0 ;;
                 *) _err "无效选择" ;;
@@ -14166,6 +14473,7 @@ main_menu() {
             case $choice in
                 1) do_install_server ;;
                 2) import_config ;;
+                r|R) sub_panel_restore_interactive ;;
                 u|U) do_update ;;
                 0) exit 0 ;;
                 *) _err "无效选择" ;;
@@ -14180,7 +14488,12 @@ case "${1:-}" in
     --flux-panel-bind)
         shift
         flux_panel_bind_cli "$@"
-        exit 0
+        exit $?
+        ;;
+    --flux-panel-restore)
+        shift
+        flux_panel_restore_cli "$@"
+        exit $?
         ;;
 esac
 

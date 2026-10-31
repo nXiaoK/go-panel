@@ -91,7 +91,7 @@ func Init(dbPath string, options ...BootstrapOptions) error {
 	if err := db.AutoMigrate(
 		&User{}, &Node{}, &Tunnel{}, &Forward{}, &ForwardExitMember{},
 		&UserTunnel{}, &SpeedLimit{}, &StatisticsFlow{}, &TrafficHourly{}, &TrafficTunnelHourly{}, &DataMigration{}, &FlowReporterState{}, &ViteConfig{},
-		&ProxyNode{}, &SubscriptionProfile{}, &SubscriptionProfileNode{}, &NodeSyncState{},
+		&ProxyNode{}, &ProxyNodeBackup{}, &SubscriptionProfile{}, &SubscriptionProfileNode{}, &NodeSyncState{},
 	); err != nil {
 		return fmt.Errorf("自动迁移失败: %w", err)
 	}

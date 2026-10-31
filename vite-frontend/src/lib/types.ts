@@ -418,6 +418,15 @@ export interface SubTunnelOption {
   status: number;
 }
 
+// 恢复列表只返回主机元数据和鉴权命令；服务端私钥、证书不进入设置页响应。
+export interface SubscriptionNodeBackup {
+  sourceHost: string;
+  server: string;
+  protocols: string[];
+  updatedTime: number;
+  restoreCommand: string;
+}
+
 export interface SubscriptionSettings {
   apiKey: string;
   profiles: SubscriptionProfile[];
@@ -425,6 +434,8 @@ export interface SubscriptionSettings {
   profileNodes: ProfileNode[];
   tunnels: SubTunnelOption[];
   vlessBootstrapScript: string;
+  // 旧面板未返回此字段时按无备份处理，避免误把客户端订阅当作完整服务端备份。
+  nodeBackups?: SubscriptionNodeBackup[];
 }
 
 // ---------- Pagination ----------

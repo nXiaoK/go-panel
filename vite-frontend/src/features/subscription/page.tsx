@@ -72,6 +72,7 @@ import { SubscriptionProfileDialog } from "./components/profile-dialog";
 import { SubscriptionQrDialog } from "./components/qr-dialog";
 import { SubscriptionRelayDialog } from "./components/relay-dialog";
 import { SubscriptionDeleteNodesDialog } from "./components/delete-nodes-dialog";
+import { SubscriptionNodeRestore } from "./components/node-restore";
 
 // 默认打开订阅配置；节点筛选只影响协议节点，不清除其他标签页的书签参数。
 const defaults = { tab: "profiles", q: "", protocol: "", status: "", relay: "" };
@@ -742,6 +743,9 @@ export function SubscriptionPage() {
               <CodeBlock code={query.data.vlessBootstrapScript} label="复制脚本" />
             ) : (
               <EmptyState title="暂无上报脚本" description="配置 API Key 后刷新查看节点上报脚本" />
+            )}
+            {!query.isPending && (
+              <SubscriptionNodeRestore backups={query.data?.nodeBackups ?? []} />
             )}
           </TabsContent>
         </Tabs>

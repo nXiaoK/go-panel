@@ -104,6 +104,7 @@ docker compose -f compose.yml -f compose.update.yml up -d
 - 管理界面可以下载通过 `VACUUM INTO` 创建且经过 `PRAGMA integrity_check` 校验的 SQLite 快照。
 - 系统配置支持 Cloudflare R2 每日自动备份、连接测试、立即上传和远端保留数量。
 - 点击一键更新前会在数据卷内保留本地快照，默认保留最近 5 份。
+- “订阅 → 节点上报”可保存协议服务器的恢复快照，供 VPS 重装后恢复；现有节点须先运行新版上报脚本。快照包含服务端私钥和证书，会随 SQLite/R2 站点备份一起保存，务必限制数据库和备份的访问权限。操作及范围见 [节点上报备份与恢复](subscription-assets/README.md#节点上报备份与恢复)。
 
 不要直接复制运行中的主数据库文件。SQLite WAL 可能尚未合并，仅复制 `flux-panel.db` 不能保证得到一致备份。该历史文件名为兼容旧数据卷而保留。
 

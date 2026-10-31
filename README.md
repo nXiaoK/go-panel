@@ -111,6 +111,12 @@ docker compose logs -f panel
 
 面板容器与节点程序分别升级：**更新面板镜像不会自动替换远端节点程序**，需要在节点管理中继续升级对应组件。
 
+### VPS 重装后恢复订阅节点
+
+在“订阅 → 节点上报”复制新版上报脚本，先在尚未重装的 VPS 执行，确认页面出现该机器的配置备份。系统重装后，在同一页面的“恢复已有节点”选择原备份，将恢复命令放到重装后的 VPS 执行。恢复会沿用原节点身份和协议凭据，保留面板中的订阅绑定；请保留原协议节点记录和订阅配置。
+
+旧版上报只保存客户端连接参数，缺少 Reality 私钥、证书等服务端资料，无法直接用于完整恢复。备份内容、适用范围与安全说明见 [节点上报备份与恢复](subscription-assets/README.md#节点上报备份与恢复)。
+
 ## 升级与备份
 
 先在“系统配置”下载数据库备份，阅读 [Release Notes](https://github.com/nXiaoK/go-panel/releases)，再更新容器：
@@ -122,7 +128,7 @@ docker compose up -d
 
 默认 `GO_PANEL_VERSION=latest` 跟随稳定版；正式部署可改为 Releases 中已发布的完整版本标签，便于控制升级和回滚。`edge` 跟随 `main` 的开发构建。回滚涉及数据库结构变化时，需要配套恢复升级前的备份。
 
-面板提供 SQLite 一致性快照与 R2 定时备份。不要直接复制运行中的 `flux-panel.db`，因为 WAL 中的数据可能尚未合并。更多内容见 [备份说明](OPERATIONS.md#数据备份) 与 [升级、回滚和一键更新](OPERATIONS.md#升级与回滚)。
+面板通过 `VACUUM INTO` 生成 SQLite 一致性快照，并用 `PRAGMA integrity_check` 校验，支持 R2 定时备份。不要直接复制运行中的主数据库文件 `flux-panel.db`，因为 WAL 中的数据可能尚未合并。更多内容见 [备份说明](OPERATIONS.md#数据备份) 与 [升级、回滚和一键更新](OPERATIONS.md#升级与回滚)。
 
 ## 本地开发
 
