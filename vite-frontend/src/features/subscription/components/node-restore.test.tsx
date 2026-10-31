@@ -39,10 +39,10 @@ async function choose(host: string) {
   fireEvent.click(await screen.findByRole("option", { name: new RegExp(host) }));
 }
 
-it("无备份说明须在重装前完成新版上报，不提供恢复命令", () => {
+it("无完整备份引导旧记录恢复，不提供完整备份恢复命令", () => {
   render(<SubscriptionNodeRestore backups={[]} />);
   expect(screen.getByText("暂无可恢复的节点备份")).toBeInTheDocument();
-  expect(screen.getByText(/请在重装前/)).toHaveTextContent("仅有订阅连接参数无法完整恢复");
+  expect(screen.getByText(/已重装且没有完整备份/)).toHaveTextContent("从旧上报记录恢复");
   expect(screen.queryByRole("combobox")).toBeNull();
   expect(screen.queryByRole("button", { name: "复制恢复命令" })).toBeNull();
 });

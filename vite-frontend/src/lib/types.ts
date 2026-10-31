@@ -427,6 +427,22 @@ export interface SubscriptionNodeBackup {
   restoreCommand: string;
 }
 
+// 旧上报恢复只暴露恢复能力与原因，不返回旧凭据；完整备份存在时由后端优先提供快照入口。
+export interface ReportedNodeRestore {
+  sourceHost: string;
+  server: string;
+  nodes: {
+    id: number;
+    name: string;
+    protocol: string;
+    port: number;
+    action: "preserve" | "regenerate" | "unsupported";
+    reason: string;
+  }[];
+  // 无法可靠识别来源或全部协议不受支持时为空，前端不得自行拼接可执行恢复命令。
+  restoreCommand: string;
+}
+
 export interface SubscriptionSettings {
   apiKey: string;
   profiles: SubscriptionProfile[];
@@ -436,6 +452,8 @@ export interface SubscriptionSettings {
   vlessBootstrapScript: string;
   // 旧面板未返回此字段时按无备份处理，避免误把客户端订阅当作完整服务端备份。
   nodeBackups?: SubscriptionNodeBackup[];
+  // 未返回时按无旧记录处理；重建可能生成新密钥，客户端必须刷新原订阅获取更新后的参数。
+  reportedNodeRestores?: ReportedNodeRestore[];
 }
 
 // ---------- Pagination ----------

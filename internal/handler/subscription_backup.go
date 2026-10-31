@@ -39,3 +39,15 @@ func restoreProxyNodeBackup(c *gin.Context) {
 func listProxyNodeBackups(c *gin.Context) {
 	c.JSON(http.StatusOK, service.ListProxyNodeBackups(subscriptionAPIKey(c)))
 }
+
+func restoreReportedProxyNodes(c *gin.Context) {
+	var req dto.ProxyNodeRestoreDto
+	if !bindJSON(c, &req) {
+		return
+	}
+	c.JSON(http.StatusOK, service.RestoreReportedProxyNodes(subscriptionAPIKey(c), req.SourceHost))
+}
+
+func listReportedNodeRestores(c *gin.Context) {
+	c.JSON(http.StatusOK, service.ListReportedNodeRestores(subscriptionAPIKey(c)))
+}

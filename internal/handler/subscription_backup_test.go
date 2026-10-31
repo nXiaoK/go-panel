@@ -41,7 +41,7 @@ func (*unreadBackupBody) Close() error               { return nil }
 
 func TestProxyNodeBackupAuthenticatesBeforeReadingBody(t *testing.T) {
 	router := proxyBackupRouter(t)
-	for _, route := range []string{"backup", "restore", "backups"} {
+	for _, route := range []string{"backup", "restore", "backups", "restore-reported", "reported-restores"} {
 		body := &unreadBackupBody{}
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/sub/node/"+route, nil)
 		req.Body = body
@@ -109,5 +109,44 @@ func TestProxyNodeBackupHTTPRoundTripAndSizeLimits(t *testing.T) {
 	out = request("backups", []byte(`{}`), false)
 	if out.Code != http.StatusOK || strings.Contains(out.Body.String(), "secret-reality") || strings.Contains(out.Body.String(), "database") {
 		t.Fatalf("backup list leaked snapshot: %d %s", out.Code, out.Body.String())
+	}
+}
+
+func TestReportedNodeRestoreHTTPEnvelope(t *testing.T) {
+	router := proxyBackupRouter(t)
+	node := model.ProxyNode{ExternalID: "node-http-reinstalled-socks", Name: "旧 SOCKS5", Protocol: "socks5", Server: "192.0.2.17", Port: 21001, Username: "original-user", Password: "original-password", Options: `{"source":"vless-server.sh","sourceHost":"node-http-reinstalled","originalProtocol":"socks","originalPort":"21001"}`}
+	if err := model.DB.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	request := func(route, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sub/node/"+route, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-API-Key", proxyBackupHandlerKey)
+		out := httptest.NewRecorder()
+		router.ServeHTTP(out, req)
+		return out
+	}
+	out := request("reported-restores", `{}`)
+	if out.Code != http.StatusOK || strings.Contains(out.Body.String(), "original-password") || !strings.Contains(out.Body.String(), "--flux-panel-restore-reported") {
+		t.Fatalf("bad metadata response: %d %s", out.Code, out.Body.String())
+	}
+	out = request("restore-reported", `{"sourceHost":"node-http-reinstalled"}`)
+	var response struct {
+		Code int                               `json:"code"`
+		Data service.ReportedNodeRestoreResult `json:"data"`
+	}
+	if out.Code != http.StatusOK || json.Unmarshal(out.Body.Bytes(), &response) != nil || response.Code != 0 {
+		t.Fatalf("bad restore envelope: %d %s", out.Code, out.Body.String())
+	}
+	if response.Data.Snapshot.SourceHost != "node-http-reinstalled" || len(response.Data.Notices) == 0 || !strings.Contains(string(response.Data.Snapshot.Database), "original-password") {
+		t.Fatalf("missing snapshot or notices: %#v", response)
+	}
+	if out.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("reconstructed credentials response cacheable")
+	}
+	var count int64
+	model.DB.Model(&model.ProxyNodeBackup{}).Count(&count)
+	if count != 0 {
+		t.Fatal("HTTP restore persisted draft snapshot")
 	}
 }

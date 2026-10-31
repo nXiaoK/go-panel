@@ -61,7 +61,7 @@ func ReportProxyNode(apiKey string, req dto.ProxyNodeReportDto) result.R {
 		attachNodeToDefaultProfilesByProtocol(node.ID, node.Protocol)
 		return result.Ok(node)
 	}
-	if err := model.DB.Save(&node).Error; err != nil {
+	if err := saveReportedProxyNode(&node); err != nil {
 		return result.Err("节点上报失败")
 	}
 	return result.Ok(node)
@@ -799,6 +799,10 @@ func GetSubscriptionSettings() result.R {
 	if err != nil {
 		return result.Err("读取节点恢复备份列表失败")
 	}
+	reportedRestores, err := reportedNodeRestoreViews()
+	if err != nil {
+		return result.Err("读取旧上报恢复列表失败")
+	}
 	var profiles []model.SubscriptionProfile
 	model.DB.Order("created_time asc").Find(&profiles)
 	var nodes []model.ProxyNode
@@ -816,6 +820,7 @@ func GetSubscriptionSettings() result.R {
 		"defaultFormat":        defaultSubFormat,
 		"vlessBootstrapScript": BuildVlessServerBootstrapCommand("", ""),
 		"nodeBackups":          backups,
+		"reportedNodeRestores": reportedRestores,
 	})
 }
 

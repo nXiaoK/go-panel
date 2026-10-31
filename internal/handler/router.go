@@ -54,6 +54,8 @@ func Register(r *gin.Engine, corsAllowOrigin string, allowLegacyNftReports bool)
 	nodeBackup.POST("/backup", LimitBody(service.MaxProxyNodeBackupSize), saveProxyNodeBackup)
 	nodeBackup.POST("/restore", LimitBody(maxJSONBodySize), restoreProxyNodeBackup)
 	nodeBackup.POST("/backups", LimitBody(maxJSONBodySize), listProxyNodeBackups)
+	nodeBackup.POST("/restore-reported", LimitBody(maxJSONBodySize), restoreReportedProxyNodes)
+	nodeBackup.POST("/reported-restores", LimitBody(maxJSONBodySize), listReportedNodeRestores)
 	// 数据库操作门控：恢复期间新请求收到可重试 503；/backup/restore 自身
 	// 走 restoreAdmin（无此中间件），由服务层直接进入维护窗口。
 	api := apiRoot.Group("", LimitBody(maxJSONBodySize), middleware.DatabaseOperationScope())

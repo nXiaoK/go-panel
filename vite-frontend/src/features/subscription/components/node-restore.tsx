@@ -20,19 +20,19 @@ export function SubscriptionNodeRestore({ backups }: { backups: SubscriptionNode
   return (
     <section className="min-w-0 space-y-4 border-t border-hairline pt-6">
       <div className="space-y-2">
-        <h2 className="text-section-title text-ink">恢复已有节点</h2>
+        <h2 className="text-section-title text-ink">从完整备份恢复</h2>
         <p className="text-sm text-body">
           VPS 重装后，选择原节点的备份，在原 VPS
           上执行恢复命令，恢复服务端配置并保留原协议节点和订阅绑定。 恢复前请核对原地址和主机标识。
         </p>
         <p className="text-caption text-mute">
-          每个节点保留最新一次成功上传的备份，只有使用新版脚本完成备份的节点才能恢复。备份包含私钥和证书，单独保存在面板中；请保护面板及站点备份。
+          每个节点保留最新一次成功上传的备份。完整还原需要备份；没有备份时，可通过下方旧上报记录恢复部分配置。备份包含私钥和证书，单独保存在面板中；请保护面板及站点备份。
         </p>
       </div>
       {backups.length === 0 ? (
         <EmptyState
           title="暂无可恢复的节点备份"
-          description="请在重装前，在原 VPS 上执行上方新版上报脚本，完成配置备份后刷新本页。仅有订阅连接参数无法完整恢复服务端配置。"
+          description="已重装且没有完整备份的 VPS，可尝试下方“从旧上报记录恢复”。以后请在重装前执行新版上报脚本，保存完整服务端配置。"
         />
       ) : (
         <>

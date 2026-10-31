@@ -868,17 +868,28 @@ sub_panel_apply_backup() {
 }
 
 flux_panel_restore_cli() {
-    local panel_url="${1:-}" api_key="${2:-}" source="${3:-}"
+    flux_panel_restore_run restore "$@"
+}
+
+flux_panel_restore_reported_cli() {
+    flux_panel_restore_run restore-reported "$@"
+}
+
+# 完整快照默认原样恢复；旧上报记录模式只采用面板提供的临时快照，
+# 私钥/证书的重建由面板完成并通过 notices 告知，脚本不会再生成另一套密钥。
+flux_panel_restore_run() {
+    local mode="$1" panel_url="${2:-}" api_key="${3:-}" source="${4:-}"
     check_root
+    [[ "$mode" == "restore" || "$mode" == "restore-reported" ]] || return 1
     [[ -n "$panel_url" && -n "$api_key" && "$source" =~ ^node-[A-Za-z0-9_.-]{1,80}$ ]] || {
-        _err "用法: $0 --flux-panel-restore <panel_url> <api_key> <sourceHost>"; return 1;
+        _err "用法: $0 --flux-panel-$mode <panel_url> <api_key> <sourceHost>"; return 1;
     }
     if ! command -v jq >/dev/null || ! command -v curl >/dev/null; then
         install_deps || return 1
     fi
     (
         umask 077
-        local tmp
+        local tmp notice renewed_reality=false
         tmp=$(mktemp -d) || exit 1
         trap 'rm -rf "$tmp"' EXIT
         SUB_PANEL_URL="$panel_url"
@@ -886,19 +897,41 @@ flux_panel_restore_cli() {
         SUB_PANEL_RESTORING=1
         unset SUB_PANEL_SERVER
         jq -n --arg sourceHost "$source" '{sourceHost:$sourceHost}' > "$tmp/request.json" || exit 1
-        sub_panel_request restore "$tmp/request.json" "$tmp/response.json" || exit 1
-        jq '.data' "$tmp/response.json" > "$tmp/backup.json" || exit 1
+        sub_panel_request "$mode" "$tmp/request.json" "$tmp/response.json" || exit 1
+        if [[ "$mode" == "restore-reported" ]]; then
+            jq -e '.data.notices | type == "array" and all(.[]; type == "string")' "$tmp/response.json" >/dev/null || {
+                _err "旧上报恢复响应缺少配置变更说明，恢复已取消"; exit 1;
+            }
+            jq '.data.snapshot' "$tmp/response.json" > "$tmp/backup.json" || exit 1
+            sub_panel_validate_backup "$tmp/backup.json" "$source" || exit 1
+            # notices 同时列出无法恢复的协议，必须在安装协议核心或写入本机配置之前展示。
+            while IFS= read -r notice; do
+                _warn "$notice"
+            done < <(jq -r '.data.notices[]' "$tmp/response.json")
+            renewed_reality=$(jq -r '.database.xray | has("vless") or has("vless-xhttp")' "$tmp/backup.json")
+        else
+            jq '.data' "$tmp/response.json" > "$tmp/backup.json" || exit 1
+        fi
         sub_panel_apply_backup "$tmp/backup.json" "$source" || exit 1
         SUB_PANEL_RESTORING=0
         # 只有本地服务全部恢复才重新上报；若网络失败，保留服务并返回失败，提示手动重报。
         sub_panel_report_all || { _err "本机已恢复，但面板同步失败，请使用订阅服务菜单重新上报"; exit 1; }
-        _ok "节点已恢复，原订阅链接和节点身份继续使用"
+        if [[ "$mode" == "restore-reported" ]]; then
+            _ok "旧记录中可恢复的协议已部署，原订阅链接和节点身份继续使用；跳过项见前面的说明"
+        else
+            _ok "节点已恢复，原订阅链接和节点身份继续使用"
+        fi
+        if [[ "$renewed_reality" == "true" ]]; then
+            _warn "Reality 密钥已重新生成，请刷新客户端订阅获取新公钥；旧公钥配置无法继续连接"
+        fi
     )
 }
 
 sub_panel_restore_interactive() {
     load_sub_panel_config || true
-    local panel_url="${SUB_PANEL_URL:-}" api_key="${SUB_PANEL_API_KEY:-}"
+    # 默认列完整快照；reported 仅由独立的旧记录恢复菜单传入，避免选错恢复模式。
+    local panel_url="${SUB_PANEL_URL:-}" api_key="${SUB_PANEL_API_KEY:-}" mode="${1:-snapshot}" endpoint=backups
+    [[ "$mode" == "reported" ]] && endpoint=reported-restores
     [[ -n "$panel_url" ]] || read -rp "  面板地址: " panel_url
     [[ -n "$api_key" ]] || read -rsp "  订阅 API Key: " api_key
     echo ""
@@ -911,16 +944,30 @@ sub_panel_restore_interactive() {
         trap 'rm -rf "$tmp"' EXIT
         SUB_PANEL_URL="$panel_url" SUB_PANEL_API_KEY="$api_key"
         printf '{}\n' > "$tmp/request.json"
-        sub_panel_request backups "$tmp/request.json" "$tmp/response.json" || exit 1
+        sub_panel_request "$endpoint" "$tmp/request.json" "$tmp/response.json" || exit 1
         jq -e '.data | type == "array" and length > 0' "$tmp/response.json" >/dev/null || {
-            _warn "面板暂无恢复快照，旧节点需先用新版脚本上报备份"; exit 1;
+            if [[ "$mode" == "reported" ]]; then
+                _warn "面板没有可用于恢复的旧上报记录"
+            else
+                _warn "面板暂无完整恢复快照；若已经重装，可返回菜单选择从旧上报记录恢复"
+            fi
+            exit 1;
         }
-        jq -r '.data | to_entries[] | "\(.key + 1)) \(.value.server) · \(.value.sourceHost) · \(.value.protocols|join(", "))"' "$tmp/response.json"
+        if [[ "$mode" == "reported" ]]; then
+            _warn "旧记录可能需要重建丢失的私钥或证书，无法恢复的协议将明确跳过；完整清单会在执行前显示"
+            jq -r '.data | to_entries[] | "\(.key + 1)) \(.value.server) · \(.value.sourceHost)", (.value.nodes[] | "    \(.name) · \(.protocol):\(.port) · \(.reason)")' "$tmp/response.json"
+        else
+            jq -r '.data | to_entries[] | "\(.key + 1)) \(.value.server) · \(.value.sourceHost) · \(.value.protocols|join(", "))"' "$tmp/response.json"
+        fi
         read -rp "  选择要恢复的节点编号（直接回车取消）: " choice
         [[ "$choice" =~ ^[1-9][0-9]*$ ]] || exit 1
         source=$(jq -r --argjson i "$choice" '.data[$i-1].sourceHost // empty' "$tmp/response.json")
         [[ -n "$source" ]] || exit 1
-        flux_panel_restore_cli "$panel_url" "$api_key" "$source"
+        if [[ "$mode" == "reported" ]]; then
+            flux_panel_restore_reported_cli "$panel_url" "$api_key" "$source"
+        else
+            flux_panel_restore_cli "$panel_url" "$api_key" "$source"
+        fi
     )
 }
 
@@ -14446,6 +14493,7 @@ main_menu() {
             _item "2" "导入配置 (从备份恢复)"
         fi
         _item "r" "从 Flux Panel 恢复节点配置"
+        _item "p" "从旧上报记录恢复（重建丢失密钥）"
         _item "u" "检查更新"
         _item "0" "退出"
         _line
@@ -14465,6 +14513,7 @@ main_menu() {
                 9) do_uninstall ;;
                 l|L) show_logs ;;
                 r|R) sub_panel_restore_interactive ;;
+                p|P) sub_panel_restore_interactive reported ;;
                 u|U) do_update ;;
                 0) exit 0 ;;
                 *) _err "无效选择" ;;
@@ -14474,6 +14523,7 @@ main_menu() {
                 1) do_install_server ;;
                 2) import_config ;;
                 r|R) sub_panel_restore_interactive ;;
+                p|P) sub_panel_restore_interactive reported ;;
                 u|U) do_update ;;
                 0) exit 0 ;;
                 *) _err "无效选择" ;;
@@ -14493,6 +14543,11 @@ case "${1:-}" in
     --flux-panel-restore)
         shift
         flux_panel_restore_cli "$@"
+        exit $?
+        ;;
+    --flux-panel-restore-reported)
+        shift
+        flux_panel_restore_reported_cli "$@"
         exit $?
         ;;
 esac

@@ -43,7 +43,8 @@ func runSubscriptionRestoreScript(t *testing.T, bundle map[string]any, body stri
 		"sub_panel_backup_files", "sub_panel_safe_path", "sub_panel_request", "sub_panel_base_url",
 		"sub_panel_validate_backup", "sub_panel_build_backup", "sub_panel_backup", "sub_panel_apply_backup",
 		"sub_panel_restore_service_healthy",
-		"flux_panel_restore_cli", "sub_panel_report_all", "get_installed_protocols", "db_get_all_protocols",
+		"flux_panel_restore_cli", "flux_panel_restore_reported_cli", "flux_panel_restore_run", "sub_panel_restore_interactive",
+		"sub_panel_report_all", "get_installed_protocols", "db_get_all_protocols",
 		"sub_panel_quote", "save_sub_panel_config", "load_sub_panel_config", "sub_panel_source_host", "sub_panel_sanitize_identifier",
 	} {
 		helper.WriteString(extractShellFunction(t, raw, name))
@@ -263,6 +264,7 @@ sub_panel_request() {
         *) return 90 ;;
     esac
 }
+
 `
 		if failStart {
 			body += "FAIL_START=1\n"
@@ -290,5 +292,151 @@ sub_panel_request() {
 		if err != nil || !strings.Contains(string(data), "original-private-key") || !strings.Contains(string(data), "node-original123") {
 			t.Fatalf("recovered snapshot changed credentials/identity: err=%v data=%s", err, data)
 		}
+	}
+}
+
+func TestSubscriptionRestoreReportedCLIUsesBackendKeysAndShowsChangesBeforeInstall(t *testing.T) {
+	for _, failure := range []string{"", "FAIL_START=1", "FAIL_HEALTH=1"} {
+		bundle := subscriptionRestoreBundle()
+		vless := bundle["database"].(map[string]any)["xray"].(map[string]any)["vless"].(map[string]any)
+		vless["private_key"] = "backend-regenerated-private-key"
+		vless["public_key"] = "backend-regenerated-public-key"
+		body := failure + `
+_warn() { printf 'WARN: %s\n' "$*"; printf 'notice %s\n' "$*" >> "$ACTION_LOG"; }
+sub_panel_request() {
+    printf 'request %s\n' "$1" >> "$ACTION_LOG"
+    case "$1" in
+        restore-reported) jq -n --slurpfile snapshot "$FIXTURE" '{code:0,data:{snapshot:$snapshot[0],notices:["Reality 私钥已丢失，将生成新密钥","旧 Trojan 无法恢复，已跳过"]}}' > "$3" ;;
+        backup) cp "$2" "$CFG/remote-backup.json"; printf '{"code":0}' > "$3" ;;
+        *) return 90 ;;
+    esac
+}
+flux_panel_restore_reported_cli https://panel.example test-key node-original123
+`
+		output, err, dir := runSubscriptionRestoreScript(t, bundle, body)
+		actions, _ := os.ReadFile(filepath.Join(dir, "actions.log"))
+		flow := string(actions)
+		if !strings.Contains(flow, "request restore-reported") ||
+			strings.Index(flow, "notice Reality") >= strings.Index(flow, "dependencies") ||
+			!strings.Contains(output, "旧 Trojan 无法恢复，已跳过") {
+			t.Fatalf("wrong route or missing early changes: %v\n%s\n%s", err, output, flow)
+		}
+		if failure != "" {
+			if err == nil || strings.Contains(flow, "report ") || strings.Contains(flow, "request backup") ||
+				strings.Contains(output, "旧记录中可恢复的协议已部署") {
+				t.Fatalf("unhealthy recovery uploaded or succeeded: %v\n%s\n%s", err, output, flow)
+			}
+			if _, statErr := os.Stat(filepath.Join(dir, "config", ".restore-pending")); statErr != nil {
+				t.Fatalf("failed recovery lost retry marker: %v", statErr)
+			}
+			continue
+		}
+		if err != nil || !strings.Contains(output, "刷新客户端订阅获取新公钥") {
+			t.Fatalf("reported recovery failed or omitted new key notice: %v\n%s", err, output)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, "config", "remote-backup.json"))
+		if err != nil || !strings.Contains(string(data), "backend-regenerated-private-key") ||
+			!strings.Contains(string(data), "backend-regenerated-public-key") || !strings.Contains(string(data), "original-uuid") {
+			t.Fatalf("backend keys or original UUID were changed: err=%v data=%s", err, data)
+		}
+	}
+}
+
+func TestSubscriptionRestoreReportedCLIPreservesSSSnellAndSocksCredentials(t *testing.T) {
+	bundle := subscriptionRestoreBundle()
+	bundle["database"].(map[string]any)["xray"] = map[string]any{
+		"ss2022": map[string]any{"port": 45223, "password": "original-ss-password", "method": "2022-blake3-aes-128-gcm"},
+		"socks":  map[string]any{"port": 12345, "username": "original-socks-user", "password": "original-socks-password"},
+	}
+	bundle["database"].(map[string]any)["singbox"] = map[string]any{
+		"snell-v5": map[string]any{"port": 23456, "psk": "original-snell-psk", "version": 5},
+	}
+	bundle["files"] = map[string]any{"snell-v5.conf": "[snell-server]\nlisten = [::]:23456\npsk = original-snell-psk\n"}
+	output, err, dir := runSubscriptionRestoreScript(t, bundle, `
+start_services() { printf '{"inbounds":[{"protocol":"shadowsocks"},{"protocol":"socks"}]}' > "$CFG/config.json"; }
+sub_panel_request() {
+    case "$1" in
+        restore-reported) jq -n --slurpfile snapshot "$FIXTURE" '{code:0,data:{snapshot:$snapshot[0],notices:["保留原 SS、Snell、SOCKS5 端口和凭据"]}}' > "$3" ;;
+        backup) cp "$2" "$CFG/remote-backup.json"; printf '{"code":0}' > "$3" ;;
+        *) return 90 ;;
+    esac
+}
+flux_panel_restore_reported_cli https://panel.example test-key node-original123
+`)
+	if err != nil || strings.Contains(output, "刷新客户端订阅获取新公钥") {
+		t.Fatalf("credential recovery failed or falsely claimed new keys: %v\n%s", err, output)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "config", "remote-backup.json"))
+	for _, preserved := range []string{"45223", "12345", "23456", "original-ss-password", "original-socks-user", "original-socks-password", "original-snell-psk"} {
+		if !strings.Contains(string(data), preserved) {
+			t.Fatalf("lost original %s: %s", preserved, data)
+		}
+	}
+	conf, _ := os.ReadFile(filepath.Join(dir, "config", "snell-v5.conf"))
+	if string(conf) != bundle["files"].(map[string]any)["snell-v5.conf"] {
+		t.Fatalf("Snell config changed: %s", conf)
+	}
+}
+
+func TestSubscriptionRestoreReportedCLIRejectsMissingChangeNotices(t *testing.T) {
+	output, err, dir := runSubscriptionRestoreScript(t, subscriptionRestoreBundle(), `
+sub_panel_request() { jq -n --slurpfile snapshot "$FIXTURE" '{code:0,data:{snapshot:$snapshot[0]}}' > "$3"; }
+flux_panel_restore_reported_cli https://panel.example test-key node-original123
+`)
+	if err == nil || !strings.Contains(output, "缺少配置变更说明") {
+		t.Fatalf("missing changes accepted: %v\n%s", err, output)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "actions.log")); !os.IsNotExist(statErr) {
+		t.Fatal("missing notices reached dependency/service mutations")
+	}
+}
+
+func TestSubscriptionRestoreReportedCLIRetryUsesNewReturnedKeysWithoutPrematureReport(t *testing.T) {
+	output, err, dir := runSubscriptionRestoreScript(t, subscriptionRestoreBundle(), `
+sub_panel_request() {
+    printf 'request %s\n' "$1" >> "$ACTION_LOG"
+    case "$1" in
+        restore-reported) jq -n --slurpfile snapshot "$FIXTURE" '{code:0,data:{snapshot:$snapshot[0],notices:["Reality 密钥重新生成"]}}' > "$3" ;;
+        backup) cp "$2" "$CFG/remote-backup.json"; printf '{"code":0}' > "$3" ;;
+        *) return 90 ;;
+    esac
+}
+FAIL_START=1
+if flux_panel_restore_reported_cli https://panel.example test-key node-original123; then exit 30; fi
+jq '.database.xray.vless.private_key="retry-private-key" | .database.xray.vless.public_key="retry-public-key"' "$FIXTURE" > "$FIXTURE.next"
+mv "$FIXTURE.next" "$FIXTURE"
+FAIL_START=0
+flux_panel_restore_reported_cli https://panel.example test-key node-original123
+`)
+	if err != nil {
+		t.Fatalf("reported recovery retry failed: %v\n%s", err, output)
+	}
+	actions, _ := os.ReadFile(filepath.Join(dir, "actions.log"))
+	if strings.Count(string(actions), "report vless") != 1 || strings.Count(string(actions), "request backup") != 1 {
+		t.Fatalf("failed attempt modified panel: %s", actions)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "config", "remote-backup.json"))
+	if !strings.Contains(string(data), "retry-private-key") || !strings.Contains(string(data), "retry-public-key") ||
+		strings.Contains(string(data), "original-private-key") {
+		t.Fatalf("retry used stale keys: %s", data)
+	}
+}
+
+func TestSubscriptionRestoreReportedMenuSelectsReportedRecordRoute(t *testing.T) {
+	output, err, dir := runSubscriptionRestoreScript(t, subscriptionRestoreBundle(), `
+sub_panel_request() {
+    printf 'request %s\n' "$1" >> "$ACTION_LOG"
+    [[ "$1" == reported-restores ]] || return 40
+    printf '{"code":0,"data":[{"sourceHost":"node-original123","server":"192.0.2.5","nodes":[{"name":"旧 Snell","protocol":"snell","port":443,"action":"preserve","reason":"保留原端口与凭据"}]}]}' > "$3"
+}
+flux_panel_restore_reported_cli() { printf 'selected %s\n' "$3" >> "$ACTION_LOG"; }
+sub_panel_restore_interactive reported <<< 1
+`)
+	if err != nil || !strings.Contains(output, "保留原端口与凭据") {
+		t.Fatalf("reported menu failed: %v\n%s", err, output)
+	}
+	actions, _ := os.ReadFile(filepath.Join(dir, "actions.log"))
+	if !strings.Contains(string(actions), "request reported-restores") || !strings.Contains(string(actions), "selected node-original123") {
+		t.Fatalf("menu used wrong endpoint/mode: %s", actions)
 	}
 }
