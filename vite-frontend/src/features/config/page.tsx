@@ -49,6 +49,7 @@ import {
 } from "./model";
 import { configKeys, useConfigMutation, useConfigs } from "./queries";
 import { R2BackupCard } from "./components/r2-backup-card";
+import { UpdatePanel } from "@/features/system/components/update-panel";
 
 type RestoreSummary = Awaited<ReturnType<typeof restoreSiteBackup>>;
 const tabLabels: { value: ConfigTab; label: string }[] = [
@@ -56,6 +57,7 @@ const tabLabels: { value: ConfigTab; label: string }[] = [
   { value: "security", label: "节点与安全" },
   { value: "backup", label: "备份与恢复" },
   { value: "r2", label: "云端备份 R2" },
+  { value: "update", label: "版本与更新" },
   { value: "advanced", label: "高级" },
 ];
 
@@ -260,7 +262,7 @@ export function ConfigPage() {
     <div className={dirtyCount ? "space-y-6 pb-24" : "space-y-6"}>
       <PageHeader
         title="系统配置"
-        description="管理站点、节点安全策略和备份"
+        description="管理站点、节点安全策略、备份和面板版本更新"
         actions={
           <Button
             variant="outline"
@@ -470,6 +472,9 @@ export function ConfigPage() {
               R2 设置通过独立接口保存，使用下方“保存 R2 设置”，不计入页面底部的未保存修改数量
             </p>
             <R2BackupCard />
+          </TabsContent>
+          <TabsContent value="update" className="mt-0">
+            <UpdatePanel />
           </TabsContent>
           <TabsContent value="advanced" className="mt-0">
             <Card>

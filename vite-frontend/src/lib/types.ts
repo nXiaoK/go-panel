@@ -14,6 +14,37 @@ export interface BuildInfo {
   sourceUrl: string;
 }
 
+// ---------- 面板更新（字段名与 docs/soft-update README §4.8 契约逐项一致，不得改名） ----------
+// 生效策略由后端按 UPDATE_STRATEGY 与软更新资格计算，前端只读取，不自行推断部署配置。
+export type UpdateStrategy = "soft" | "sidecar" | "manual";
+// 软更新不可用的原因码，后端按顺序返回第一个不满足的条件。
+export type SoftUpdateBlockReason =
+  | "disabled"
+  | "not_supervised"
+  | "development_build"
+  | "runtime_dir_unwritable"
+  | "no_update"
+  | "check_failed"
+  | "manifest_missing"
+  | "signature_invalid"
+  | "manifest_invalid"
+  | "arch_unavailable"
+  | "requires_image_update"
+  | "upgrade_path_unsupported"
+  | "quarantined"
+  | "job_running";
+export type UpdateJobStage =
+  | "queued"
+  | "downloading"
+  | "extracting"
+  | "preflight"
+  | "backing_up"
+  | "migrate_check"
+  | "restarting"
+  | "failed"
+  | "canceled";
+export type PanelRunMode = "unsupervised" | "builtin" | "release" | "trial";
+
 export interface PanelUpdateStatus {
   current: BuildInfo;
   enabled: boolean;
@@ -24,12 +55,74 @@ export interface PanelUpdateStatus {
   releaseUrl?: string;
   releaseNotes?: string;
   publishedAt?: string;
+  // 兼容字段：等于 strategy !== "manual"，旧版后端只返回该字段。
   autoUpdateConfigured: boolean;
+  strategy: UpdateStrategy;
+  softUpdate: {
+    available: boolean;
+    reason?: SoftUpdateBlockReason;
+    detail?: string;
+    downloadBytes?: number;
+  };
+  runtime: PanelRuntimeInfo;
+  job?: PanelUpdateJob;
+}
+
+export interface PanelRuntimeInfo {
+  mode: PanelRunMode;
+  builtinVersion?: string;
+  // UPDATE_IMAGE_TAG，用于固定标签提示。
+  imageTag: string;
+  activeVersion?: string;
+  // 回滚目标为内置版本时，填写内置版本号。
+  previousVersion?: string;
+  trialVersion?: string;
+  rollback: { available: boolean; reason?: string };
+  builtinRestore: { available: boolean; reason?: string };
+  lastResult?: PanelUpdateResult;
+}
+
+export interface PanelUpdateResult {
+  requestId: string;
+  action: "upgrade" | "rollback" | "use-builtin";
+  version: string;
+  outcome: "committed" | "rolled_back" | "rejected";
+  stage?: string;
+  exitCode?: number;
+  detail?: string;
+  dbRestored?: boolean;
+  at: number;
+}
+
+export interface PanelUpdateJob {
+  id: string;
+  targetVersion: string;
+  stage: UpdateJobStage;
+  startedAt: number;
+  updatedAt: number;
+  bytesDone?: number;
+  bytesTotal?: number;
+  // 进入 restarting 时给出，前端据此确定最长等待时间（就绪超时 + 60 秒）。
+  readyTimeoutSec?: number;
+  // 进入 restarting 时给出，与重启后 runtime.lastResult.requestId 对应。
+  requestId?: string;
+  error?: string;
 }
 
 export interface PanelUpdateTriggerResult {
   targetVersion: string;
+  // soft 策略下为空字符串，快照在作业中生成。
   backupFile: string;
+  started: boolean;
+  strategy: UpdateStrategy;
+  jobId?: string;
+}
+
+export type PanelRollbackTarget = "previous" | "builtin";
+
+export interface PanelRollbackResult {
+  requestId: string;
+  targetVersion: string;
   started: boolean;
 }
 

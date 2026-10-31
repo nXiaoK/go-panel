@@ -6,7 +6,8 @@
 
 - [发布通道](#发布通道)
 - [Docker Compose 与 Docker Run](#docker-compose-快速开始)
-- [升级、回滚与一键更新](#升级与回滚)
+- [软更新：面板内一键更新与自动回滚](#软更新)
+- [升级、回滚与更新侧车](#升级与回滚)
 - [数据备份](#数据备份)
 - [节点程序与版本兼容](#节点程序)
 - [订阅节点名称](#订阅节点名称)
@@ -70,9 +71,54 @@ docker run -d \
   ghcr.io/nxiaok/go-panel:latest
 ```
 
+## 软更新
+
+从首个支持软更新的版本开始，面板可以在界面中直接更新自己：**不重建容器、不挂载 Docker Socket**。面板从 GitHub Release 下载经签名校验的新版本，放进数据卷后切换运行；新版本启动失败、卡住或健康检查不通过时自动回滚。
+
+### 工作方式
+
+官方镜像的主进程是 `go-panel supervise`（运行在 tini 之下）。它是镜像内置的稳定引导层：决定运行镜像内置版本还是数据卷中的软更新版本，并托管实际提供服务的面板进程。点击“立即更新”后：
+
+1. 面板下载本架构的更新包（约 42 MB），按签名清单核对压缩包与其中每个文件的 SHA-256，解包到 `/app/data/runtime/releases/`；
+2. 实际执行新版本的 `version` 与 `migrate-check`：确认它能在当前镜像中运行，并在数据库副本上演练迁移；
+3. 在数据卷的 `backups/` 保存一致性快照（与更新侧车共用，保留最近 5 份）；
+4. 面板优雅停机，supervisor 以“试运行”方式启动新版本；新版本完成监听，并在 60 秒观察期内健康检查通过，才会正式启用；
+5. 任一检查失败都会回到原版本，失败的版本被隔离，不会自动重试（可在界面确认后“仍要重试”）。如果原版本因数据库已被新版本迁移成不兼容的结构而无法启动，supervisor 会用第 3 步的快照恢复数据库，失败时的数据库另存为 `backups/failed-update-*`，试运行期间的修改会丢失。
+
+软更新会同时替换面板程序、内嵌界面和随面板分发的节点程序（`/api/v1/node/assets/*`），保证“节点可升级版本”与实际下发的程序一致。它**不会**更新基础镜像（Alpine、CA 证书、时区数据），也不会修改 Compose 或环境变量。
+
+### 前提与限制
+
+- 需要运行支持软更新的官方镜像。从 v0.1.0 升级时必须先手动更新一次镜像（`docker compose pull && docker compose up -d`），之后的版本才能软更新。
+- Release 必须附带签名的更新清单。界面会说明无法软更新的原因，例如“该版本需要更新镜像”（运行环境变化或 supervisor 修复）、“当前镜像不支持软更新”；此时请用手动升级或更新侧车。
+- 软更新版本保存在数据卷的 `runtime/` 中，当前与上一版本合计约占 340 MB；更新前会检查剩余空间。
+- 重启期间面板与 API 中断约 10–60 秒（排空最多 20 秒，再加新版本迁移与启动的时间）。节点上已有的转发不受影响；节点 WebSocket 断开后按退避自动重连。gost 节点会保留未确认的流量上报并以相同序号重试，nftables 节点使用持久化的上报日志，面板恢复后补报，流量不会丢失。
+- 拉取到的镜像版本不低于软更新版本时以镜像为准：软更新版本自动停用并清理。固定为更旧的镜像标签同样视为运维人员的明确意图。
+- 下载可经“系统配置 → GitHub 下载代理”。代理只影响能否下载；安装的内容必须通过签名校验，代理无法替换程序。
+- 软更新仍不会更新基础镜像，建议定期执行一次 `docker compose pull && docker compose up -d`。
+
+### 回滚与应急
+
+- **界面回滚**：系统配置 → 版本与更新 →“回滚到 vX”或“恢复镜像内置版本”。数据库保持当前内容；如果当前库已被迁移为目标版本无法读取的结构，界面会禁止回滚并说明原因，此时需要恢复更新前快照。
+- **命令行**（在容器内执行，重启容器后生效）：
+
+  ```bash
+  docker exec go-panel /app/go-panel update status
+  docker exec go-panel /app/go-panel update rollback      # 回滚到上一版本
+  docker exec go-panel /app/go-panel update use-builtin   # 改回镜像内置版本
+  docker restart go-panel
+  ```
+
+- **应急开关**：软更新版本反复崩溃、无法打开界面时，在 `.env` 中设置 `PANEL_USE_BUILTIN=true` 并执行 `docker compose up -d`。面板会忽略软更新版本，直接运行镜像内置版本，不删除任何文件。恢复访问后，在界面中“恢复镜像内置版本”或执行 `update use-builtin` 持久切换，再把开关改回 `false`。
+- 不需要软更新时，设置 `UPDATE_STRATEGY=manual`（只显示手动命令）或 `sidecar`（只用更新侧车）。
+
+### 安全
+
+只有通过签名校验的产物才会被执行：发布时，CI 用受保护环境中的 Ed25519 私钥签名更新清单；面板与 supervisor 用镜像内置的公钥验证。supervisor 每次启动软更新版本之前都会复验签名和逐文件哈希，被篡改的版本会被拒绝，并回到镜像内置版本。发布签名的维护流程见 [RELEASING.md](RELEASING.md)。
+
 ## 升级与回滚
 
-先通过面板下载一致性数据库快照，并阅读目标版本的 Release Notes。
+日常更新推荐使用[软更新](#软更新)。以下手动升级镜像的方式始终可用，也适用于 Release Notes 标注“需要更新镜像”的版本。先通过面板下载一致性数据库快照，并阅读目标版本的 Release Notes。
 
 稳定版手动升级只需要拉取镜像并重建容器：
 
@@ -85,9 +131,9 @@ docker compose up -d
 
 如需回滚，将 `.env` 中的 `GO_PANEL_VERSION` 改为升级前使用的完整版本标签，然后再次运行上述两条命令。若新版本已经执行不兼容的数据迁移，还必须同时恢复升级前的数据库快照。
 
-### 可选：界面一键更新
+### 可选：更新侧车（镜像级一键更新）
 
-主面板不会直接挂载 Docker Socket。需要界面“立即更新”按钮时，再下载并启用独立更新扩展：
+主面板不会直接挂载 Docker Socket。软更新不可用（例如版本要求更新镜像）时，若希望在界面中一键替换镜像，可以下载并启用独立的更新扩展：
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/nXiaoK/go-panel/main/compose.update.yml
@@ -96,6 +142,8 @@ docker compose -f compose.yml -f compose.update.yml up -d
 ```
 
 更新流程会先把经过完整性校验的 SQLite 快照保存到数据卷的 `backups/`，再由受标签和 Token 限制的 Watchtower 侧车拉取并替换面板容器。Docker Socket 具备接近宿主机 root 的控制能力，只应在可信服务器上启用该扩展。
+
+侧车镜像已从归档的 `containrrr/watchtower:1.7.1` 换成社区维护的 `nickfedor/watchtower`：原版内置的 Docker API 1.25 低于 Docker Engine 29 要求的 1.44，会报 `client version 1.25 is too old` 并反复重启。已启用本扩展的部署请重新下载 `compose.update.yml`，再执行 `docker compose -f compose.yml -f compose.update.yml up -d`。
 
 一键更新要求 `.env` 中的 `GO_PANEL_VERSION=latest`；如果固定为 `vX.Y.Z` 等完整版本标签，Watchtower 只会重新检查该固定镜像，不会跨版本升级。一键更新只替换镜像，不能自动修改 Compose 或环境变量。Release Notes 标注需要部署配置变更时，请使用手动升级流程。
 
@@ -149,6 +197,9 @@ nftables 模式安装、远程组件升级和规则刷新都会写入 `/etc/sysc
 | `TRUSTED_PROXIES` | 空 | 可信反向代理 CIDR；空值不信任转发头 |
 | `UPDATE_CHECK_ENABLED` | `true` | 是否检查 GitHub 最新稳定 Release |
 | `UPDATE_CHECK_INTERVAL` | `6h` | 成功检查结果缓存，最小 5 分钟、最大 7 天 |
+| `UPDATE_STRATEGY` | `auto` | 一键更新方式：`auto` 优先软更新，不可用时依次退回更新侧车与手动命令；`soft`、`sidecar` 只用对应方式；`manual` 关闭一键更新。非法值拒绝启动 |
+| `PANEL_USE_BUILTIN` | `false` | 应急开关：忽略数据卷中的软更新版本，运行镜像内置版本，不删除任何文件；排除问题后改回 `false` |
+| `PANEL_RUNTIME_DIR` | `/app/data/runtime` | 软更新版本与切换状态目录，镜像中已设置，必须位于持久卷内；修改后已有软更新版本不再被识别 |
 | `ALLOW_INSECURE_NODE_DOWNLOADS` | `false` | 临时允许 HTTP 节点下载，存在泄密和篡改风险 |
 | `ALLOW_LEGACY_NFT_REPORTS` | `false` | 临时兼容旧上报，缺少完整幂等保障 |
 | `VITE_DEV_API_TARGET` | `http://127.0.0.1:6365` | 仅 Vite 本地开发代理的后端目标；生产容器不使用，不能指向不可信服务 |
@@ -164,6 +215,10 @@ HTML 内容安全策略只允许同源脚本、字体、API 和 WebSocket，禁�
 ## 历史版本与兼容
 
 以下记录用于已有部署升级时核对行为；新部署应优先使用当前发布的面板与配套节点组件。
+
+### 软更新（首个支持版本）
+
+首个支持软更新的版本把镜像入口改为 `tini → go-panel supervise`，并新增 `schema_meta` 表记录数据库结构纪元。v0.1.0 不包含 supervisor，需要手动更新一次镜像，之后的版本才能软更新。结构纪元只在支持它的版本之间生效：回滚到 v0.1.0 不受保护，如果新版本做过不兼容的迁移，需要同时恢复更新前快照。直接运行二进制（不经 `supervise`）时，软更新不可用，其余行为与以前相同。管理接口新增 `/api/v1/system/update/status`、`/cancel`、`/rollback`，`/apply` 接受 `{targetVersion, force}`（缺省时兼容旧前端）。
 
 ### 接口与会话
 

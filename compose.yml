@@ -40,9 +40,16 @@ services:
       UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-true}
       UPDATE_REPOSITORY: ${UPDATE_REPOSITORY:-nXiaoK/go-panel}
       UPDATE_CHECK_INTERVAL: ${UPDATE_CHECK_INTERVAL:-6h}
-      # 固定版本标签不会跨 Release 移动；后端据此隐藏无效的一键更新按钮。
+      # 固定版本标签不会跨 Release 移动：后端据此判断更新侧车是否可用，并在软更新时提示运行版本将高于镜像标签。
       UPDATE_IMAGE_TAG: ${GO_PANEL_VERSION:-latest}
-      # 数据库和更新前备份都位于此持久卷，重建容器不会丢失。
+      # 一键更新方式：auto（默认）优先软更新——在数据卷中切换经签名校验的新版本，无需 Docker Socket，失败自动回滚；
+      # 不可用时依次退回 compose.update.yml 的更新侧车与手动命令。soft、sidecar 只用对应方式，manual 关闭一键更新。
+      # 非法值拒绝启动。软更新只替换面板与节点程序，不更新基础镜像，也不修改 Compose 或环境变量。
+      UPDATE_STRATEGY: ${UPDATE_STRATEGY:-auto}
+      # 应急开关：true 时忽略数据卷中的软更新版本与待处理的切换请求，直接运行镜像内置版本，不删除任何文件。
+      # 只用于软更新版本反复崩溃等紧急情况；排除问题后改回 false，或在面板中“恢复镜像内置版本”持久切换。
+      PANEL_USE_BUILTIN: ${PANEL_USE_BUILTIN:-false}
+      # 数据库、更新前备份与软更新版本（runtime/）都位于此持久卷，重建容器不会丢失。
       # 保留历史文件名以兼容旧数据卷；重命名会让升级后的面板误以为数据库为空。
       DB_PATH: /app/data/flux-panel.db
       TZ: ${TZ:-Asia/Shanghai}
@@ -57,5 +64,6 @@ services:
       com.centurylinklabs.watchtower.scope: "go-panel"
 
 volumes:
-  # 删除此卷会永久删除 SQLite 数据库与本地更新备份，升级时不得执行 docker compose down -v。
+  # 删除此卷会永久删除 SQLite 数据库、本地更新备份与软更新下载的版本，升级时不得执行 docker compose down -v。
+  # 拉取新镜像后，版本不高于镜像的软更新版本会自动停用，以镜像为准。
   panel_data:

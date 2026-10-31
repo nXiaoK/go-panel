@@ -9,10 +9,15 @@ vi.mock("axios", async (importOriginal) => {
 });
 
 import {
+  applyPanelUpdate,
+  cancelPanelUpdate,
+  checkPanelUpdate,
   diagnoseForward,
   diagnoseTunnel,
   downloadSiteBackup,
+  getPanelUpdateStatus,
   restoreSiteBackup,
+  rollbackPanel,
   speedTestTunnel,
   upgradeNode,
 } from "../src/lib/api";
@@ -86,6 +91,54 @@ describe("long request deadlines", () => {
     await upgradeNode(10, { timeoutMs: 1 });
     expect(adapter).toHaveBeenCalledWith(
       expect.objectContaining({ url: "/node/upgrade", timeout: 100_000 }),
+    );
+  });
+
+  it("waits 25 seconds for update checks and sends the soft update contract bodies", async () => {
+    await checkPanelUpdate();
+    await checkPanelUpdate(undefined, true);
+    await getPanelUpdateStatus();
+    await applyPanelUpdate("v0.3.0", true);
+    await applyPanelUpdate("v0.3.1");
+    await cancelPanelUpdate("job-1");
+    await rollbackPanel("builtin");
+    expect(adapter).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "/system/update/check", data: "{}", timeout: 25_000 }),
+    );
+    expect(adapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/system/update/check",
+        data: '{"force":true}',
+        timeout: 25_000,
+      }),
+    );
+    expect(adapter).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "/system/update/status", data: "{}", timeout: 30_000 }),
+    );
+    expect(adapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/system/update/apply",
+        data: JSON.stringify({ targetVersion: "v0.3.0", force: true }),
+        timeout: 30_000,
+      }),
+    );
+    expect(adapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/system/update/apply",
+        data: JSON.stringify({ targetVersion: "v0.3.1", force: false }),
+      }),
+    );
+    expect(adapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/system/update/cancel",
+        data: JSON.stringify({ jobId: "job-1" }),
+      }),
+    );
+    expect(adapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/system/update/rollback",
+        data: JSON.stringify({ target: "builtin" }),
+      }),
     );
   });
 

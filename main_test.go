@@ -1,18 +1,26 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/iotest"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 
 	"github.com/nXiaoK/go-panel/internal/config"
+	"github.com/nXiaoK/go-panel/internal/model"
+	"github.com/nXiaoK/go-panel/internal/selfupdate/protocol"
 )
 
 func TestNewHTTPServerUsesExplicitResourceTimeouts(t *testing.T) {
@@ -161,8 +169,12 @@ func TestUpdateRuntimeConfigFromConfig(t *testing.T) {
 		UpdateTriggerURL:    "http://updater:8080/v1/update",
 		UpdateTriggerToken:  "secret-token",
 		UpdateImageTag:      "latest",
+		UpdateStrategy:      "soft",
 	}
 	got := updateRuntimeConfigFromConfig(cfg)
+	if got.Strategy != "soft" {
+		t.Fatalf("update strategy=%q", got.Strategy)
+	}
 	if !got.Enabled || got.Repository != cfg.UpdateRepository || got.CheckInterval != cfg.UpdateCheckInterval {
 		t.Fatalf("update check runtime config=%#v", got)
 	}
@@ -204,7 +216,8 @@ func TestDockerComposePassesRemoteSecurityConfiguration(t *testing.T) {
 }
 
 func TestDeploymentUsesConsistentSQLiteBackup(t *testing.T) {
-	raw, err := os.ReadFile("README.md")
+	// 完整备份说明已从 README 移至运维指南；README 只保留快速入口。
+	raw, err := os.ReadFile("OPERATIONS.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,5 +343,222 @@ func TestInvalidCSPModeRejectedBeforeRuntimeInitialization(t *testing.T) {
 	}
 	if initialized || cfg.JwtSecret != "" {
 		t.Fatal("invalid CSP initialized runtime credentials")
+	}
+}
+
+func TestRunMainVersionJSONReportsCompat(t *testing.T) {
+	var stdout, stderr strings.Builder
+	if code := runMain([]string{"version", "--json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	var report map[string]any
+	if err := json.Unmarshal([]byte(stdout.String()), &report); err != nil {
+		t.Fatalf("version --json is not JSON: %v\n%s", err, stdout.String())
+	}
+	for _, key := range []string{"version", "commit", "buildTime", "goos", "goarch", "runtimeAbi", "schemaEpoch", "minReaderEpoch", "supervisorProtocol", "minUpgradeFrom"} {
+		if _, ok := report[key]; !ok {
+			t.Fatalf("version --json is missing %q: %s", key, stdout.String())
+		}
+	}
+}
+
+func TestRunMainRejectsUnknownArguments(t *testing.T) {
+	for _, args := range [][]string{{"nope"}, {"serve", "extra"}, {"version", "--yaml"}} {
+		var stdout, stderr strings.Builder
+		if code := runMain(args, &stdout, &stderr); code != 2 {
+			t.Fatalf("runMain(%q)=%d, want 2", args, code)
+		}
+		if stderr.Len() == 0 {
+			t.Fatalf("runMain(%q) must explain the usage error on stderr", args)
+		}
+	}
+	var stdout, stderr strings.Builder
+	if code := runMain([]string{"help"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "用法") {
+		t.Fatalf("help exit=%d output=%q", code, stdout.String())
+	}
+}
+
+func TestWaitForStopMapsRestartRequestsToExitCode(t *testing.T) {
+	restart := make(chan struct{}, 1)
+	restart <- struct{}{}
+	if code := waitForStop(context.Background(), restart); code != protocol.ExitRestartRequested {
+		t.Fatalf("restart request exit=%d, want %d", code, protocol.ExitRestartRequested)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if code := waitForStop(ctx, make(chan struct{})); code != 0 {
+		t.Fatalf("signal exit=%d, want 0", code)
+	}
+}
+
+func copyTestDatabase(t *testing.T, source, target string) {
+	t.Helper()
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunMigrateCheckReportsSingleJSONLine(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "panel.db")
+	if err := model.Init(source); err != nil {
+		t.Fatal(err)
+	}
+	if err := model.Close(); err != nil {
+		t.Fatal(err)
+	}
+	copyPath := filepath.Join(dir, "migrate-check.db")
+	copyTestDatabase(t, source, copyPath)
+	t.Setenv("DB_PATH", source)
+
+	var stdout, stderr strings.Builder
+	if code := runMain([]string{"migrate-check", "--db", copyPath, "--json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("stdout must contain exactly one JSON line, got %q", stdout.String())
+	}
+	var output migrateCheckOutput
+	if err := json.Unmarshal([]byte(lines[0]), &output); err != nil || !output.OK || output.SchemaEpoch != model.SchemaEpoch {
+		t.Fatalf("output=%+v err=%v", output, err)
+	}
+}
+
+func TestRunMigrateCheckRefusesLiveDatabaseAndMissingFiles(t *testing.T) {
+	dir := t.TempDir()
+	live := filepath.Join(dir, "panel.db")
+	if err := os.WriteFile(live, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DB_PATH", live)
+	var stdout, stderr strings.Builder
+	if code := runMain([]string{"migrate-check", "--db", live, "--json"}, &stdout, &stderr); code != 1 || !strings.Contains(stdout.String(), "只能对副本演练") {
+		t.Fatalf("live database exit=%d stdout=%s", code, stdout.String())
+	}
+	missing := filepath.Join(dir, "missing.db")
+	stdout.Reset()
+	if code := runMain([]string{"migrate-check", "--db", missing, "--json"}, &stdout, &stderr); code != 1 {
+		t.Fatalf("missing copy exit=%d", code)
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Fatal("migrate-check must never create a database")
+	}
+	if code := runMain([]string{"migrate-check"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("missing --db exit=%d, want 2", code)
+	}
+}
+
+func TestRunMigrateCheckExitsSchemaTooNew(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "newer.db")
+	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		"CREATE TABLE schema_meta (`key` TEXT PRIMARY KEY, `value` TEXT NOT NULL DEFAULT '')",
+		"INSERT INTO schema_meta (`key`, `value`) VALUES ('schema_epoch', '99'), ('min_reader_epoch', '99')",
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
+	var stdout, stderr strings.Builder
+	if code := runMain([]string{"migrate-check", "--db", path, "--json"}, &stdout, &stderr); code != protocol.ExitSchemaTooNew {
+		t.Fatalf("exit=%d stdout=%s", code, stdout.String())
+	}
+}
+
+func TestSchemaTooNewExitExplainsRecovery(t *testing.T) {
+	var out strings.Builder
+	code, handled := schemaTooNewExit(&model.SchemaTooNewError{DBSchemaEpoch: 3, DBMinReaderEpoch: 3, LastWriterVersion: "v0.5.0", BinarySchemaEpoch: 1}, "/app/data/flux-panel.db", &out)
+	if !handled || code != protocol.ExitSchemaTooNew {
+		t.Fatalf("code=%d handled=%v", code, handled)
+	}
+	for _, want := range []string{"v0.5.0", "/app/data/backups", "pre-update-"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("guidance is missing %q: %s", want, out.String())
+		}
+	}
+	if _, handled := schemaTooNewExit(errors.New("other"), "/app/data/flux-panel.db", &out); handled {
+		t.Fatal("unrelated errors must keep the fatal startup path")
+	}
+}
+
+func TestInvalidUpdateStrategyRejectedBeforeRuntimeInitialization(t *testing.T) {
+	cfg := &config.Config{ListenAddr: "127.0.0.1:6365", UpdateStrategy: "watchtower"}
+	initialized := false
+	err := initializeRuntimeSecurity(cfg, strings.NewReader(strings.Repeat("x", 64)), func(string) { initialized = true })
+	if err == nil || !strings.Contains(err.Error(), "UPDATE_STRATEGY") || initialized {
+		t.Fatalf("err=%v initialized=%v", err, initialized)
+	}
+}
+
+func TestUpdateSidecarUsesMaintainedPinnedImage(t *testing.T) {
+	raw, err := os.ReadFile("compose.update.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	compose := string(raw)
+	// 归档的原版 Watchtower 不兼容 Docker Engine 29，禁止回退；注释中保留历史名称说明原因，只检查配置行。
+	var config []string
+	for _, line := range strings.Split(compose, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			config = append(config, line)
+		}
+	}
+	if strings.Contains(strings.Join(config, "\n"), "containrrr/watchtower") {
+		t.Fatal("compose.update.yml must not use the archived containrrr/watchtower image")
+	}
+	image := regexp.MustCompile(`(?m)^\s*image:\s*(\S+)\s*$`).FindStringSubmatch(compose)
+	if image == nil {
+		t.Fatal("compose.update.yml has no updater image")
+	}
+	if !regexp.MustCompile(`^nickfedor/watchtower:[0-9]+\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}$`).MatchString(image[1]) {
+		t.Fatalf("updater image %q must pin an exact version and digest", image[1])
+	}
+}
+
+func TestDockerImageRunsPanelUnderTiniAndSupervisor(t *testing.T) {
+	read := func(path string) string {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	dockerfile := read("Dockerfile")
+	for _, required := range []string{
+		"apk add --no-cache ca-certificates tzdata tini",
+		"PANEL_RUNTIME_DIR=/app/data/runtime",
+		`ENTRYPOINT ["/sbin/tini", "--", "/app/go-panel", "supervise"]`,
+		"internal/buildinfo.RuntimeABI",
+	} {
+		if !strings.Contains(dockerfile, required) {
+			t.Fatalf("Dockerfile is missing %q", required)
+		}
+	}
+	// 软更新版本与切换状态必须位于数据卷内，否则重建容器会丢失已切换的版本。
+	if !strings.Contains(dockerfile, `VOLUME ["/app/data"]`) {
+		t.Fatal("the runtime directory must live inside the /app/data volume")
+	}
+	compose := read("compose.yml")
+	for _, required := range []string{"UPDATE_STRATEGY: ${UPDATE_STRATEGY:-auto}", "PANEL_USE_BUILTIN: ${PANEL_USE_BUILTIN:-false}"} {
+		if !strings.Contains(compose, required) {
+			t.Fatalf("compose.yml is missing %q", required)
+		}
+	}
+	env := read(".env.example")
+	for _, required := range []string{"\nUPDATE_STRATEGY=auto\n", "\nPANEL_USE_BUILTIN=false\n"} {
+		if !strings.Contains(env, required) {
+			t.Fatalf(".env.example is missing %q", strings.TrimSpace(required))
+		}
 	}
 }

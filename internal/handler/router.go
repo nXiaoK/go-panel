@@ -149,7 +149,10 @@ func Register(r *gin.Engine, corsAllowOrigin string, allowLegacyNftReports bool)
 	authChecked.POST("/system/status", systemStatus)
 	admin.POST("/system/version", systemVersion)
 	admin.POST("/system/update/check", systemUpdateCheck)
+	admin.POST("/system/update/status", systemUpdateStatus)
 	admin.POST("/system/update/apply", systemUpdateApply)
+	admin.POST("/system/update/cancel", systemUpdateCancel)
+	admin.POST("/system/update/rollback", systemUpdateRollback)
 
 	// backup
 	admin.GET("/backup/download", downloadBackup)
